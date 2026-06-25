@@ -63,8 +63,13 @@ export function filterSummary(s: Summary, period: Period): Summary {
 
   const days = PERIOD_DAYS[period];
   const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() - days + 1);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = [
+    cutoff.getFullYear(),
+    String(cutoff.getMonth() + 1).padStart(2, "0"),
+    String(cutoff.getDate()).padStart(2, "0"),
+  ].join("-");
 
   const filteredDaily = s.daily.filter(d => d.date >= cutoffStr);
 
@@ -108,7 +113,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
       topDay,
       topDayModel,
     },
-    sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+    sessionStats: s.sessionStats,
   };
 }
 
