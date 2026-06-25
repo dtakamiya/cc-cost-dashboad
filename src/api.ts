@@ -113,7 +113,14 @@ export function filterSummary(s: Summary, period: Period): Summary {
       topDay,
       topDayModel,
     },
-    sessionStats: s.sessionStats,
+    // coldStartCost は日次データに per-session 情報がないため、
+    // 全期間コスト比でスケールして近似値を算出する
+    sessionStats: {
+      ...s.sessionStats,
+      coldStartCost: s.totals.cost > 0
+        ? s.sessionStats.coldStartCost * (totalCost / s.totals.cost)
+        : 0,
+    },
   };
 }
 
