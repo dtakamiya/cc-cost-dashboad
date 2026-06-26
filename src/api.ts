@@ -9,6 +9,8 @@ export interface DailyCost {
   date: string;
   models: Record<string, number>;
   total: number;
+  tokenModels: Record<string, number>;
+  tokenTotal: number;
 }
 
 export interface Summary {
@@ -28,7 +30,7 @@ export interface Summary {
   projects: { cwd: string; cost: number }[];
   drivers: {
     topModel: ModelCost | null;
-    topDay: { date: string; cost: number } | null;
+    topDay: { date: string; cost: number; tokens: number } | null;
     topDayModel: { model: string; cost: number } | null;
     cacheReadRatio: number;
     outputCostRatio: number;
@@ -97,24 +99,28 @@ export function filterSummary(s: Summary, period: Period): Summary {
   const filteredDaily = s.daily.filter(d => d.date >= cutoffStr);
 
   const costByModel = new Map<string, number>();
+  const tokenByModel = new Map<string, number>();
   for (const day of filteredDaily) {
     for (const [m, c] of Object.entries(day.models)) {
       costByModel.set(m, (costByModel.get(m) ?? 0) + c);
     }
+    for (const [m, t] of Object.entries(day.tokenModels ?? {})) {
+      tokenByModel.set(m, (tokenByModel.get(m) ?? 0) + t);
+    }
   }
   const filteredModels = s.models
-    .map(m => ({ ...m, cost: costByModel.get(m.model) ?? 0 }))
-    .filter(m => m.cost > 0)
+    .map(m => ({ ...m, cost: costByModel.get(m.model) ?? 0, tokens: tokenByModel.get(m.model) ?? m.tokens }))
+    .filter(m => m.cost > 0 || m.tokens > 0)
     .sort((a, b) => b.cost - a.cost);
 
   const totalCost = filteredDaily.reduce((sum, d) => sum + d.total, 0);
 
   // topDay を filteredDaily から再計算
-  let topDay: { date: string; cost: number } | null = null;
+  let topDay: { date: string; cost: number; tokens: number } | null = null;
   let topDayModel: { model: string; cost: number } | null = null;
   for (const day of filteredDaily) {
     if (!topDay || day.total > topDay.cost) {
-      topDay = { date: day.date, cost: day.total };
+      topDay = { date: day.date, cost: day.total, tokens: day.tokenTotal ?? 0 };
       const entries = Object.entries(day.models).sort(([, a], [, b]) => b - a);
       topDayModel = entries.length > 0 ? { model: entries[0][0], cost: entries[0][1] } : null;
     }

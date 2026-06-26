@@ -92,7 +92,7 @@ export function aggregate(records) {
   const costSplit = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
 
   const byModel = new Map(); // model -> {cost, tokens, isFallback}
-  const byDay = new Map(); // date -> Map(model -> cost)
+  const byDay = new Map(); // date -> {costMap: Map(model->cost), tokenMap: Map(model->tokens)}
   const byProject = new Map(); // cwd -> cost
   const sessions = new Set();
   const sessionFirstMsg = new Map(); // sessionId -> 最初のレコード（cold start 計測用）
@@ -122,9 +122,10 @@ export function aggregate(records) {
     if (c.isFallback) fallbackModels.add(r.model);
 
     const day = dayOf(r.ts);
-    if (!byDay.has(day)) byDay.set(day, new Map());
-    const dm = byDay.get(day);
-    dm.set(r.model, (dm.get(r.model) || 0) + c.total);
+    if (!byDay.has(day)) byDay.set(day, { costMap: new Map(), tokenMap: new Map() });
+    const dd = byDay.get(day);
+    dd.costMap.set(r.model, (dd.costMap.get(r.model) || 0) + c.total);
+    dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
 
     byProject.set(r.cwd, (byProject.get(r.cwd) || 0) + c.total);
     sessions.add(r.sessionId);
@@ -146,12 +147,14 @@ export function aggregate(records) {
     .map(([model, v]) => ({ model, ...v }))
     .sort((a, b) => b.cost - a.cost);
 
-  // 日別（昇順）。各日 {date, models: {model: cost}, total}
+  // 日別（昇順）。各日 {date, models: {model: cost}, total, tokenModels: {model: tokens}, tokenTotal}
   const daily = [...byDay.entries()]
-    .map(([date, mm]) => {
-      const m = Object.fromEntries(mm);
-      const total = [...mm.values()].reduce((s, v) => s + v, 0);
-      return { date, models: m, total };
+    .map(([date, { costMap, tokenMap }]) => {
+      const models = Object.fromEntries(costMap);
+      const total = [...costMap.values()].reduce((s, v) => s + v, 0);
+      const tokenModels = Object.fromEntries(tokenMap);
+      const tokenTotal = [...tokenMap.values()].reduce((s, v) => s + v, 0);
+      return { date, models, total, tokenModels, tokenTotal };
     })
     .filter((d) => d.date !== "(unknown)")
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -200,7 +203,7 @@ export function aggregate(records) {
     projects,
     drivers: {
       topModel,
-      topDay: topDay ? { date: topDay.date, cost: topDay.total } : null,
+      topDay: topDay ? { date: topDay.date, cost: topDay.total, tokens: topDay.tokenTotal } : null,
       topDayModel: topDayModel
         ? { model: topDayModel[0], cost: topDayModel[1] }
         : null,

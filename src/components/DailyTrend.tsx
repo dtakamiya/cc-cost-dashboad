@@ -9,24 +9,22 @@ import {
   Legend,
 } from "recharts";
 import type { Summary } from "../api";
-import { usd, modelColor } from "../format";
+import { compact, modelColor } from "../format";
 
-// gradient の id に使える安全な文字列へ。
 const safeId = (m: string, i: number) => `grad-${i}-${m.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
-// 日別コスト推移（モデル別積み上げエリア）。スパイク日を視覚的に特定。
 export function DailyTrend({ s }: { s: Summary }) {
   const models = s.models.map((m) => m.model);
 
   const data = s.daily.map((d) => {
     const row: Record<string, number | string> = { date: d.date };
-    for (const m of models) row[m] = Number((d.models[m] || 0).toFixed(2));
+    for (const m of models) row[m] = d.tokenModels?.[m] ?? 0;
     return row;
   });
 
   return (
     <section className="panel">
-      <h2>日別コスト推移</h2>
+      <h2>日別トークン推移</h2>
       <ResponsiveContainer width="100%" height={320}>
         <AreaChart data={data} margin={{ left: 8, right: 24, top: 8 }}>
           <defs>
@@ -39,9 +37,9 @@ export function DailyTrend({ s }: { s: Summary }) {
           </defs>
           <CartesianGrid vertical={false} stroke="var(--grid)" />
           <XAxis dataKey="date" stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
-          <YAxis tickFormatter={(v) => usd(v)} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
+          <YAxis tickFormatter={(v) => compact(v)} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
           <Tooltip
-            formatter={(v: number) => usd(v)}
+            formatter={(v: number) => compact(v)}
             cursor={{ stroke: "var(--axis)", strokeDasharray: "3 3" }}
             contentStyle={{
               background: "var(--tooltip-bg)",
