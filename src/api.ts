@@ -114,7 +114,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
     }
   }
   const filteredProjects = [...tokenByProject.entries()]
-    .map(([cwd, tokens]) => ({ cwd, tokens, cost: s.projects.find(p => p.cwd === cwd)?.cost ?? 0 }))
+    .map(([cwd, tokens]) => ({ cwd, tokens, cost: 0 }))
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 10);
   const filteredModels = s.models

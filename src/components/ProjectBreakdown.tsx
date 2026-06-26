@@ -28,11 +28,12 @@ function projectName(cwd: string): string {
 export function ProjectBreakdown({ s }: { s: Summary }) {
   if (!s.projects || s.projects.length === 0) return null;
 
-  const totalTokens = s.projects.reduce((sum, p) => sum + p.tokens, 0);
   const data = s.projects.slice(0, 8).map((p) => ({
+    cwd: p.cwd,
     name: projectName(p.cwd),
     tokens: p.tokens,
   }));
+  const totalTokens = data.reduce((sum, d) => sum + d.tokens, 0);
 
   return (
     <section className="panel">
@@ -49,7 +50,7 @@ export function ProjectBreakdown({ s }: { s: Summary }) {
           />
           <Bar dataKey="tokens" radius={[0, 4, 4, 0]} barSize={20}>
             {data.map((d, i) => (
-              <Cell key={d.name} fill={PALETTE[i % PALETTE.length]} />
+              <Cell key={d.cwd} fill={PALETTE[i % PALETTE.length]} />
             ))}
             <LabelList
               dataKey="tokens"
@@ -70,7 +71,7 @@ export function ProjectBreakdown({ s }: { s: Summary }) {
         </thead>
         <tbody>
           {data.map((d, i) => (
-            <tr key={d.name}>
+            <tr key={d.cwd}>
               <td>
                 <span className="dot" style={{ background: PALETTE[i % PALETTE.length] }} />
                 {d.name}

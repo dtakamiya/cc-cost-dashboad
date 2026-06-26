@@ -128,8 +128,8 @@ export function aggregate(records) {
     dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
     dd.projectTokenMap.set(r.cwd, (dd.projectTokenMap.get(r.cwd) || 0) + tokens);
 
-    const prev = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
-    byProject.set(r.cwd, { cost: prev.cost + c.total, tokens: prev.tokens + tokens });
+    const prevProject = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
+    byProject.set(r.cwd, { cost: prevProject.cost + c.total, tokens: prevProject.tokens + tokens });
     sessions.add(r.sessionId);
 
     // セッション初回メッセージ（最古 ts）を記録
