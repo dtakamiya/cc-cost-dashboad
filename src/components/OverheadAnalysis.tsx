@@ -94,13 +94,13 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
           {overhead.projectPlugins.length > 0 && (
             <>
               <div className="driver-title" style={{ marginTop: 14 }}>プロジェクトスコープのスキル（参考）</div>
-              <div style={{ fontSize: 12, color: "#b5b5c8", marginTop: 4, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4, lineHeight: 1.6 }}>
                 {overhead.projectPlugins.map((p) => (
                   <div key={p.name}>
                     <strong>{p.name}</strong>: {p.projectPaths.length} プロジェクト
                   </div>
                 ))}
-                <div style={{ marginTop: 4, color: "#9090a0" }}>
+                <div style={{ marginTop: 4, color: "var(--subtle)" }}>
                   該当プロジェクトでのみ system prompt に追加される。不要ならそのプロジェクトでアンインストール可。
                 </div>
               </div>
