@@ -93,7 +93,7 @@ export function aggregate(records) {
 
   const byModel = new Map(); // model -> {cost, tokens, isFallback}
   const byDay = new Map(); // date -> {costMap: Map(model->cost), tokenMap: Map(model->tokens)}
-  const byProject = new Map(); // cwd -> cost
+  const byProject = new Map(); // cwd -> {cost, tokens}
   const sessions = new Set();
   const sessionFirstMsg = new Map(); // sessionId -> 最初のレコード（cold start 計測用）
   let minTs = null;
@@ -127,7 +127,10 @@ export function aggregate(records) {
     dd.costMap.set(r.model, (dd.costMap.get(r.model) || 0) + c.total);
     dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
 
-    byProject.set(r.cwd, (byProject.get(r.cwd) || 0) + c.total);
+    const p = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
+    p.cost += c.total;
+    p.tokens += tokens;
+    byProject.set(r.cwd, p);
     sessions.add(r.sessionId);
 
     // セッション初回メッセージ（最古 ts）を記録
@@ -159,10 +162,10 @@ export function aggregate(records) {
     .filter((d) => d.date !== "(unknown)")
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  // プロジェクト別（コスト降順, 上位10）
+  // プロジェクト別（トークン降順, 上位10）
   const projects = [...byProject.entries()]
-    .map(([cwd, cost]) => ({ cwd, cost }))
-    .sort((a, b) => b.cost - a.cost)
+    .map(([cwd, v]) => ({ cwd, cost: v.cost, tokens: v.tokens }))
+    .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 10);
 
   // セッション cold start 統計（初回メッセージのキャッシュ作成量 = システムプロンプト規模の proxy）
