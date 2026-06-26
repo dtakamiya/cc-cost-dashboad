@@ -188,7 +188,7 @@ body {
 
 /* ── BillingBlocks ── */
 .block-active {
-  background: rgba(59, 95, 204, 0.12); border: 1px solid rgba(59, 95, 204, 0.5); border-radius: var(--r-md);
+  background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: var(--r-md);
   padding: var(--sp-4); margin-bottom: var(--sp-4);
 }
 .block-active-header {
@@ -210,7 +210,7 @@ body {
   align-items: center; gap: var(--sp-2); padding: var(--sp-2) 10px; border-radius: var(--r-sm);
   font-size: 13px; background: var(--elevated);
 }
-.block-row-active { border: 1px solid rgba(99, 102, 241, 0.5); }
+.block-row-active { border: 1px solid var(--accent-border); }
 .block-row-time { color: var(--muted); }
 .block-row-cost { font-weight: 600; text-align: right; }
 .block-row-tokens { color: var(--muted); text-align: right; }
@@ -267,4 +267,10 @@ body {
 @media (max-width: 520px) {
   .cards { grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .topbar-actions { width: 100%; justify-content: space-between; }
+  .block-active-stats,
+  .budget-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .block-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--sp-1);
+  }
 }
