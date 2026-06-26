@@ -27,7 +27,7 @@ export interface Summary {
   costSplit: { input: number; output: number; cacheWrite: number; cacheRead: number };
   models: ModelCost[];
   daily: DailyCost[];
-  projects: { cwd: string; cost: number }[];
+  projects: { cwd: string; cost: number; tokens: number }[];
   drivers: {
     topModel: ModelCost | null;
     topDay: { date: string; cost: number; tokens: number } | null;
