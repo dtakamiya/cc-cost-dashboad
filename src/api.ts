@@ -52,6 +52,29 @@ export interface Summary {
   };
   warnings: { fallbackModels: string[] };
   source?: { fileCount: number };
+  blocks: Block[];
+  projection: Projection | null;
+}
+
+export interface Block {
+  start: string;
+  end: string;
+  isActive: boolean;
+  cost: number;
+  tokens: number;
+  durationMin: number;
+  remainMin: number;
+  burnRatePerMin: number;
+  topModel: { model: string; cost: number } | null;
+}
+
+export interface Projection {
+  monthStr: string;
+  monthCostSoFar: number;
+  daysPassed: number;
+  daysRemain: number;
+  daysInMonth: number;
+  projectedMonthCost: number;
 }
 
 export type Period = '7d' | '30d' | '90d' | 'all';
