@@ -1,11 +1,10 @@
 import type { Summary } from "../api";
-import { usd, compact } from "../format";
+import { compact } from "../format";
 
 export function SummaryCards({ s }: { s: Summary }) {
   const t = s.totals;
   const cards = [
-    { icon: "💰", label: "合計コスト", value: usd(t.cost), sub: "推定（価格表ベース）", primary: true },
-    { icon: "🔢", label: "総トークン", value: compact(t.tokens), sub: `${compact(t.messages)} メッセージ` },
+    { icon: "🔢", label: "総トークン", value: compact(t.tokens), sub: `${compact(t.messages)} メッセージ`, primary: true },
     { icon: "🗂️", label: "セッション数", value: t.sessions.toLocaleString(), sub: `${s.source?.fileCount ?? 0} ファイル` },
     { icon: "📅", label: "期間", value: t.from ?? "-", sub: `〜 ${t.to ?? "-"}` },
   ];

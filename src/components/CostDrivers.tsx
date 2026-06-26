@@ -1,11 +1,10 @@
 import type { Summary } from "../api";
-import { usd, pct } from "../format";
+import { compact, pct } from "../format";
 
-// 「なぜコストが高いか」を一目で示すパネル。
 export function CostDrivers({ s }: { s: Summary }) {
   const d = s.drivers;
   const t = s.totals;
-  const topShare = d.topModel && t.cost ? d.topModel.cost / t.cost : 0;
+  const topShare = d.topModel && t.tokens ? d.topModel.tokens / t.tokens : 0;
 
   type Tone = "good" | "warn" | "";
   const items: { title: string; body: string; hint: string; tone: Tone }[] = [];
@@ -13,8 +12,8 @@ export function CostDrivers({ s }: { s: Summary }) {
   if (d.topModel) {
     const off = topShare > 0.6;
     items.push({
-      title: "最大コストのモデル",
-      body: `${d.topModel.model} — ${usd(d.topModel.cost)}（全体の ${pct(topShare)}）`,
+      title: "最大トークン使用モデル",
+      body: `${d.topModel.model} — ${compact(d.topModel.tokens)} トークン（全体の ${pct(topShare)}）`,
       hint: off
         ? "高単価モデルに偏り。安価モデル（sonnet/haiku）への振り分けで削減余地。"
         : "モデル分散は良好。",
@@ -23,10 +22,8 @@ export function CostDrivers({ s }: { s: Summary }) {
   }
   if (d.topDay) {
     items.push({
-      title: "最もコストの高い日",
-      body: `${d.topDay.date} — ${usd(d.topDay.cost)}${
-        d.topDayModel ? `（主因 ${d.topDayModel.model}）` : ""
-      }`,
+      title: "最もトークンの多い日",
+      body: `${d.topDay.date} — ${compact(d.topDay.tokens)} トークン`,
       hint: "スパイク日。日別推移で前後と比較し原因セッションを特定。",
       tone: "",
     });
@@ -37,7 +34,7 @@ export function CostDrivers({ s }: { s: Summary }) {
       title: "cache read 比率",
       body: pct(d.cacheReadRatio),
       hint: off
-        ? "キャッシュが効いていない。input が割高になりがち。"
+        ? "キャッシュが効いていない。input トークンが割高になりがち。"
         : "キャッシュ良好（read は input の約 1/10 単価）。",
       tone: off ? "warn" : "good",
     });
@@ -56,7 +53,7 @@ export function CostDrivers({ s }: { s: Summary }) {
 
   return (
     <section className="panel">
-      <h2>なぜコストが高いか</h2>
+      <h2>使用量分析</h2>
       <div className="drivers">
         {items.map((it) => (
           <div className={`driver${it.tone ? " tone-" + it.tone : ""}`} key={it.title}>
