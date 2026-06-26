@@ -175,9 +175,9 @@ export function aggregate(records) {
   let coldStartCost = 0;
   for (const r of firstMsgs) coldStartCost += costOf(r.model, r).cacheWrite;
 
-  // コストドライバ（なぜ高いか）
-  const topModel = models[0] || null;
-  const topDay = [...daily].sort((a, b) => b.total - a.total)[0] || null;
+  // コストドライバ（トークン基準）
+  const topModel = [...models].sort((a, b) => b.tokens - a.tokens)[0] || null;
+  const topDay = [...daily].sort((a, b) => b.tokenTotal - a.tokenTotal)[0] || null;
   const topDayModel = topDay
     ? Object.entries(topDay.models).sort((a, b) => b[1] - a[1])[0]
     : null;

@@ -109,18 +109,20 @@ export function filterSummary(s: Summary, period: Period): Summary {
     }
   }
   const filteredModels = s.models
-    .map(m => ({ ...m, cost: costByModel.get(m.model) ?? 0, tokens: tokenByModel.get(m.model) ?? m.tokens }))
+    .map(m => ({ ...m, cost: costByModel.get(m.model) ?? 0, tokens: tokenByModel.get(m.model) ?? 0 }))
     .filter(m => m.cost > 0 || m.tokens > 0)
-    .sort((a, b) => b.cost - a.cost);
+    .sort((a, b) => b.tokens - a.tokens);
 
   const totalCost = filteredDaily.reduce((sum, d) => sum + d.total, 0);
+  const totalTokens = filteredDaily.reduce((sum, d) => sum + (d.tokenTotal ?? 0), 0);
 
-  // topDay を filteredDaily から再計算
+  // topDay を filteredDaily から再計算（トークン基準）
   let topDay: { date: string; cost: number; tokens: number } | null = null;
   let topDayModel: { model: string; cost: number } | null = null;
   for (const day of filteredDaily) {
-    if (!topDay || day.total > topDay.cost) {
-      topDay = { date: day.date, cost: day.total, tokens: day.tokenTotal ?? 0 };
+    const dayTokens = day.tokenTotal ?? 0;
+    if (!topDay || dayTokens > topDay.tokens) {
+      topDay = { date: day.date, cost: day.total, tokens: dayTokens };
       const entries = Object.entries(day.models).sort(([, a], [, b]) => b - a);
       topDayModel = entries.length > 0 ? { model: entries[0][0], cost: entries[0][1] } : null;
     }
@@ -133,6 +135,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
     totals: {
       ...s.totals,
       cost: totalCost,
+      tokens: totalTokens,
       from: filteredDaily[0]?.date ?? null,
       to: filteredDaily[filteredDaily.length - 1]?.date ?? null,
     },

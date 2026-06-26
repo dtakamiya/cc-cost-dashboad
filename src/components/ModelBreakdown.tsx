@@ -24,7 +24,7 @@ export function ModelBreakdown({ s }: { s: Summary }) {
     model: m.model,
     tokens: m.tokens,
     isFallback: m.isFallback,
-  }));
+  })).sort((a, b) => b.tokens - a.tokens);
 
   return (
     <section className="panel">
