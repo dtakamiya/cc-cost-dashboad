@@ -84,6 +84,36 @@ function computeProjection(records) {
   };
 }
 
+// レコード配列 → 曜日(0=日)×時間帯(0-23) のトークン使用量行列 + ピーク。
+// ローカル時刻基準（サーバー = ユーザーのマシン）。
+function computeActivity(records) {
+  const matrix = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  let total = 0;
+
+  for (const r of records) {
+    if (!r.ts) continue;
+    const d = new Date(r.ts);
+    const day = d.getDay();
+    const hour = d.getHours();
+    const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+    matrix[day][hour] += tokens;
+    total += tokens;
+  }
+
+  let peak = null;
+  let max = 0;
+  for (let day = 0; day < 7; day++) {
+    for (let hour = 0; hour < 24; hour++) {
+      if (matrix[day][hour] > max) {
+        max = matrix[day][hour];
+        peak = { day, hour, tokens: matrix[day][hour] };
+      }
+    }
+  }
+
+  return { matrix, max, total, peak };
+}
+
 // 正規化レコード配列 → ダッシュボード用サマリ。
 export function aggregate(records) {
   let totalCost = 0;
@@ -223,5 +253,6 @@ export function aggregate(records) {
     },
     blocks: computeBlocks(records),
     projection: computeProjection(records),
+    activity: computeActivity(records),
   };
 }
