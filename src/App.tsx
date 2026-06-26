@@ -13,7 +13,7 @@ export default function App() {
   const [data, setData] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [period, setPeriod] = useState<Period>('all');
+  const [period, setPeriod] = useState<Period>('7d');
 
   const displayData = useMemo(
     () => (data ? filterSummary(data, period) : null),
