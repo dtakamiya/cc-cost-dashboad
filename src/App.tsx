@@ -6,6 +6,8 @@ import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
 import { OverheadAnalysis } from "./components/OverheadAnalysis";
 import { PeriodSelector } from "./components/PeriodSelector";
+import { BillingBlocks } from "./components/BillingBlocks";
+import { BudgetProjection } from "./components/BudgetProjection";
 
 export default function App() {
   const [data, setData] = useState<Summary | null>(null);
@@ -58,6 +60,8 @@ export default function App() {
             </div>
           )}
           <SummaryCards s={displayData} />
+          <BudgetProjection s={data!} />
+          <BillingBlocks s={data!} />
           <CostDrivers s={displayData} />
           <div className="grid2">
             <ModelBreakdown s={displayData} />
