@@ -11,6 +11,7 @@ export interface DailyCost {
   total: number;
   tokenModels: Record<string, number>;
   tokenTotal: number;
+  projectTokens: Record<string, number>;
 }
 
 export interface Summary {
@@ -100,6 +101,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
 
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
+  const tokenByProject = new Map<string, number>();
   for (const day of filteredDaily) {
     for (const [m, c] of Object.entries(day.models)) {
       costByModel.set(m, (costByModel.get(m) ?? 0) + c);
@@ -107,7 +109,14 @@ export function filterSummary(s: Summary, period: Period): Summary {
     for (const [m, t] of Object.entries(day.tokenModels ?? {})) {
       tokenByModel.set(m, (tokenByModel.get(m) ?? 0) + t);
     }
+    for (const [cwd, t] of Object.entries(day.projectTokens ?? {})) {
+      tokenByProject.set(cwd, (tokenByProject.get(cwd) ?? 0) + t);
+    }
   }
+  const filteredProjects = [...tokenByProject.entries()]
+    .map(([cwd, tokens]) => ({ cwd, tokens, cost: s.projects.find(p => p.cwd === cwd)?.cost ?? 0 }))
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 10);
   const filteredModels = s.models
     .map(m => ({ ...m, cost: costByModel.get(m.model) ?? 0, tokens: tokenByModel.get(m.model) ?? 0 }))
     .filter(m => m.cost > 0 || m.tokens > 0)
@@ -132,6 +141,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
     ...s,
     daily: filteredDaily,
     models: filteredModels,
+    projects: filteredProjects,
     totals: {
       ...s.totals,
       cost: totalCost,
