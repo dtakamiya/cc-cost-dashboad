@@ -71,7 +71,7 @@ export default function App() {
             <ModelBreakdown s={displayData} />
             <DailyTrend s={displayData} />
           </div>
-          <ProjectBreakdown s={data!} />
+          <ProjectBreakdown s={displayData} />
           <OverheadAnalysis s={displayData} />
           <footer className="foot">
             集計時刻 {new Date(displayData.generatedAt).toLocaleString("ja-JP")} ／ コストは価格表に基づく推定値

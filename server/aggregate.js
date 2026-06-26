@@ -122,15 +122,14 @@ export function aggregate(records) {
     if (c.isFallback) fallbackModels.add(r.model);
 
     const day = dayOf(r.ts);
-    if (!byDay.has(day)) byDay.set(day, { costMap: new Map(), tokenMap: new Map() });
+    if (!byDay.has(day)) byDay.set(day, { costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map() });
     const dd = byDay.get(day);
     dd.costMap.set(r.model, (dd.costMap.get(r.model) || 0) + c.total);
     dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
+    dd.projectTokenMap.set(r.cwd, (dd.projectTokenMap.get(r.cwd) || 0) + tokens);
 
-    const p = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
-    p.cost += c.total;
-    p.tokens += tokens;
-    byProject.set(r.cwd, p);
+    const prevProject = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
+    byProject.set(r.cwd, { cost: prevProject.cost + c.total, tokens: prevProject.tokens + tokens });
     sessions.add(r.sessionId);
 
     // セッション初回メッセージ（最古 ts）を記録
@@ -150,21 +149,22 @@ export function aggregate(records) {
     .map(([model, v]) => ({ model, ...v }))
     .sort((a, b) => b.cost - a.cost);
 
-  // 日別（昇順）。各日 {date, models: {model: cost}, total, tokenModels: {model: tokens}, tokenTotal}
+  // 日別（昇順）。各日 {date, models: {model: cost}, total, tokenModels: {model: tokens}, tokenTotal, projectTokens: {cwd: tokens}}
   const daily = [...byDay.entries()]
-    .map(([date, { costMap, tokenMap }]) => {
+    .map(([date, { costMap, tokenMap, projectTokenMap }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
       const tokenModels = Object.fromEntries(tokenMap);
       const tokenTotal = [...tokenMap.values()].reduce((s, v) => s + v, 0);
-      return { date, models, total, tokenModels, tokenTotal };
+      const projectTokens = Object.fromEntries(projectTokenMap);
+      return { date, models, total, tokenModels, tokenTotal, projectTokens };
     })
     .filter((d) => d.date !== "(unknown)")
     .sort((a, b) => a.date.localeCompare(b.date));
 
   // プロジェクト別（トークン降順, 上位10）
   const projects = [...byProject.entries()]
-    .map(([cwd, v]) => ({ cwd, cost: v.cost, tokens: v.tokens }))
+    .map(([cwd, { cost, tokens }]) => ({ cwd, cost, tokens }))
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 10);
 
