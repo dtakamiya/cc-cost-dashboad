@@ -26,8 +26,10 @@ export function BudgetProjection({ s }: { s: Summary }) {
 
   const projected = proj.projectedMonthCost;
   const overBudget = budget !== null && projected > budget;
-  const pct = budget ? Math.min((proj.monthCostSoFar / budget) * 100, 100) : 0;
-  const projPct = budget ? Math.min((projected / budget) * 100, 100) : 0;
+  const pct = budget ? (proj.monthCostSoFar / budget) * 100 : 0;
+  const projPct = budget ? (projected / budget) * 100 : 0;
+  const pctWidth = Math.min(pct, 100);
+  const projPctWidth = Math.min(projPct, 100);
 
   function submitBudget() {
     const n = parseFloat(input);
@@ -100,8 +102,8 @@ export function BudgetProjection({ s }: { s: Summary }) {
       {budget && (
         <div className="budget-bar-wrap">
           <div className="budget-bar-bg">
-            <div className="budget-bar-proj" style={{ width: `${projPct}%` }} />
-            <div className="budget-bar-actual" style={{ width: `${pct}%` }} />
+            <div className="budget-bar-proj" style={{ width: `${projPctWidth}%` }} />
+            <div className="budget-bar-actual" style={{ width: `${pctWidth}%` }} />
           </div>
           <div className="budget-bar-labels">
             <span>実績 {pct.toFixed(0)}%</span>

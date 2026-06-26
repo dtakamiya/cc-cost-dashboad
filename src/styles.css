@@ -89,7 +89,6 @@ body {
 .block-active-remain { color: var(--muted); margin-left: auto; }
 .block-active-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .block-active-model { color: var(--muted); font-size: 12px; margin-top: 10px; }
-.block-stat { }
 .block-stat-label { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
 .block-stat-value { font-size: 18px; font-weight: 700; }
 .block-stat-unit { color: var(--muted); font-size: 12px; }
@@ -125,7 +124,6 @@ body {
 .budget-input-row button:last-child { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .budget-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
 .text-warn { color: #f5c451; }
-.budget-bar-wrap { }
 .budget-bar-bg {
   position: relative; height: 10px; background: #2a2a3a; border-radius: 5px; overflow: hidden;
 }

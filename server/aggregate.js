@@ -18,8 +18,8 @@ function computeBlocks(records) {
     const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
 
     if (!block || t >= block.endMs) {
-      // 新ブロック開始（時単位切り捨て）
-      const startMs = Math.floor(t / (60 * 60 * 1000)) * (60 * 60 * 1000);
+      // 新ブロック開始（最初の利用時刻を起点に 5 時間）
+      const startMs = t;
       block = { startMs, endMs: startMs + BLOCK_DURATION_MS, cost: 0, tokens: 0, models: {}, lastTs: t };
       blocks.push(block);
     }
@@ -58,13 +58,20 @@ function computeProjection(records) {
   if (!withTs.length) return null;
 
   const now = new Date();
-  const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const monthRecords = withTs.filter((r) => r.ts.startsWith(monthStr));
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const monthStr = monthStart.toISOString().slice(0, 7);
+  const monthRecords = withTs.filter((r) => {
+    const ts = new Date(r.ts);
+    return ts >= monthStart && ts < nextMonthStart;
+  });
 
   const monthCost = monthRecords.reduce((s, r) => s + costOf(r.model, r).total, 0);
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysPassed = now.getDate() + now.getHours() / 24;
-  const daysRemain = daysInMonth - daysPassed;
+  const localMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const localNextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const daysPassed = (now - localMonthStart) / 86400000;
+  const daysRemain = (localNextMonthStart - now) / 86400000;
   const projectedMonthCost = daysPassed > 0 ? (monthCost / daysPassed) * daysInMonth : 0;
 
   return {
