@@ -264,6 +264,33 @@ body {
   .drivers { grid-template-columns: 1fr; }
 }
 
+/* 時間帯別アクティビティヒートマップ */
+.heatmap-sub { color: var(--muted); font-size: 12px; margin-bottom: var(--sp-3); }
+.heatmap-peak {
+  background: var(--accent-soft); border: 1px solid var(--accent-border);
+  border-radius: var(--r-sm); padding: var(--sp-2) var(--sp-3);
+  font-size: 13px; color: var(--text); margin-bottom: var(--sp-4);
+}
+.heatmap-peak strong { color: var(--accent); margin: 0 2px; }
+.heatmap {
+  display: grid;
+  grid-template-columns: 28px repeat(24, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.heatmap-hour {
+  font-size: 10px; color: var(--subtle); text-align: center;
+  line-height: 1; padding-bottom: 2px;
+}
+.heatmap-day {
+  font-size: 11px; color: var(--muted); display: flex;
+  align-items: center; justify-content: flex-end; padding-right: var(--sp-2);
+}
+.heatmap-cell {
+  aspect-ratio: 1 / 1; border-radius: 3px;
+  border: 1px solid var(--border-soft);
+}
+
 @media (max-width: 520px) {
   .cards { grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .topbar-actions { width: 100%; justify-content: space-between; }

@@ -57,6 +57,14 @@ export interface Summary {
   source?: { fileCount: number };
   blocks: Block[];
   projection: Projection | null;
+  activity: Activity;
+}
+
+export interface Activity {
+  matrix: number[][]; // [day 0-6][hour 0-23] = tokens
+  max: number;
+  total: number;
+  peak: { day: number; hour: number; tokens: number } | null;
 }
 
 export interface Block {

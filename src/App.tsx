@@ -9,6 +9,7 @@ import { PeriodSelector } from "./components/PeriodSelector";
 import { BillingBlocks } from "./components/BillingBlocks";
 import { BudgetProjection } from "./components/BudgetProjection";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
+import { ActivityHeatmap } from "./components/ActivityHeatmap";
 
 export default function App() {
   const [data, setData] = useState<Summary | null>(null);
@@ -72,6 +73,7 @@ export default function App() {
             <DailyTrend s={displayData} />
           </div>
           <ProjectBreakdown s={displayData} />
+          <ActivityHeatmap s={data!} />
           <OverheadAnalysis s={displayData} />
           <footer className="foot">
             集計時刻 {new Date(displayData.generatedAt).toLocaleString("ja-JP")} ／ コストは価格表に基づく推定値
