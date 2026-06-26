@@ -22,7 +22,7 @@ const TOOLTIP_STYLE = {
 const PALETTE = ["#818cf8", "#34d399", "#fbbf24", "#fb7185", "#c084fc", "#22d3ee", "#f472b6", "#a3e635"];
 
 function projectName(cwd: string): string {
-  return cwd.split("/").filter(Boolean).pop() ?? cwd;
+  return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
 }
 
 export function ProjectBreakdown({ s }: { s: Summary }) {
