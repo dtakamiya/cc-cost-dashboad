@@ -59,7 +59,7 @@ export function CostDrivers({ s }: { s: Summary }) {
       <h2>なぜコストが高いか</h2>
       <div className="drivers">
         {items.map((it) => (
-          <div className={`driver${it.tone ? " " + it.tone : ""}`} key={it.title}>
+          <div className={`driver${it.tone ? " tone-" + it.tone : ""}`} key={it.title}>
             <div className="driver-title">{it.title}</div>
             <div className="driver-body">{it.body}</div>
             <div className="driver-hint">{it.hint}</div>

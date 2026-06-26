@@ -14,7 +14,7 @@ export function SummaryCards({ s }: { s: Summary }) {
       {cards.map((c) => (
         <div className={c.primary ? "card primary" : "card"} key={c.label}>
           <div className="card-head">
-            <span className="card-icon">{c.icon}</span>
+            <span className="card-icon" aria-hidden="true">{c.icon}</span>
             <span className="card-label">{c.label}</span>
           </div>
           <div className="card-value">{c.value}</div>

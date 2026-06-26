@@ -142,13 +142,13 @@ body {
   border-left: 3px solid var(--border);
   border-radius: var(--r-md); padding: var(--sp-4);
 }
-.driver.good { border-left-color: var(--success); }
-.driver.warn { border-left-color: var(--warn); }
+.driver.tone-good { border-left-color: var(--success); }
+.driver.tone-warn { border-left-color: var(--warn); }
 .driver-title { color: var(--muted); font-size: 12px; letter-spacing: 0.02em; }
 .driver-body { font-size: 16px; font-weight: 600; margin: var(--sp-2) 0; line-height: 1.4; }
 .driver-hint { font-size: 12px; color: var(--muted); line-height: 1.6; }
-.driver.good .driver-hint { color: var(--success); }
-.driver.warn .driver-hint { color: var(--warn); }
+.driver.tone-good .driver-hint { color: var(--success); }
+.driver.tone-warn .driver-hint { color: var(--warn); }
 
 /* ---- 2-col layout ---- */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); align-items: start; }
