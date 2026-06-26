@@ -2,6 +2,88 @@ import { costOf } from "./pricing.js";
 
 const dayOf = (ts) => (ts ? ts.slice(0, 10) : "(unknown)");
 
+const BLOCK_DURATION_MS = 5 * 60 * 60 * 1000; // 5時間
+
+// レコード配列 → 5時間課金ブロック配列（新しい順、最大20件）
+function computeBlocks(records) {
+  const withTs = records.filter((r) => r.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
+  if (!withTs.length) return [];
+
+  const blocks = [];
+  let block = null;
+
+  for (const r of withTs) {
+    const t = new Date(r.ts).getTime();
+    const c = costOf(r.model, r);
+    const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+
+    if (!block || t >= block.endMs) {
+      // 新ブロック開始（最初の利用時刻を起点に 5 時間）
+      const startMs = t;
+      block = { startMs, endMs: startMs + BLOCK_DURATION_MS, cost: 0, tokens: 0, models: {}, lastTs: t };
+      blocks.push(block);
+    }
+    block.cost += c.total;
+    block.tokens += tokens;
+    block.models[r.model] = (block.models[r.model] || 0) + c.total;
+    block.lastTs = t;
+  }
+
+  const now = Date.now();
+  return blocks
+    .slice(-20)
+    .reverse()
+    .map((b) => {
+      const isActive = now < b.endMs && now - b.lastTs < BLOCK_DURATION_MS;
+      const durationMin = Math.round((Math.min(now, b.endMs) - b.startMs) / 60000);
+      const remainMin = isActive ? Math.round((b.endMs - now) / 60000) : 0;
+      const topModel = Object.entries(b.models).sort((a, z) => z[1] - a[1])[0];
+      return {
+        start: new Date(b.startMs).toISOString(),
+        end: new Date(b.endMs).toISOString(),
+        isActive,
+        cost: b.cost,
+        tokens: b.tokens,
+        durationMin,
+        remainMin,
+        burnRatePerMin: durationMin > 0 ? b.cost / durationMin : 0,
+        topModel: topModel ? { model: topModel[0], cost: topModel[1] } : null,
+      };
+    });
+}
+
+// レコード配列 → 当月の着地予測
+function computeProjection(records) {
+  const withTs = records.filter((r) => r.ts);
+  if (!withTs.length) return null;
+
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const monthStr = monthStart.toISOString().slice(0, 7);
+  const monthRecords = withTs.filter((r) => {
+    const ts = new Date(r.ts);
+    return ts >= monthStart && ts < nextMonthStart;
+  });
+
+  const monthCost = monthRecords.reduce((s, r) => s + costOf(r.model, r).total, 0);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const localMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const localNextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const daysPassed = (now - localMonthStart) / 86400000;
+  const daysRemain = (localNextMonthStart - now) / 86400000;
+  const projectedMonthCost = daysPassed > 0 ? (monthCost / daysPassed) * daysInMonth : 0;
+
+  return {
+    monthStr,
+    monthCostSoFar: monthCost,
+    daysPassed: Math.floor(daysPassed),
+    daysRemain: Math.round(daysRemain),
+    daysInMonth,
+    projectedMonthCost,
+  };
+}
+
 // 正規化レコード配列 → ダッシュボード用サマリ。
 export function aggregate(records) {
   let totalCost = 0;
@@ -133,5 +215,7 @@ export function aggregate(records) {
     warnings: {
       fallbackModels: [...fallbackModels],
     },
+    blocks: computeBlocks(records),
+    projection: computeProjection(records),
   };
 }
