@@ -38,10 +38,10 @@ export function DailyTrend({ s }: { s: Summary }) {
       <div className="panel-head">
         <h2>トークン推移</h2>
         <div className="seg" role="group" aria-label="集計粒度">
-          <button className={view === "daily" ? "active" : ""} onClick={() => setView("daily")}>
+          <button type="button" aria-pressed={view === "daily"} className={view === "daily" ? "active" : ""} onClick={() => setView("daily")}>
             日次
           </button>
-          <button className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
+          <button type="button" aria-pressed={view === "weekly"} className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
             週次
           </button>
         </div>
