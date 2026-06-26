@@ -37,10 +37,13 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Claude Code コストダッシュボード</h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="topbar-title">
+          <h1>Claude Code コストダッシュボード</h1>
+          <div className="sub">JSONL ログから算出した利用コストの推定値</div>
+        </div>
+        <div className="topbar-actions">
           <PeriodSelector period={period} onChange={setPeriod} />
-          <button onClick={() => load(true)} disabled={loading}>
+          <button className="reload" onClick={() => load(true)} disabled={loading}>
             {loading ? "集計中…" : "再読込"}
           </button>
         </div>
