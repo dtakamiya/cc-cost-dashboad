@@ -290,6 +290,7 @@ export function computePreviousPeriod(
 }
 
 // 現在期間と前期間の差分を % で返す。前期間が null か 0 の項目は null。
+// 注: daily.sessions は server/aggregate.js で populate されないため、sessions delta は常に null
 export function computeDelta(
   current: PreviousPeriodTotals,
   previous: PreviousPeriodTotals | null
@@ -302,7 +303,7 @@ export function computeDelta(
   return {
     cost: pct(current.cost, previous.cost),
     tokens: pct(current.tokens, previous.tokens),
-    sessions: pct(current.sessions, previous.sessions),
+    sessions: null, // daily.sessions が populate されないため null に設定
   };
 }
 

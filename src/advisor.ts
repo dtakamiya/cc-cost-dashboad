@@ -162,12 +162,15 @@ export function buildRecommendations(s: Summary): AdvisorResult {
       // 削減目標: OVERHEAD_FILE_CAUTION_TOKENS まで圧縮した場合の節約
       const reducibleTokens = c.alwaysTokens - OVERHEAD_FILE_CAUTION_TOKENS;
       const savings = reducibleTokens * cacheCreateRate * sessionFactor * monthlyFactor;
+      const actionText = c.label.startsWith("[skill]") || c.label.startsWith("[plugin]")
+        ? `${c.label} の name/description を削減し、詳細は本文（起動時のみ読まれる）に移動する。`
+        : `${c.label} のコンテンツを精査し、重要な情報は本文に、メタデータは簡潔にする。`;
       items.push({
         id: `overhead-file:${c.label}`,
         priority: "medium",
         title: `${c.label} が常時 ${c.alwaysTokens.toLocaleString()} トークンを消費`,
         detail: `毎セッション冒頭で ${c.alwaysTokens.toLocaleString()} トークンが注入される（推奨 ≤ ${OVERHEAD_FILE_CAUTION_TOKENS} トークン）。`,
-        action: `${c.label} の name/description を削減し、詳細は本文（起動時のみ読まれる）に移動する。`,
+        action: actionText,
         estMonthlySavings: Math.max(0, savings),
       });
     }

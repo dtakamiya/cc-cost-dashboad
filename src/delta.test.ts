@@ -37,24 +37,24 @@ describe("computePreviousPeriod", () => {
 });
 
 describe("computeDelta", () => {
-  it("前期間比のパーセント差分を返す", () => {
+  it("前期間比のパーセント差分を返す（sessions は常に null）", () => {
     const delta = computeDelta(
       { cost: 120, tokens: 1200, sessions: 12 },
       { cost: 100, tokens: 1000, sessions: 10 }
     );
     expect(delta?.cost).toBeCloseTo(20);
     expect(delta?.tokens).toBeCloseTo(20);
-    expect(delta?.sessions).toBeCloseTo(20);
+    expect(delta?.sessions).toBeNull(); // daily.sessions が populate されないため常に null
   });
 
-  it("前期間が0の項目は null（0除算回避）", () => {
+  it("前期間が0の項目は null（0除算回避）、sessions は常に null", () => {
     const delta = computeDelta(
       { cost: 120, tokens: 0, sessions: 12 },
       { cost: 0, tokens: 0, sessions: 10 }
     );
     expect(delta?.cost).toBeNull();
     expect(delta?.tokens).toBeNull();
-    expect(delta?.sessions).toBeCloseTo(20);
+    expect(delta?.sessions).toBeNull(); // daily.sessions が populate されないため常に null
   });
 
   it("前期間が null なら null を返す", () => {

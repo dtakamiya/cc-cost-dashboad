@@ -130,6 +130,8 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
                 <td />
                 <td style={{ textAlign: "right" }}>{tok(overhead.totalAlwaysTokens)}</td>
                 <td style={{ textAlign: "right", color: "var(--muted)" }}>+{tok(overhead.totalInvokeTokens)}</td>
+                <td />
+                <td />
               </tr>
             </tfoot>
           </table>
