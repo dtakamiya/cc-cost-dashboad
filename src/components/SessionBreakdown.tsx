@@ -25,11 +25,14 @@ function periodLabel(s: SessionCost): string {
 function CopyButton({ cwd }: { cwd: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleClick = () => {
-    navigator.clipboard.writeText(buildClearCommand(cwd)).then(() => {
+  const handleClick = async () => {
+    try {
+      await navigator.clipboard.writeText(buildClearCommand(cwd));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } catch {
+      // Clipboard API unavailable or denied — button remains inert.
+    }
   };
 
   return (
