@@ -221,4 +221,25 @@ describe("buildRecommendations", () => {
     const fileItems = r.items.filter((i) => i.id.startsWith("overhead-file:"));
     expect(fileItems.length).toBe(0);
   });
+
+  it("500トークン超のファイルは最適化アドバイスを出す", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 5000,
+          alwaysTokens: 687, // > 500 → 要最適化
+          fullTokens: 687,
+          estimatedTokens: 687,
+        },
+        totalAlwaysTokens: 687,
+      },
+    });
+    const r = buildRecommendations(s);
+    const fileItems = r.items.filter((i) => i.id.startsWith("overhead-file:"));
+    expect(fileItems.length).toBeGreaterThan(0);
+    expect(fileItems[0].title).toContain("687");
+    expect(fileItems[0].detail).toContain("毎セッション冒頭");
+  });
 });

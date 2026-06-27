@@ -141,7 +141,7 @@ export function buildRecommendations(s: Summary): AdvisorResult {
   // 3b. ファイル別常時注入オーバーヘッド（individual file > OVERHEAD_FILE_WARN_TOKENS）
   {
     const cacheCreateRate = safeRate(s.costSplit.cacheWrite, s.tokenSplit.cacheCreate);
-    const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 1;
+    const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 0;
     const candidates: Array<{ label: string; alwaysTokens: number }> = [];
     if (s.overhead.claudeMd) {
       candidates.push({ label: s.overhead.claudeMd.label, alwaysTokens: s.overhead.claudeMd.alwaysTokens });
