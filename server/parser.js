@@ -33,8 +33,9 @@ function toRecord(obj) {
 
   const cacheCreate = usage.cache_creation_input_tokens || 0;
   const cc = usage.cache_creation || {};
-  // 1h キャッシュ作成トークンが存在すれば 1h 単価扱い。
-  const cache1h = (cc.ephemeral_1h_input_tokens || 0) > 0;
+  // 1h キャッシュ作成トークン（TTL 損益分岐分析に使用）。存在すれば 1h 単価扱い。
+  const cacheCreate1h = cc.ephemeral_1h_input_tokens || 0;
+  const cache1h = cacheCreate1h > 0;
 
   return {
     ts: obj.timestamp || null,
@@ -44,6 +45,7 @@ function toRecord(obj) {
     input: usage.input_tokens || 0,
     output: usage.output_tokens || 0,
     cacheCreate,
+    cacheCreate1h,
     cacheRead: usage.cache_read_input_tokens || 0,
     cache1h,
   };

@@ -176,6 +176,21 @@ export function buildRecommendations(s: Summary): AdvisorResult {
     }
   }
 
+  // 5b. 1h キャッシュ TTL プレミアム未回収（medium, 定量）
+  // 2026年に TTL が 60分→5分へ短縮され、1h キャッシュ（書き込み 2倍）の損益分岐が厳しくなった。
+  // プレミアムを払ったのに ROI 純益で吸収しきれていない場合に、5m 既定への寄せを提案する。
+  const cs = s.cacheStats;
+  if (cs && cs.premium1h > 0 && cs.roiNet < cs.premium1h) {
+    items.push({
+      id: "cache-ttl-premium",
+      priority: "medium",
+      title: "1h キャッシュの 2倍プレミアムが回収できていない",
+      detail: `1h キャッシュ書き込みに約 ${cs.premium1h.toFixed(2)} USD の超過コスト（5m 比）。読み込み回収が不足。`,
+      action: "短命セッションや再利用の少ない作業では 1h キャッシュ指定を避け、5m 既定に寄せる。",
+      estMonthlySavings: Math.max(0, cs.premium1h * monthlyFactor),
+    });
+  }
+
   // 6. 価格未登録モデル（low, 情報）
   if (s.warnings.fallbackModels.length > 0) {
     items.push({

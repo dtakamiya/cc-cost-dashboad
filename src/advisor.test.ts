@@ -52,6 +52,17 @@ const baseSummary = (over: Partial<Summary> = {}): Summary => ({
     totalEstimatedTokens: 1000,
   },
   warnings: { fallbackModels: [] },
+  // 中立: 1hプレミアム無し・ROI黒字 → cache-ttl-premium ルールは発火しない
+  cacheStats: {
+    create1hTokens: 0,
+    create5mTokens: 100_000,
+    write1hCost: 0,
+    write5mCost: 25,
+    premium1h: 0,
+    readSavings: 225, // costSplit.cacheRead(25) × 9
+    writeCost: 25,
+    roiNet: 200,
+  },
   blocks: [],
   projection: null,
   activity: { matrix: [], max: 0, total: 0, peak: null },
@@ -150,6 +161,30 @@ describe("buildRecommendations", () => {
     const r = buildRecommendations(s);
     expect(r.items.find((i) => i.id === "low-cache")?.estMonthlySavings).toBe(0);
     expect(r.items.find((i) => i.id === "fallback-pricing")?.estMonthlySavings).toBe(0);
+  });
+
+  it("1hプレミアムがROIを圧迫すると cache-ttl-premium が発火し節約額>0", () => {
+    const s = baseSummary({
+      totals: { cost: 100, tokens: 1_000_000, sessions: 5, messages: 50, from: "2026-06-01", to: "2026-06-30" },
+      cacheStats: {
+        create1hTokens: 1_000_000,
+        create5mTokens: 0,
+        write1hCost: 10,
+        write5mCost: 0,
+        premium1h: 3.75, // 10 × 0.375
+        readSavings: 1, // 回収できていない（roiNet < premium1h）
+        writeCost: 10,
+        roiNet: -9,
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "cache-ttl-premium");
+    expect(item).toBeDefined();
+    expect(item!.estMonthlySavings).toBeGreaterThan(0);
+  });
+
+  it("1hプレミアム0なら cache-ttl-premium は発火しない", () => {
+    const item = buildRecommendations(baseSummary()).items.find((i) => i.id === "cache-ttl-premium");
+    expect(item).toBeUndefined();
   });
 
   it("節約額の降順でソートされ合計が一致する", () => {

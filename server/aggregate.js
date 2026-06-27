@@ -182,6 +182,9 @@ export function aggregate(records) {
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
   const costSplit = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
 
+  // キャッシュ TTL 損益分岐（1h vs 5m, ROI）。すべて costOf 戻り値の合算で導く。
+  const cacheStats = { create1hTokens: 0, create5mTokens: 0, write1hCost: 0, write5mCost: 0, premium1h: 0 };
+
   const byModel = new Map(); // model -> {cost, tokens, isFallback}
   const byDay = new Map(); // date -> {costMap: Map(model->cost), tokenMap: Map(model->tokens)}
   const byProject = new Map(); // cwd -> {cost, tokens}
@@ -205,6 +208,19 @@ export function aggregate(records) {
     costSplit.output += c.output;
     costSplit.cacheWrite += c.cacheWrite;
     costSplit.cacheRead += c.cacheRead;
+
+    // キャッシュ書き込みを TTL（1h/5m）で振り分け。1hプレミアム = 1h書き込みの ×0.375
+    // （∵ cacheWrite = tokens×inputUSD×2、5m相当との超過 = tokens×inputUSD×0.75 = cacheWrite×0.375）。
+    const create1h = r.cacheCreate1h || 0;
+    if (r.cache1h) {
+      cacheStats.create1hTokens += create1h;
+      cacheStats.create5mTokens += Math.max(0, r.cacheCreate - create1h);
+      cacheStats.write1hCost += c.cacheWrite;
+      cacheStats.premium1h += c.cacheWrite * 0.375;
+    } else {
+      cacheStats.create5mTokens += r.cacheCreate;
+      cacheStats.write5mCost += c.cacheWrite;
+    }
 
     const m = byModel.get(r.model) || {
       cost: 0, tokens: 0, isFallback: c.isFallback,
@@ -287,6 +303,12 @@ export function aggregate(records) {
     : 0;
   const outputCostRatio = totalCost ? costSplit.output / totalCost : 0;
 
+  // キャッシュ ROI: 読み込み節約額 = read実支払 × 9（read は input の 0.1x、無キャッシュ比節約は 0.9x）。
+  // 純益 = 読み込み節約 − 書き込みコスト（負なら書き込みが回収できていない）。
+  cacheStats.readSavings = costSplit.cacheRead * 9;
+  cacheStats.writeCost = costSplit.cacheWrite;
+  cacheStats.roiNet = cacheStats.readSavings - cacheStats.writeCost;
+
   return {
     generatedAt: new Date().toISOString(),
     totals: {
@@ -319,6 +341,7 @@ export function aggregate(records) {
     warnings: {
       fallbackModels: [...fallbackModels],
     },
+    cacheStats,
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
