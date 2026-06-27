@@ -1,10 +1,14 @@
-import { costOf } from "./pricing.js";
+import { costOf, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER } from "./pricing.js";
 
 const dayOf = (ts) => (ts ? ts.slice(0, 10) : "(unknown)");
 
 const BLOCK_DURATION_MS = 5 * 60 * 60 * 1000; // 5時間
 
-// レコード配列 → 5時間課金ブロック配列（新しい順、最大20件）
+/**
+ * レコード配列から 5 時間課金ブロック配列を生成する（新しい順、最大 20 件）。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} 課金ブロック一覧
+ */
 function computeBlocks(records) {
   const withTs = records.filter((r) => r.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
   if (!withTs.length) return [];
@@ -52,7 +56,11 @@ function computeBlocks(records) {
     });
 }
 
-// レコード配列 → 当月の着地予測
+/**
+ * レコード配列から当月の着地予測を計算する。データがなければ null を返す。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object|null} 当月コスト予測オブジェクト
+ */
 function computeProjection(records) {
   const withTs = records.filter((r) => r.ts);
   if (!withTs.length) return null;
@@ -84,10 +92,13 @@ function computeProjection(records) {
   };
 }
 
-// レコード配列 → セッション別サマリ（コスト降順, 全件）。
-// 会話履歴は毎ターン再送されるため、長い／肥大化したセッションがコスト増の主因になる。
-// avgContextPerMsg = Σ(cacheRead + input) / messages を 1ターンの実コンテキストサイズの proxy とする。
-// 上位N件への制限はクライアント側（期間フィルタ後）で行う。
+/**
+ * レコード配列からセッション別サマリを生成する（コスト降順, 全件）。
+ * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
+ * 上位 N 件への制限はクライアント側（期間フィルタ後）で行う。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} セッション別サマリ（コスト降順）
+ */
 function computeSessions(records) {
   const map = new Map(); // sessionId -> 集計
 
@@ -145,8 +156,12 @@ function computeSessions(records) {
     .sort((a, b) => b.cost - a.cost);
 }
 
-// レコード配列 → 曜日(0=日)×時間帯(0-23) のトークン使用量行列 + ピーク。
-// ローカル時刻基準（サーバー = ユーザーのマシン）。
+/**
+ * レコード配列から曜日(0=日)×時間帯(0-23) のトークン使用量行列とピークを生成する。
+ * ローカル時刻基準（サーバー = ユーザーのマシン）。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ matrix: number[][], max: number, total: number, peak: object|null }}
+ */
 function computeActivity(records) {
   const matrix = Array.from({ length: 7 }, () => new Array(24).fill(0));
   let total = 0;
@@ -175,12 +190,21 @@ function computeActivity(records) {
   return { matrix, max, total, peak };
 }
 
-// 正規化レコード配列 → ダッシュボード用サマリ。
+/**
+ * 正規化レコード配列からダッシュボード用サマリを生成する。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object} ダッシュボード表示用の集計サマリ
+ */
 export function aggregate(records) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
   const costSplit = { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+
+  // キャッシュ TTL 損益分岐（1h vs 5m, ROI）。すべて costOf 戻り値の合算で導く。
+  const cacheStats = { create1hTokens: 0, create5mTokens: 0, write1hCost: 0, write5mCost: 0, premium1h: 0 };
+  // 1h 書き込みのうち 5m 比で割高な割合（pricing.js の乗数から導出）。
+  const PREMIUM_1H_FRACTION = 1 - CACHE_WRITE_5M_MULTIPLIER / CACHE_WRITE_1H_MULTIPLIER;
 
   const byModel = new Map(); // model -> {cost, tokens, isFallback}
   const byDay = new Map(); // date -> {costMap: Map(model->cost), tokenMap: Map(model->tokens)}
@@ -205,6 +229,18 @@ export function aggregate(records) {
     costSplit.output += c.output;
     costSplit.cacheWrite += c.cacheWrite;
     costSplit.cacheRead += c.cacheRead;
+
+    // キャッシュ書き込みを TTL（1h/5m）で振り分け。
+    const create1h = r.cacheCreate1h || 0;
+    if (r.cache1h) {
+      cacheStats.create1hTokens += create1h;
+      cacheStats.create5mTokens += Math.max(0, r.cacheCreate - create1h);
+      cacheStats.write1hCost += c.cacheWrite;
+      cacheStats.premium1h += c.cacheWrite * PREMIUM_1H_FRACTION;
+    } else {
+      cacheStats.create5mTokens += r.cacheCreate;
+      cacheStats.write5mCost += c.cacheWrite;
+    }
 
     const m = byModel.get(r.model) || {
       cost: 0, tokens: 0, isFallback: c.isFallback,
@@ -287,6 +323,12 @@ export function aggregate(records) {
     : 0;
   const outputCostRatio = totalCost ? costSplit.output / totalCost : 0;
 
+  // キャッシュ ROI: 読み込み節約額 = read実支払 × (1/READ_MULTIPLIER - 1)（無キャッシュ比の差分）。
+  // 純益 = 読み込み節約 − 書き込みコスト（負なら書き込みが回収できていない）。
+  cacheStats.readSavings = costSplit.cacheRead * (1 / CACHE_READ_MULTIPLIER - 1);
+  cacheStats.writeCost = costSplit.cacheWrite;
+  cacheStats.roiNet = cacheStats.readSavings - cacheStats.writeCost;
+
   return {
     generatedAt: new Date().toISOString(),
     totals: {
@@ -319,6 +361,7 @@ export function aggregate(records) {
     warnings: {
       fallbackModels: [...fallbackModels],
     },
+    cacheStats,
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),

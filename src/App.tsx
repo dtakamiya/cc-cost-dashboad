@@ -7,6 +7,7 @@ import { CostDrivers } from "./components/CostDrivers";
 import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
 import { OverheadAnalysis } from "./components/OverheadAnalysis";
+import { CacheEfficiency } from "./components/CacheEfficiency";
 import { PeriodSelector } from "./components/PeriodSelector";
 import { BillingBlocks } from "./components/BillingBlocks";
 import { BudgetProjection } from "./components/BudgetProjection";
@@ -140,6 +141,7 @@ export default function App() {
           <ProjectBreakdown s={displayData} />
           <SessionBreakdown s={displayData} />
           <ActivityHeatmap s={data!} />
+          <CacheEfficiency s={displayData} />
           <OverheadAnalysis s={displayData} />
           <footer className="foot">
             集計時刻 {new Date(displayData.generatedAt).toLocaleString("ja-JP")} ／ コストは価格表に基づく推定値

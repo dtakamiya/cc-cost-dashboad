@@ -5,7 +5,11 @@ import readline from "node:readline";
 
 const PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
-// .claude/projects 配下の全 .jsonl を再帰列挙。
+/**
+ * .claude/projects 配下の全 .jsonl ファイルを再帰列挙する。
+ * @param {string} dir - 検索起点ディレクトリ
+ * @returns {string[]} .jsonl ファイルの絶対パス一覧
+ */
 function findJsonlFiles(dir) {
   const out = [];
   let entries;
@@ -22,7 +26,12 @@ function findJsonlFiles(dir) {
   return out;
 }
 
-// usage を持つ assistant 行を正規化レコードに変換。対象外は null。
+/**
+ * usage を持つ assistant 行を正規化レコードに変換する。
+ * synthetic モデルや usage 欠損行は null を返す。
+ * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
+ * @returns {object|null} 正規化レコード、または対象外の場合 null
+ */
 function toRecord(obj) {
   if (!obj || obj.type !== "assistant") return null;
   const msg = obj.message || obj;
@@ -33,8 +42,9 @@ function toRecord(obj) {
 
   const cacheCreate = usage.cache_creation_input_tokens || 0;
   const cc = usage.cache_creation || {};
-  // 1h キャッシュ作成トークンが存在すれば 1h 単価扱い。
-  const cache1h = (cc.ephemeral_1h_input_tokens || 0) > 0;
+  // 1h キャッシュ作成トークン（TTL 損益分岐分析に使用）。存在すれば 1h 単価扱い。
+  const cacheCreate1h = cc.ephemeral_1h_input_tokens || 0;
+  const cache1h = cacheCreate1h > 0;
 
   return {
     ts: obj.timestamp || null,
@@ -44,12 +54,17 @@ function toRecord(obj) {
     input: usage.input_tokens || 0,
     output: usage.output_tokens || 0,
     cacheCreate,
+    cacheCreate1h,
     cacheRead: usage.cache_read_input_tokens || 0,
     cache1h,
   };
 }
 
-// 全 JSONL を読み正規化レコード配列を返す。壊れた行は黙ってスキップ。
+/**
+ * ~/.claude/projects 配下の全 JSONL を読み込み、正規化レコード配列を返す。
+ * 壊れた行や対象外行は黙ってスキップする。
+ * @returns {Promise<{ records: object[], fileCount: number }>}
+ */
 export async function loadRecords() {
   const files = findJsonlFiles(PROJECTS_DIR);
   const records = [];

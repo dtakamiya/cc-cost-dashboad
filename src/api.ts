@@ -52,6 +52,18 @@ export interface OverheadFile {
   estimatedTokens: number; // = alwaysTokens（後方互換）
 }
 
+// キャッシュ TTL 損益分岐（1h vs 5m, ROI）。すべて USD/トークンの集計値。
+export interface CacheStats {
+  create1hTokens: number; // 1h キャッシュ書き込みトークン
+  create5mTokens: number; // 5m キャッシュ書き込みトークン
+  write1hCost: number;    // 1h 書き込みコスト（USD）
+  write5mCost: number;    // 5m 書き込みコスト（USD）
+  premium1h: number;      // 1h を選んだことによる超過コスト（5m 比, USD）
+  readSavings: number;    // キャッシュ読み込みによる節約額（USD）
+  writeCost: number;      // キャッシュ書き込みコスト合計（USD）
+  roiNet: number;         // readSavings − writeCost（負なら書き込み未回収）
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -98,6 +110,7 @@ export interface Summary {
     totalEstimatedTokens: number;
   };
   warnings: { fallbackModels: string[] };
+  cacheStats?: CacheStats;
   source?: { fileCount: number };
   blocks: Block[];
   projection: Projection | null;
@@ -137,7 +150,7 @@ export interface Projection {
 // 5時間フルブロック換算の目安 ≒ threshold × 300分（0.5 → 約 $150/ブロック）。
 export const DEFAULT_BURN_THRESHOLD_PER_MIN = 0.5;
 
-// アクティブな課金ブロックが高バーンレートなら警告情報を、そうでなければ null を返す純粋関数。
+/** アクティブな課金ブロックが高バーンレートなら警告情報を、そうでなければ null を返す。 */
 export function activeBurnWarning(
   blocks: Block[],
   threshold = DEFAULT_BURN_THRESHOLD_PER_MIN
@@ -153,7 +166,7 @@ export function activeBurnWarning(
 export const BLOAT_CONTEXT_THRESHOLD = 100_000; // avgContextPerMsg がこのトークン数超で肥大化候補
 export const BLOAT_MIN_MESSAGES = 10; // 短いセッションは誤検知になるため除外
 
-// セッションがコンテキスト肥大化（/clear 推奨）かどうかを返す純粋関数。
+/** セッションがコンテキスト肥大化（/clear 推奨）かどうかを返す。 */
 export function isBloatedSession(
   s: SessionCost,
   contextThreshold = BLOAT_CONTEXT_THRESHOLD,
@@ -183,6 +196,7 @@ function ymd(d: Date): string {
   ].join("-");
 }
 
+/** Summary を指定期間でフィルタして再集計した Summary を返す。 */
 export function filterSummary(s: Summary, period: Period): Summary {
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
 
@@ -201,8 +215,10 @@ export function filterSummary(s: Summary, period: Period): Summary {
   return buildPeriodSummary(s, filteredDaily, filteredSessions);
 }
 
-// 現在期間の直前の同等期間（前期）の Summary を返す。
-// period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
+/**
+ * 現在期間の直前の同等期間（前期）の Summary を返す。
+ * period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
+ */
 export function filterPreviousPeriod(s: Summary, period: Period): Summary | null {
   if (period === 'all') return null;
 
@@ -226,8 +242,10 @@ export function filterPreviousPeriod(s: Summary, period: Period): Summary | null
   return buildPeriodSummary(s, filteredDaily, filteredSessions);
 }
 
-// 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
-// filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
+/**
+ * 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
+ * filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
+ */
 function buildPeriodSummary(
   s: Summary,
   filteredDaily: DailyCost[],
@@ -258,6 +276,8 @@ function buildPeriodSummary(
 
   const totalCost = filteredDaily.reduce((sum, d) => sum + d.total, 0);
   const totalTokens = filteredDaily.reduce((sum, d) => sum + (d.tokenTotal ?? 0), 0);
+  // cacheStats は日次に内訳が無いため、coldStartCost と同様コスト比でスケール近似する。
+  const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
 
   // topDay を filteredDaily から再計算（トークン基準）
   let topDay: { date: string; cost: number; tokens: number } | null = null;
@@ -294,9 +314,17 @@ function buildPeriodSummary(
     // 全期間コスト比でスケールして近似値を算出する
     sessionStats: {
       ...s.sessionStats,
-      coldStartCost: s.totals.cost > 0
-        ? s.sessionStats.coldStartCost * (totalCost / s.totals.cost)
-        : 0,
+      coldStartCost: s.sessionStats.coldStartCost * costRatio,
+    },
+    cacheStats: s.cacheStats && {
+      create1hTokens: s.cacheStats.create1hTokens * costRatio,
+      create5mTokens: s.cacheStats.create5mTokens * costRatio,
+      write1hCost: s.cacheStats.write1hCost * costRatio,
+      write5mCost: s.cacheStats.write5mCost * costRatio,
+      premium1h: s.cacheStats.premium1h * costRatio,
+      readSavings: s.cacheStats.readSavings * costRatio,
+      writeCost: s.cacheStats.writeCost * costRatio,
+      roiNet: s.cacheStats.roiNet * costRatio,
     },
   };
 }
