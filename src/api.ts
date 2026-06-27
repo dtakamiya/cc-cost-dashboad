@@ -25,6 +25,7 @@ export interface DailyCost {
   tokenModels: Record<string, number>;
   tokenTotal: number;
   projectTokens: Record<string, number>;
+  sessions?: number;
 }
 
 export interface SessionCost {
@@ -251,6 +252,57 @@ export function filterSummary(s: Summary, period: Period): Summary {
         ? s.sessionStats.coldStartCost * (totalCost / s.totals.cost)
         : 0,
     },
+  };
+}
+
+export interface PreviousPeriodTotals {
+  cost: number;
+  tokens: number;
+  sessions: number;
+}
+
+export interface DeltaSummary {
+  cost: number | null;
+  tokens: number | null;
+  sessions: number | null;
+}
+
+// 直前の同日数期間の集計を返す。データが不足する場合は null。
+// cutoffStr: 現在期間の開始日（YYYY-MM-DD）、periodDays: 期間日数
+export function computePreviousPeriod(
+  allDaily: DailyCost[],
+  cutoffStr: string,
+  periodDays: number
+): PreviousPeriodTotals | null {
+  const cutoffMs = Date.parse(cutoffStr + "T00:00:00Z");
+  const prevEndMs = cutoffMs - 86_400_000; // 現在期間の1日前
+  const prevStartMs = prevEndMs - (periodDays - 1) * 86_400_000;
+  const prevStartStr = new Date(prevStartMs).toISOString().slice(0, 10);
+  const prevEndStr = new Date(prevEndMs).toISOString().slice(0, 10);
+
+  const prevDays = allDaily.filter((d) => d.date >= prevStartStr && d.date <= prevEndStr);
+  if (prevDays.length === 0) return null;
+
+  const cost = prevDays.reduce((sum, d) => sum + d.total, 0);
+  const tokens = prevDays.reduce((sum, d) => sum + (d.tokenTotal ?? 0), 0);
+  const sessions = prevDays.reduce((sum, d) => sum + (d.sessions ?? 0), 0);
+  return { cost, tokens, sessions };
+}
+
+// 現在期間と前期間の差分を % で返す。前期間が null か 0 の項目は null。
+export function computeDelta(
+  current: PreviousPeriodTotals,
+  previous: PreviousPeriodTotals | null
+): DeltaSummary | null {
+  if (!previous) return null;
+  const pct = (cur: number, prev: number): number | null => {
+    if (prev === 0) return null;
+    return ((cur - prev) / prev) * 100;
+  };
+  return {
+    cost: pct(current.cost, previous.cost),
+    tokens: pct(current.tokens, previous.tokens),
+    sessions: pct(current.sessions, previous.sessions),
   };
 }
 

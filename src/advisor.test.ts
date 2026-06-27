@@ -176,4 +176,49 @@ describe("buildRecommendations", () => {
     const month = buildRecommendations(make("2026-06-01", "2026-06-30")).totalEstMonthlySavings;
     expect(week).toBeGreaterThan(month);
   });
+
+  it("500トークン超のファイルにファイル別オーバーヘッドアドバイスを出す", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 10000,
+          alwaysTokens: 800, // > 500 → 要最適化
+          fullTokens: 800,
+          estimatedTokens: 800,
+        },
+        personalSkills: [
+          { label: "heavy-skill", bytes: 5000, alwaysTokens: 600, fullTokens: 1200, estimatedTokens: 600 },
+        ],
+        totalAlwaysTokens: 1400, // < 3000 → ルール3（旧）は発火しないが個別ルールは発火
+      },
+    });
+    const r = buildRecommendations(s);
+    const fileItems = r.items.filter((i) => i.id.startsWith("overhead-file:"));
+    expect(fileItems.length).toBeGreaterThan(0);
+    fileItems.forEach((item) => {
+      expect(item.estMonthlySavings).toBeGreaterThanOrEqual(0);
+      expect(item.detail).toMatch(/トークン/);
+    });
+  });
+
+  it("200トークン以下のファイルはファイル別アドバイスを出さない", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 500,
+          alwaysTokens: 150, // <= 200 → 良好
+          fullTokens: 150,
+          estimatedTokens: 150,
+        },
+        totalAlwaysTokens: 150,
+      },
+    });
+    const r = buildRecommendations(s);
+    const fileItems = r.items.filter((i) => i.id.startsWith("overhead-file:"));
+    expect(fileItems.length).toBe(0);
+  });
 });
