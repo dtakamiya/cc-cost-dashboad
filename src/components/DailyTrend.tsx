@@ -1,7 +1,8 @@
 import { useState } from "react";
 import {
-  AreaChart,
+  ComposedChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -10,14 +11,17 @@ import {
   Legend,
 } from "recharts";
 import type { Summary } from "../api";
+import { shiftDailyDates } from "../api";
 import { toWeekly } from "../weekly";
 import { compact, modelColor } from "../format";
 
 const safeId = (m: string, i: number) => `grad-${i}-${m.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
+const PREV_KEY = "__prev_total";
+
 type View = "daily" | "weekly";
 
-export function DailyTrend({ s }: { s: Summary }) {
+export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Summary; prevOffsetDays?: number }) {
   const [view, setView] = useState<View>("daily");
   const models = s.models.map((m) => m.model);
 
@@ -27,9 +31,19 @@ export function DailyTrend({ s }: { s: Summary }) {
       ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels }))
       : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels }));
 
+  // 前期オーバーレイ（日次のみ）: 前期の日付を現在期間に合わせてずらし、日付→合計トークンの対応表を作る。
+  const showPrev = view === "daily" && prev && prevOffsetDays != null;
+  const prevTotalByDate = new Map<string, number>();
+  if (showPrev) {
+    for (const d of shiftDailyDates(prev!.daily, prevOffsetDays!)) {
+      prevTotalByDate.set(d.date, d.tokenTotal ?? 0);
+    }
+  }
+
   const data = rows.map((r) => {
     const row: Record<string, number | string> = { [xKey]: r.key };
     for (const m of models) row[m] = r.tokenModels?.[m] ?? 0;
+    if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = prevTotalByDate.get(r.key)!;
     return row;
   });
 
@@ -47,7 +61,7 @@ export function DailyTrend({ s }: { s: Summary }) {
         </div>
       </div>
       <ResponsiveContainer width="100%" height={320}>
-        <AreaChart data={data} margin={{ left: 8, right: 24, top: 8 }}>
+        <ComposedChart data={data} margin={{ left: 8, right: 24, top: 8 }}>
           <defs>
             {models.map((m, i) => (
               <linearGradient key={m} id={safeId(m, i)} x1="0" y1="0" x2="0" y2="1">
@@ -81,7 +95,19 @@ export function DailyTrend({ s }: { s: Summary }) {
               fill={`url(#${safeId(m, i)})`}
             />
           ))}
-        </AreaChart>
+          {showPrev && (
+            <Line
+              type="monotone"
+              dataKey={PREV_KEY}
+              name="前の期間（合計）"
+              stroke="var(--muted)"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              dot={false}
+              connectNulls
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </section>
   );

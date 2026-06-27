@@ -21,9 +21,9 @@ describe("computePreviousPeriod", () => {
     ];
     // periodDays=2 → 直近2日は 2026-06-03/04、前期間は 2026-06-01/02
     const prev = computePreviousPeriod(daily, "2026-06-03", 2);
-    expect(prev.cost).toBeCloseTo(30); // 10 + 20
-    expect(prev.tokens).toBeCloseTo(300); // 100 + 200
-    expect(prev.sessions).toBe(3); // 1 + 2
+    expect(prev?.cost).toBeCloseTo(30); // 10 + 20
+    expect(prev?.tokens).toBeCloseTo(300); // 100 + 200
+    expect(prev?.sessions).toBe(3); // 1 + 2
   });
 
   it("前期間データが足りない場合は null を返す", () => {
