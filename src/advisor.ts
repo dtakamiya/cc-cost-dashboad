@@ -184,6 +184,12 @@ function biggestOverhead(s: Summary): string {
   for (const p of s.overhead.globalPlugins) {
     candidates.push({ label: `プラグイン ${p.name}`, tokens: p.totalAlwaysTokens });
   }
+  for (const p of s.overhead.personalSkills) {
+    candidates.push({ label: p.label, tokens: p.alwaysTokens });
+  }
+  for (const r of s.overhead.atRefs) {
+    candidates.push({ label: r.label, tokens: r.alwaysTokens });
+  }
   const top = candidates.sort((a, b) => b.tokens - a.tokens)[0];
   return top ? `最大: ${top.label}` : "CLAUDE.md / プラグイン / スキル";
 }
