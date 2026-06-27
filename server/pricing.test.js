@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import request from "supertest";
 import {
   PRICING,
   CACHE_WRITE_5M_MULTIPLIER,
@@ -7,6 +8,30 @@ import {
   knownModels,
   costOf,
 } from "./pricing.js";
+import { app } from "./index.js";
+
+describe("GET /api/pricing", () => {
+  it("200 を返し models と multipliers キーを持つ", async () => {
+    const res = await request(app).get("/api/pricing");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("models");
+    expect(res.body).toHaveProperty("multipliers");
+  });
+
+  it("models が PRICING テーブルと一致する", async () => {
+    const res = await request(app).get("/api/pricing");
+    expect(res.body.models).toEqual(PRICING);
+  });
+
+  it("multipliers が正しいキャッシュ乗数を返す", async () => {
+    const res = await request(app).get("/api/pricing");
+    expect(res.body.multipliers).toEqual({
+      cacheWrite5m: CACHE_WRITE_5M_MULTIPLIER,
+      cacheWrite1h: CACHE_WRITE_1H_MULTIPLIER,
+      cacheRead: CACHE_READ_MULTIPLIER,
+    });
+  });
+});
 
 describe("PRICING table", () => {
   it("各エントリが正の input と output を持つ", () => {

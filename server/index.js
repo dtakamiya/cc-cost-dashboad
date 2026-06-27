@@ -59,6 +59,11 @@ if (fs.existsSync(DIST)) {
   app.get("*", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 }
 
-app.listen(PORT, () => {
-  console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
-});
+export { app };
+
+// テスト時はサーバーを起動しない
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(PORT, () => {
+    console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
+  });
+}
