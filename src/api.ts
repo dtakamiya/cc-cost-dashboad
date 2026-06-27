@@ -150,7 +150,7 @@ export interface Projection {
 // 5時間フルブロック換算の目安 ≒ threshold × 300分（0.5 → 約 $150/ブロック）。
 export const DEFAULT_BURN_THRESHOLD_PER_MIN = 0.5;
 
-// アクティブな課金ブロックが高バーンレートなら警告情報を、そうでなければ null を返す純粋関数。
+/** アクティブな課金ブロックが高バーンレートなら警告情報を、そうでなければ null を返す。 */
 export function activeBurnWarning(
   blocks: Block[],
   threshold = DEFAULT_BURN_THRESHOLD_PER_MIN
@@ -166,7 +166,7 @@ export function activeBurnWarning(
 export const BLOAT_CONTEXT_THRESHOLD = 100_000; // avgContextPerMsg がこのトークン数超で肥大化候補
 export const BLOAT_MIN_MESSAGES = 10; // 短いセッションは誤検知になるため除外
 
-// セッションがコンテキスト肥大化（/clear 推奨）かどうかを返す純粋関数。
+/** セッションがコンテキスト肥大化（/clear 推奨）かどうかを返す。 */
 export function isBloatedSession(
   s: SessionCost,
   contextThreshold = BLOAT_CONTEXT_THRESHOLD,
@@ -196,6 +196,7 @@ function ymd(d: Date): string {
   ].join("-");
 }
 
+/** Summary を指定期間でフィルタして再集計した Summary を返す。 */
 export function filterSummary(s: Summary, period: Period): Summary {
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
 
@@ -214,8 +215,10 @@ export function filterSummary(s: Summary, period: Period): Summary {
   return buildPeriodSummary(s, filteredDaily, filteredSessions);
 }
 
-// 現在期間の直前の同等期間（前期）の Summary を返す。
-// period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
+/**
+ * 現在期間の直前の同等期間（前期）の Summary を返す。
+ * period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
+ */
 export function filterPreviousPeriod(s: Summary, period: Period): Summary | null {
   if (period === 'all') return null;
 
@@ -239,8 +242,10 @@ export function filterPreviousPeriod(s: Summary, period: Period): Summary | null
   return buildPeriodSummary(s, filteredDaily, filteredSessions);
 }
 
-// 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
-// filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
+/**
+ * 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
+ * filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
+ */
 function buildPeriodSummary(
   s: Summary,
   filteredDaily: DailyCost[],

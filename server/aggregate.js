@@ -4,7 +4,11 @@ const dayOf = (ts) => (ts ? ts.slice(0, 10) : "(unknown)");
 
 const BLOCK_DURATION_MS = 5 * 60 * 60 * 1000; // 5時間
 
-// レコード配列 → 5時間課金ブロック配列（新しい順、最大20件）
+/**
+ * レコード配列から 5 時間課金ブロック配列を生成する（新しい順、最大 20 件）。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} 課金ブロック一覧
+ */
 function computeBlocks(records) {
   const withTs = records.filter((r) => r.ts).sort((a, b) => (a.ts < b.ts ? -1 : 1));
   if (!withTs.length) return [];
@@ -52,7 +56,11 @@ function computeBlocks(records) {
     });
 }
 
-// レコード配列 → 当月の着地予測
+/**
+ * レコード配列から当月の着地予測を計算する。データがなければ null を返す。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object|null} 当月コスト予測オブジェクト
+ */
 function computeProjection(records) {
   const withTs = records.filter((r) => r.ts);
   if (!withTs.length) return null;
@@ -84,10 +92,13 @@ function computeProjection(records) {
   };
 }
 
-// レコード配列 → セッション別サマリ（コスト降順, 全件）。
-// 会話履歴は毎ターン再送されるため、長い／肥大化したセッションがコスト増の主因になる。
-// avgContextPerMsg = Σ(cacheRead + input) / messages を 1ターンの実コンテキストサイズの proxy とする。
-// 上位N件への制限はクライアント側（期間フィルタ後）で行う。
+/**
+ * レコード配列からセッション別サマリを生成する（コスト降順, 全件）。
+ * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
+ * 上位 N 件への制限はクライアント側（期間フィルタ後）で行う。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} セッション別サマリ（コスト降順）
+ */
 function computeSessions(records) {
   const map = new Map(); // sessionId -> 集計
 
@@ -145,8 +156,12 @@ function computeSessions(records) {
     .sort((a, b) => b.cost - a.cost);
 }
 
-// レコード配列 → 曜日(0=日)×時間帯(0-23) のトークン使用量行列 + ピーク。
-// ローカル時刻基準（サーバー = ユーザーのマシン）。
+/**
+ * レコード配列から曜日(0=日)×時間帯(0-23) のトークン使用量行列とピークを生成する。
+ * ローカル時刻基準（サーバー = ユーザーのマシン）。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ matrix: number[][], max: number, total: number, peak: object|null }}
+ */
 function computeActivity(records) {
   const matrix = Array.from({ length: 7 }, () => new Array(24).fill(0));
   let total = 0;
@@ -175,7 +190,11 @@ function computeActivity(records) {
   return { matrix, max, total, peak };
 }
 
-// 正規化レコード配列 → ダッシュボード用サマリ。
+/**
+ * 正規化レコード配列からダッシュボード用サマリを生成する。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object} ダッシュボード表示用の集計サマリ
+ */
 export function aggregate(records) {
   let totalCost = 0;
   let totalTokens = 0;
