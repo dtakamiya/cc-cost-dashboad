@@ -164,20 +164,31 @@ export function isBloatedSession(
 
 export type Period = '7d' | '30d' | '90d' | 'all';
 
-const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
+export const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
+// 今日(00:00)から n 日前の Date を返す。期間フィルタの基準日計算に使う。
+function dayStart(daysAgo: number): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysAgo);
+  return d;
+}
+
+// Date を YYYY-MM-DD 文字列に整形する（daily.date と同形式）。
+function ymd(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
 
 export function filterSummary(s: Summary, period: Period): Summary {
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
 
   const days = PERIOD_DAYS[period];
-  const cutoff = new Date();
-  cutoff.setHours(0, 0, 0, 0);
-  cutoff.setDate(cutoff.getDate() - days + 1);
-  const cutoffStr = [
-    cutoff.getFullYear(),
-    String(cutoff.getMonth() + 1).padStart(2, "0"),
-    String(cutoff.getDate()).padStart(2, "0"),
-  ].join("-");
+  // 現在期間: 今日を含む直近 days 日（cutoff = 今日 - (days-1)）。
+  const cutoffStr = ymd(dayStart(days - 1));
 
   const filteredDaily = s.daily.filter(d => d.date >= cutoffStr);
 
@@ -187,6 +198,41 @@ export function filterSummary(s: Summary, period: Period): Summary {
     .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr)
     .slice(0, 30);
 
+  return buildPeriodSummary(s, filteredDaily, filteredSessions);
+}
+
+// 現在期間の直前の同等期間（前期）の Summary を返す。
+// period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
+export function filterPreviousPeriod(s: Summary, period: Period): Summary | null {
+  if (period === 'all') return null;
+
+  const days = PERIOD_DAYS[period];
+  // 前期: 現在期間(今日 - (days-1) 〜 今日)の直前 days 日分。
+  //   prevEnd   = 今日 - days       （現在期間の最古日の前日）
+  //   prevStart = 今日 - (2*days-1)
+  const prevStartStr = ymd(dayStart(days * 2 - 1));
+  const prevEndStr = ymd(dayStart(days));
+
+  const filteredDaily = s.daily.filter(d => d.date >= prevStartStr && d.date <= prevEndStr);
+  if (filteredDaily.length === 0) return null;
+
+  const filteredSessions = s.bySession
+    .filter((sess) => {
+      const d = sess.lastTs?.slice(0, 10) ?? "";
+      return d >= prevStartStr && d <= prevEndStr;
+    })
+    .slice(0, 30);
+
+  return buildPeriodSummary(s, filteredDaily, filteredSessions);
+}
+
+// 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
+// filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
+function buildPeriodSummary(
+  s: Summary,
+  filteredDaily: DailyCost[],
+  filteredSessions: SessionCost[]
+): Summary {
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
   const tokenByProject = new Map<string, number>();
@@ -305,6 +351,30 @@ export function computeDelta(
     tokens: pct(current.tokens, previous.tokens),
     sessions: null, // daily.sessions が populate されないため null に設定
   };
+}
+
+export type DeltaDir = 'up' | 'down' | 'flat';
+export interface Delta {
+  pct: number; // 変化率（例: 12.5 = +12.5%）
+  dir: DeltaDir; // ±0.5% 未満は flat
+}
+
+// 前期比の変化率を計算する。前期がゼロ（比較不能）の場合は null を返す。
+export function calcDelta(current: number, prev: number): Delta | null {
+  if (prev === 0) return null;
+  const pct = ((current - prev) / prev) * 100;
+  const dir: DeltaDir = Math.abs(pct) < 0.5 ? 'flat' : pct > 0 ? 'up' : 'down';
+  return { pct, dir };
+}
+
+// DailyTrend のオーバーレイ用に、daily の日付を offsetDays 日後ろへずらす（immutable）。
+// 前期データを現在期間の X 軸へ重ねるために使う。
+export function shiftDailyDates(daily: DailyCost[], offsetDays: number): DailyCost[] {
+  return daily.map((d) => {
+    const dt = new Date(`${d.date}T00:00:00`);
+    dt.setDate(dt.getDate() + offsetDays);
+    return { ...d, date: ymd(dt) };
+  });
 }
 
 export async function fetchSummary(reload = false): Promise<Summary> {

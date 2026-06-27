@@ -229,6 +229,28 @@ body {
   background: var(--accent-strong); color: #fff;
 }
 
+/* ---- compare toggle ---- */
+.compare-toggle {
+  background: var(--elevated); color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 5px 12px; font-size: 12px; font-weight: 500;
+  cursor: pointer; white-space: nowrap; transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.compare-toggle:hover:not(:disabled) { color: var(--text); }
+.compare-toggle[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border);
+}
+.compare-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- delta badge (前期比) ---- */
+.delta {
+  margin-left: 6px; font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.delta-up { color: var(--danger); }   /* コスト/トークン増加は注意色 */
+.delta-down { color: var(--success); } /* 減少は良い変化 */
+.delta-flat { color: var(--muted); }
+
 /* ---- panel head + granularity toggle (segmented control) ---- */
 .panel-head {
   display: flex; align-items: center; justify-content: space-between;

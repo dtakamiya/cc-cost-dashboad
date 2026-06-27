@@ -1,46 +1,28 @@
-import type { Summary, DeltaSummary } from "../api";
+import type { Delta, Summary } from "../api";
+import { calcDelta } from "../api";
 import { compact } from "../format";
+import { DeltaBadge } from "./DeltaBadge";
 
-function DeltaBadge({ pct, invertColor = false }: { pct: number | null | undefined; invertColor?: boolean }) {
-  if (pct == null) return null;
-  const isUp = pct > 0;
-  // コストは増加が悪（赤）、トークン/セッションも増加は赤にする（使用量なので）
-  // invertColor=true なら増加を緑にする（将来の拡張用）
-  const bad = isUp ? !invertColor : invertColor;
-  const color = bad ? "var(--red, #ef4444)" : "var(--green, #22c55e)";
-  const arrow = isUp ? "↑" : "↓";
-  return (
-    <span style={{ fontSize: 11, color, marginLeft: 6, fontWeight: 600 }}>
-      {arrow} {Math.abs(pct).toFixed(0)}%
-    </span>
-  );
-}
-
-export function SummaryCards({ s, delta }: { s: Summary; delta?: DeltaSummary | null }) {
+export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
   const t = s.totals;
-  const cards = [
+  const p = prev?.totals;
+  const cards: { icon: string; label: string; value: string; sub: string; primary?: boolean; delta?: Delta | null }[] = [
     {
       icon: "🔢",
       label: "総トークン",
       value: compact(t.tokens),
       sub: `${compact(t.messages)} メッセージ`,
       primary: true,
-      deltaPct: delta?.tokens,
+      delta: p ? calcDelta(t.tokens, p.tokens) : null,
     },
     {
+      // セッション数・メッセージ数は totals が全期間固定値のため前期比は付けない
       icon: "🗂️",
       label: "セッション数",
       value: t.sessions.toLocaleString(),
       sub: `${s.source?.fileCount ?? 0} ファイル`,
-      deltaPct: delta?.sessions,
     },
-    {
-      icon: "📅",
-      label: "期間",
-      value: t.from ?? "-",
-      sub: `〜 ${t.to ?? "-"}`,
-      deltaPct: undefined,
-    },
+    { icon: "📅", label: "期間", value: t.from ?? "-", sub: `〜 ${t.to ?? "-"}` },
   ];
   return (
     <div className="cards">
@@ -52,7 +34,7 @@ export function SummaryCards({ s, delta }: { s: Summary; delta?: DeltaSummary | 
           </div>
           <div className="card-value">
             {c.value}
-            <DeltaBadge pct={c.deltaPct} />
+            <DeltaBadge delta={c.delta ?? null} />
           </div>
           <div className="card-sub">{c.sub}</div>
         </div>

@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  activeBurnWarning,
-  computeDelta,
-  computePreviousPeriod,
-  fetchSummary,
-  filterSummary,
-  type DeltaSummary,
-  type Period,
-  type Summary,
-} from "./api";
+import { activeBurnWarning, fetchSummary, filterSummary, filterPreviousPeriod, PERIOD_DAYS, type Period, type Summary } from "./api";
 import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
@@ -28,27 +19,27 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<Period>('7d');
+  const [compareMode, setCompareMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const inFlight = useRef(false);
+
+  const canCompare = period !== 'all';
 
   const displayData = useMemo(
     () => (data ? filterSummary(data, period) : null),
     [data, period]
   );
 
-  const delta = useMemo((): DeltaSummary | null => {
-    if (!data || !displayData || period === "all") return null;
-    const cutoff = displayData.totals.from;
-    if (!cutoff) return null;
-    const periodDays: Record<Exclude<Period, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
-    const days = periodDays[period as Exclude<Period, "all">];
-    const prev = computePreviousPeriod(data.daily, cutoff, days);
-    return computeDelta(
-      { cost: displayData.totals.cost, tokens: displayData.totals.tokens, sessions: displayData.totals.sessions },
-      prev
-    );
-  }, [data, displayData, period]);
+  const prevDisplayData = useMemo(
+    () => (compareMode && data ? filterPreviousPeriod(data, period) : null),
+    [data, period, compareMode]
+  );
+
+  // 全期間では前期が定義できないため比較モードを自動 OFF にする
+  useEffect(() => {
+    if (period === 'all') setCompareMode(false);
+  }, [period]);
 
   const burn = data ? activeBurnWarning(data.blocks) : null;
 
@@ -103,7 +94,13 @@ export default function App() {
             <span className="live-dot" />
             ライブ更新 {autoRefresh ? "ON" : "OFF"}
           </button>
-          <PeriodSelector period={period} onChange={setPeriod} />
+          <PeriodSelector
+            period={period}
+            onChange={setPeriod}
+            compareMode={compareMode}
+            onCompareChange={setCompareMode}
+            canCompare={canCompare}
+          />
           <button className="reload" onClick={() => load(true)} disabled={loading}>
             {loading ? "集計中…" : "再読込"}
           </button>
@@ -127,14 +124,18 @@ export default function App() {
               {displayData.warnings.fallbackModels.join(", ")}
             </div>
           )}
-          <SummaryCards s={displayData} delta={delta} />
+          <SummaryCards s={displayData} prev={prevDisplayData ?? undefined} />
           <OptimizationAdvisor s={displayData} />
           <BudgetProjection s={data!} />
           <BillingBlocks s={data!} />
           <CostDrivers s={displayData} />
           <div className="grid2">
             <ModelBreakdown s={displayData} />
-            <DailyTrend s={displayData} />
+            <DailyTrend
+              s={displayData}
+              prev={prevDisplayData ?? undefined}
+              prevOffsetDays={canCompare ? PERIOD_DAYS[period as Exclude<Period, 'all'>] : undefined}
+            />
           </div>
           <ProjectBreakdown s={displayData} />
           <SessionBreakdown s={displayData} />
