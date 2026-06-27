@@ -90,7 +90,7 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
                 <th style={{ textAlign: "right" }}>サイズ</th>
                 <th style={{ textAlign: "right" }}>常時</th>
                 <th style={{ textAlign: "right" }}>起動時</th>
-                <th style={{ textAlign: "right" }}>月間コスト</th>
+                <th style={{ textAlign: "right" }}>月間コスト（除外時削減）</th>
                 <th style={{ textAlign: "right" }}>評価</th>
               </tr>
             </thead>
@@ -102,9 +102,11 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
                   monthlyCost={fileMonthlyCost(overhead.claudeMd.alwaysTokens)}
                 />
               )}
-              {overhead.atRefs.map((r) => (
-                <Row key={r.label} label={`@${r.label}`} file={r} monthlyCost={fileMonthlyCost(r.alwaysTokens)} />
-              ))}
+              {[...overhead.atRefs]
+                .sort((a, b) => b.alwaysTokens - a.alwaysTokens)
+                .map((r) => (
+                  <Row key={r.label} label={`@${r.label}`} file={r} monthlyCost={fileMonthlyCost(r.alwaysTokens)} />
+                ))}
               {overhead.globalPlugins.flatMap((p) =>
                 p.files.map((f) => (
                   <Row

@@ -1,12 +1,13 @@
+import { useState } from "react";
 import type { Summary, SessionCost } from "../api";
 import { isBloatedSession } from "../api";
 import { usd, compact } from "../format";
+import { buildClearCommand } from "../clearCommand";
 
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
 }
 
-// firstTs〜lastTs を「6/27 14:30」形式の短い期間表記にする。
 function periodLabel(s: SessionCost): string {
   if (!s.firstTs) return "—";
   const fmt = (iso: string) =>
@@ -19,6 +20,37 @@ function periodLabel(s: SessionCost): string {
   const start = fmt(s.firstTs);
   if (!s.lastTs || s.lastTs === s.firstTs) return start;
   return `${start} 〜 ${fmt(s.lastTs)}`;
+}
+
+function CopyButton({ cwd }: { cwd: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleClick = () => {
+    navigator.clipboard.writeText(buildClearCommand(cwd)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      style={{
+        marginLeft: 6,
+        padding: "1px 6px",
+        fontSize: 11,
+        cursor: "pointer",
+        background: copied ? "var(--green, #22c55e)" : "var(--accent, #3b82f6)",
+        color: "#fff",
+        border: "none",
+        borderRadius: 4,
+        whiteSpace: "nowrap",
+      }}
+      title={buildClearCommand(cwd)}
+    >
+      {copied ? "コピー済み ✓" : "clear コピー"}
+    </button>
+  );
 }
 
 export function SessionBreakdown({ s }: { s: Summary }) {
@@ -56,7 +88,12 @@ export function SessionBreakdown({ s }: { s: Summary }) {
               <tr key={sess.sessionId}>
                 <td>
                   {projectName(sess.cwd)}
-                  {bloated && <span className="badge">/clear 推奨</span>}
+                  {bloated && (
+                    <>
+                      <span className="badge">/clear 推奨</span>
+                      <CopyButton cwd={sess.cwd} />
+                    </>
+                  )}
                 </td>
                 <td>{usd(sess.cost)}</td>
                 <td>{sess.messages.toLocaleString("en-US")}</td>
