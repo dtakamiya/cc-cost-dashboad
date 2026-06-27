@@ -110,7 +110,7 @@ export interface Summary {
     totalEstimatedTokens: number;
   };
   warnings: { fallbackModels: string[] };
-  cacheStats: CacheStats;
+  cacheStats?: CacheStats;
   source?: { fileCount: number };
   blocks: Block[];
   projection: Projection | null;
@@ -316,7 +316,7 @@ function buildPeriodSummary(
       ...s.sessionStats,
       coldStartCost: s.sessionStats.coldStartCost * costRatio,
     },
-    cacheStats: {
+    cacheStats: s.cacheStats && {
       create1hTokens: s.cacheStats.create1hTokens * costRatio,
       create5mTokens: s.cacheStats.create5mTokens * costRatio,
       write1hCost: s.cacheStats.write1hCost * costRatio,

@@ -1,4 +1,4 @@
-import { costOf } from "./pricing.js";
+import { costOf, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER } from "./pricing.js";
 
 const dayOf = (ts) => (ts ? ts.slice(0, 10) : "(unknown)");
 
@@ -203,6 +203,8 @@ export function aggregate(records) {
 
   // キャッシュ TTL 損益分岐（1h vs 5m, ROI）。すべて costOf 戻り値の合算で導く。
   const cacheStats = { create1hTokens: 0, create5mTokens: 0, write1hCost: 0, write5mCost: 0, premium1h: 0 };
+  // 1h 書き込みのうち 5m 比で割高な割合（pricing.js の乗数から導出）。
+  const PREMIUM_1H_FRACTION = 1 - CACHE_WRITE_5M_MULTIPLIER / CACHE_WRITE_1H_MULTIPLIER;
 
   const byModel = new Map(); // model -> {cost, tokens, isFallback}
   const byDay = new Map(); // date -> {costMap: Map(model->cost), tokenMap: Map(model->tokens)}
@@ -228,14 +230,13 @@ export function aggregate(records) {
     costSplit.cacheWrite += c.cacheWrite;
     costSplit.cacheRead += c.cacheRead;
 
-    // キャッシュ書き込みを TTL（1h/5m）で振り分け。1hプレミアム = 1h書き込みの ×0.375
-    // （∵ cacheWrite = tokens×inputUSD×2、5m相当との超過 = tokens×inputUSD×0.75 = cacheWrite×0.375）。
+    // キャッシュ書き込みを TTL（1h/5m）で振り分け。
     const create1h = r.cacheCreate1h || 0;
     if (r.cache1h) {
       cacheStats.create1hTokens += create1h;
       cacheStats.create5mTokens += Math.max(0, r.cacheCreate - create1h);
       cacheStats.write1hCost += c.cacheWrite;
-      cacheStats.premium1h += c.cacheWrite * 0.375;
+      cacheStats.premium1h += c.cacheWrite * PREMIUM_1H_FRACTION;
     } else {
       cacheStats.create5mTokens += r.cacheCreate;
       cacheStats.write5mCost += c.cacheWrite;
@@ -322,9 +323,9 @@ export function aggregate(records) {
     : 0;
   const outputCostRatio = totalCost ? costSplit.output / totalCost : 0;
 
-  // キャッシュ ROI: 読み込み節約額 = read実支払 × 9（read は input の 0.1x、無キャッシュ比節約は 0.9x）。
+  // キャッシュ ROI: 読み込み節約額 = read実支払 × (1/READ_MULTIPLIER - 1)（無キャッシュ比の差分）。
   // 純益 = 読み込み節約 − 書き込みコスト（負なら書き込みが回収できていない）。
-  cacheStats.readSavings = costSplit.cacheRead * 9;
+  cacheStats.readSavings = costSplit.cacheRead * (1 / CACHE_READ_MULTIPLIER - 1);
   cacheStats.writeCost = costSplit.cacheWrite;
   cacheStats.roiNet = cacheStats.readSavings - cacheStats.writeCost;
 

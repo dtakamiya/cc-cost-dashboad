@@ -2,6 +2,10 @@
 // cache write 5m = input × 1.25, cache write 1h = input × 2, cache read = input × 0.1。
 // 価格を変えたいときはこの PRICING を編集するだけでダッシュボード全体に反映される。
 
+export const CACHE_WRITE_5M_MULTIPLIER = 1.25; // cacheWrite 5m = input × 1.25
+export const CACHE_WRITE_1H_MULTIPLIER = 2;    // cacheWrite 1h = input × 2
+export const CACHE_READ_MULTIPLIER = 0.1;       // cacheRead = input × 0.1
+
 export const PRICING = {
   "claude-opus-4-8": { input: 5, output: 25 },
   "claude-opus-4-7": { input: 5, output: 25 },
