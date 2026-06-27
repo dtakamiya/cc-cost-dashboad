@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   AreaChart,
   Area,
@@ -9,22 +10,42 @@ import {
   Legend,
 } from "recharts";
 import type { Summary } from "../api";
+import { toWeekly } from "../weekly";
 import { compact, modelColor } from "../format";
 
 const safeId = (m: string, i: number) => `grad-${i}-${m.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
+type View = "daily" | "weekly";
+
 export function DailyTrend({ s }: { s: Summary }) {
+  const [view, setView] = useState<View>("daily");
   const models = s.models.map((m) => m.model);
 
-  const data = s.daily.map((d) => {
-    const row: Record<string, number | string> = { date: d.date };
-    for (const m of models) row[m] = d.tokenModels?.[m] ?? 0;
+  const xKey = view === "weekly" ? "weekStart" : "date";
+  const rows =
+    view === "weekly"
+      ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels }))
+      : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels }));
+
+  const data = rows.map((r) => {
+    const row: Record<string, number | string> = { [xKey]: r.key };
+    for (const m of models) row[m] = r.tokenModels?.[m] ?? 0;
     return row;
   });
 
   return (
     <section className="panel">
-      <h2>日別トークン推移</h2>
+      <div className="panel-head">
+        <h2>トークン推移</h2>
+        <div className="seg" role="group" aria-label="集計粒度">
+          <button type="button" aria-pressed={view === "daily"} className={view === "daily" ? "active" : ""} onClick={() => setView("daily")}>
+            日次
+          </button>
+          <button type="button" aria-pressed={view === "weekly"} className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
+            週次
+          </button>
+        </div>
+      </div>
       <ResponsiveContainer width="100%" height={320}>
         <AreaChart data={data} margin={{ left: 8, right: 24, top: 8 }}>
           <defs>
@@ -36,7 +57,7 @@ export function DailyTrend({ s }: { s: Summary }) {
             ))}
           </defs>
           <CartesianGrid vertical={false} stroke="var(--grid)" />
-          <XAxis dataKey="date" stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
+          <XAxis dataKey={xKey} stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
           <YAxis tickFormatter={(v) => compact(v)} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
           <Tooltip
             formatter={(v: number) => compact(v)}
