@@ -10,6 +10,7 @@ import { PeriodSelector } from "./components/PeriodSelector";
 import { BillingBlocks } from "./components/BillingBlocks";
 import { BudgetProjection } from "./components/BudgetProjection";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
+import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 
 export default function App() {
@@ -112,6 +113,7 @@ export default function App() {
             <DailyTrend s={displayData} />
           </div>
           <ProjectBreakdown s={displayData} />
+          <SessionBreakdown s={displayData} />
           <ActivityHeatmap s={data!} />
           <OverheadAnalysis s={displayData} />
           <footer className="foot">

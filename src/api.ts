@@ -14,6 +14,22 @@ export interface DailyCost {
   projectTokens: Record<string, number>;
 }
 
+export interface SessionCost {
+  sessionId: string;
+  cwd: string;
+  cost: number;
+  tokens: number;
+  messages: number;
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+  firstTs: string | null;
+  lastTs: string | null;
+  avgContextPerMsg: number; // Σ(cacheRead + input) / messages = 1ターンの実コンテキストサイズ proxy
+  topModel: { model: string; cost: number } | null;
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -58,6 +74,7 @@ export interface Summary {
   blocks: Block[];
   projection: Projection | null;
   activity: Activity;
+  bySession: SessionCost[];
 }
 
 export interface Activity {
@@ -102,6 +119,21 @@ export function activeBurnWarning(
   return { perMin: active.burnRatePerMin, remainMin: active.remainMin };
 }
 
+// コンテキスト肥大化の判定閾値（初期値、実データを見て調整する）。
+// 1ターンの実コンテキストが大きく、かつメッセージ数が一定以上のセッションは
+// /clear せず会話を伸ばし続けたことでコスト増の主因になっている可能性が高い。
+export const BLOAT_CONTEXT_THRESHOLD = 100_000; // avgContextPerMsg がこのトークン数超で肥大化候補
+export const BLOAT_MIN_MESSAGES = 10; // 短いセッションは誤検知になるため除外
+
+// セッションがコンテキスト肥大化（/clear 推奨）かどうかを返す純粋関数。
+export function isBloatedSession(
+  s: SessionCost,
+  contextThreshold = BLOAT_CONTEXT_THRESHOLD,
+  minMessages = BLOAT_MIN_MESSAGES
+): boolean {
+  return s.messages >= minMessages && s.avgContextPerMsg > contextThreshold;
+}
+
 export type Period = '7d' | '30d' | '90d' | 'all';
 
 const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
@@ -120,6 +152,11 @@ export function filterSummary(s: Summary, period: Period): Summary {
   ].join("-");
 
   const filteredDaily = s.daily.filter(d => d.date >= cutoffStr);
+
+  // セッションは単位として扱い、最終利用日(lastTs)が cutoff 以降のものを残す。
+  const filteredSessions = s.bySession.filter(
+    (sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr
+  );
 
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
@@ -164,6 +201,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
     daily: filteredDaily,
     models: filteredModels,
     projects: filteredProjects,
+    bySession: filteredSessions,
     totals: {
       ...s.totals,
       cost: totalCost,
