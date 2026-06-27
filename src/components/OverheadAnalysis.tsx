@@ -1,11 +1,36 @@
 import type { Summary, OverheadFile } from "../api";
+import { OVERHEAD_FILE_WARN_TOKENS, OVERHEAD_FILE_CAUTION_TOKENS } from "../advisor";
 import { compact, usd } from "../format";
 
 const KB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 const tok = (n: number) => `~${compact(n)} tok`;
 
-function Row({ label, file }: { label: string; file: OverheadFile }) {
+type EfficiencyLevel = "good" | "caution" | "warn";
+
+function efficiencyLevel(alwaysTokens: number): EfficiencyLevel {
+  if (alwaysTokens > OVERHEAD_FILE_WARN_TOKENS) return "warn";
+  if (alwaysTokens > OVERHEAD_FILE_CAUTION_TOKENS) return "caution";
+  return "good";
+}
+
+const BADGE: Record<EfficiencyLevel, { label: string; color: string }> = {
+  good:    { label: "✓ 良好",      color: "var(--green, #22c55e)" },
+  caution: { label: "△ 要注意",    color: "var(--yellow, #eab308)" },
+  warn:    { label: "✗ 最適化推奨", color: "var(--red, #ef4444)" },
+};
+
+function Row({
+  label,
+  file,
+  monthlyCost,
+}: {
+  label: string;
+  file: OverheadFile;
+  monthlyCost: number;
+}) {
   const invokeDelta = file.fullTokens - file.alwaysTokens;
+  const level = efficiencyLevel(file.alwaysTokens);
+  const badge = BADGE[level];
   return (
     <tr>
       <td>{label}</td>
@@ -13,6 +38,12 @@ function Row({ label, file }: { label: string; file: OverheadFile }) {
       <td style={{ textAlign: "right" }}>{tok(file.alwaysTokens)}</td>
       <td style={{ textAlign: "right", color: invokeDelta > 0 ? "var(--muted)" : "var(--subtle)" }}>
         {invokeDelta > 0 ? `+${tok(invokeDelta)}` : "—"}
+      </td>
+      <td style={{ textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
+        {monthlyCost > 0.001 ? usd(monthlyCost) + "/月" : "—"}
+      </td>
+      <td style={{ textAlign: "right", fontSize: 11, color: badge.color, whiteSpace: "nowrap" }}>
+        {badge.label}
       </td>
     </tr>
   );
@@ -23,6 +54,20 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
   const coldStartPct = totals.cost ? sessionStats.coldStartCost / totals.cost : 0;
   // 実測 cold start − ファイルで説明できる baseline = 未説明の固定コンテキスト（MCP/組込ツール/会話引き継ぎ等）
   const unexplained = Math.max(0, sessionStats.avgColdStartTokens - overhead.totalAlwaysTokens);
+
+  // ファイル別月間コスト換算: alwaysTokens × cacheCreateRate × sessions × (30/periodDays)
+  const cacheCreateRate = s.tokenSplit.cacheCreate > 0
+    ? s.costSplit.cacheWrite / s.tokenSplit.cacheCreate
+    : 0;
+  const periodDays = (() => {
+    const from = s.totals.from ? Date.parse(s.totals.from + "T00:00:00Z") : NaN;
+    const to = s.totals.to ? Date.parse(s.totals.to + "T00:00:00Z") : NaN;
+    if (Number.isNaN(from) || Number.isNaN(to)) return 1;
+    return Math.max(1, Math.round((to - from) / 86_400_000) + 1);
+  })();
+  const monthlyFactor = 30 / periodDays;
+  const fileMonthlyCost = (alwaysTokens: number) =>
+    alwaysTokens * cacheCreateRate * s.totals.sessions * monthlyFactor;
 
   return (
     <section className="panel">
@@ -45,20 +90,38 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
                 <th style={{ textAlign: "right" }}>サイズ</th>
                 <th style={{ textAlign: "right" }}>常時</th>
                 <th style={{ textAlign: "right" }}>起動時</th>
+                <th style={{ textAlign: "right" }}>月間コスト</th>
+                <th style={{ textAlign: "right" }}>評価</th>
               </tr>
             </thead>
             <tbody>
-              {overhead.claudeMd && <Row label={overhead.claudeMd.label} file={overhead.claudeMd} />}
+              {overhead.claudeMd && (
+                <Row
+                  label={overhead.claudeMd.label}
+                  file={overhead.claudeMd}
+                  monthlyCost={fileMonthlyCost(overhead.claudeMd.alwaysTokens)}
+                />
+              )}
               {overhead.atRefs.map((r) => (
-                <Row key={r.label} label={`@${r.label}`} file={r} />
+                <Row key={r.label} label={`@${r.label}`} file={r} monthlyCost={fileMonthlyCost(r.alwaysTokens)} />
               ))}
               {overhead.globalPlugins.flatMap((p) =>
                 p.files.map((f) => (
-                  <Row key={`${p.name}/${f.label}`} label={`[plugin] ${p.name} / ${f.label}`} file={f} />
+                  <Row
+                    key={`${p.name}/${f.label}`}
+                    label={`[plugin] ${p.name} / ${f.label}`}
+                    file={f}
+                    monthlyCost={fileMonthlyCost(f.alwaysTokens)}
+                  />
                 ))
               )}
               {overhead.personalSkills.map((sk) => (
-                <Row key={`personal/${sk.label}`} label={`[skill] ${sk.label}`} file={sk} />
+                <Row
+                  key={`personal/${sk.label}`}
+                  label={`[skill] ${sk.label}`}
+                  file={sk}
+                  monthlyCost={fileMonthlyCost(sk.alwaysTokens)}
+                />
               ))}
             </tbody>
             <tfoot>
@@ -67,6 +130,8 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
                 <td />
                 <td style={{ textAlign: "right" }}>{tok(overhead.totalAlwaysTokens)}</td>
                 <td style={{ textAlign: "right", color: "var(--muted)" }}>+{tok(overhead.totalInvokeTokens)}</td>
+                <td />
+                <td />
               </tr>
             </tfoot>
           </table>

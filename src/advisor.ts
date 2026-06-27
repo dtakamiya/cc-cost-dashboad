@@ -27,6 +27,8 @@ export interface AdvisorResult {
 // --- ルール閾値（実データを見て調整可能） ---
 export const OVERHEAD_TOKEN_THRESHOLD = 3000; // 常時注入がこのトークン数超で削減提案
 export const OVERHEAD_TARGET_TOKENS = 1500; // 削減目標（差分が再課金される無駄分の近似）
+export const OVERHEAD_FILE_WARN_TOKENS = 500; // ファイル個別: この値超で削減推奨
+export const OVERHEAD_FILE_CAUTION_TOKENS = 200; // ファイル個別: この値超で要注意
 export const OUTPUT_COST_RATIO_THRESHOLD = 0.4; // output コスト比率がこの値超で警告
 export const CACHE_READ_RATIO_THRESHOLD = 0.5; // cache read 比率がこの値未満で警告
 export const MODEL_SKEW_THRESHOLD = 0.6; // 最大モデルのトークン占有率がこの値超で偏り
@@ -134,6 +136,44 @@ export function buildRecommendations(s: Summary): AdvisorResult {
       action: "関連作業は同一セッションで継続する。ただし肥大化（上記）とのトレードオフに注意。",
       estMonthlySavings: 0,
     });
+  }
+
+  // 3b. ファイル別常時注入オーバーヘッド（individual file > OVERHEAD_FILE_WARN_TOKENS）
+  {
+    const cacheCreateRate = safeRate(s.costSplit.cacheWrite, s.tokenSplit.cacheCreate);
+    const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 0;
+    const candidates: Array<{ label: string; alwaysTokens: number }> = [];
+    if (s.overhead.claudeMd) {
+      candidates.push({ label: s.overhead.claudeMd.label, alwaysTokens: s.overhead.claudeMd.alwaysTokens });
+    }
+    for (const r of s.overhead.atRefs) {
+      candidates.push({ label: `@${r.label}`, alwaysTokens: r.alwaysTokens });
+    }
+    for (const p of s.overhead.globalPlugins) {
+      for (const f of p.files) {
+        candidates.push({ label: `[plugin] ${p.name}/${f.label}`, alwaysTokens: f.alwaysTokens });
+      }
+    }
+    for (const sk of s.overhead.personalSkills) {
+      candidates.push({ label: `[skill] ${sk.label}`, alwaysTokens: sk.alwaysTokens });
+    }
+    for (const c of candidates) {
+      if (c.alwaysTokens <= OVERHEAD_FILE_WARN_TOKENS) continue;
+      // 削減目標: OVERHEAD_FILE_CAUTION_TOKENS まで圧縮した場合の節約
+      const reducibleTokens = c.alwaysTokens - OVERHEAD_FILE_CAUTION_TOKENS;
+      const savings = reducibleTokens * cacheCreateRate * sessionFactor * monthlyFactor;
+      const actionText = c.label.startsWith("[skill]") || c.label.startsWith("[plugin]")
+        ? `${c.label} の name/description を削減し、詳細は本文（起動時のみ読まれる）に移動する。`
+        : `${c.label} のコンテンツを精査し、重要な情報は本文に、メタデータは簡潔にする。`;
+      items.push({
+        id: `overhead-file:${c.label}`,
+        priority: "medium",
+        title: `${c.label} が常時 ${c.alwaysTokens.toLocaleString()} トークンを消費`,
+        detail: `毎セッション冒頭で ${c.alwaysTokens.toLocaleString()} トークンが注入される（推奨 ≤ ${OVERHEAD_FILE_CAUTION_TOKENS} トークン）。`,
+        action: actionText,
+        estMonthlySavings: Math.max(0, savings),
+      });
+    }
   }
 
   // 6. 価格未登録モデル（low, 情報）

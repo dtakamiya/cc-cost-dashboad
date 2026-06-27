@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, type Period, type Summary } from "./api";
+import {
+  activeBurnWarning,
+  computeDelta,
+  computePreviousPeriod,
+  fetchSummary,
+  filterSummary,
+  type DeltaSummary,
+  type Period,
+  type Summary,
+} from "./api";
 import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
@@ -27,6 +36,19 @@ export default function App() {
     () => (data ? filterSummary(data, period) : null),
     [data, period]
   );
+
+  const delta = useMemo((): DeltaSummary | null => {
+    if (!data || !displayData || period === "all") return null;
+    const cutoff = displayData.totals.from;
+    if (!cutoff) return null;
+    const periodDays: Record<Exclude<Period, "all">, number> = { "7d": 7, "30d": 30, "90d": 90 };
+    const days = periodDays[period as Exclude<Period, "all">];
+    const prev = computePreviousPeriod(data.daily, cutoff, days);
+    return computeDelta(
+      { cost: displayData.totals.cost, tokens: displayData.totals.tokens, sessions: displayData.totals.sessions },
+      prev
+    );
+  }, [data, displayData, period]);
 
   const burn = data ? activeBurnWarning(data.blocks) : null;
 
@@ -105,7 +127,7 @@ export default function App() {
               {displayData.warnings.fallbackModels.join(", ")}
             </div>
           )}
-          <SummaryCards s={displayData} />
+          <SummaryCards s={displayData} delta={delta} />
           <OptimizationAdvisor s={displayData} />
           <BudgetProjection s={data!} />
           <BillingBlocks s={data!} />
