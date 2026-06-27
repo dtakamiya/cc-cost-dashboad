@@ -206,9 +206,16 @@ export function aggregate(records) {
     costSplit.cacheWrite += c.cacheWrite;
     costSplit.cacheRead += c.cacheRead;
 
-    const m = byModel.get(r.model) || { cost: 0, tokens: 0, isFallback: c.isFallback };
+    const m = byModel.get(r.model) || {
+      cost: 0, tokens: 0, isFallback: c.isFallback,
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+    };
     m.cost += c.total;
     m.tokens += tokens;
+    m.tokenSplit.input += r.input;
+    m.tokenSplit.output += r.output;
+    m.tokenSplit.cacheCreate += r.cacheCreate;
+    m.tokenSplit.cacheRead += r.cacheRead;
     byModel.set(r.model, m);
     if (c.isFallback) fallbackModels.add(r.model);
 
