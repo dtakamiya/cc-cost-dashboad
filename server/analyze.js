@@ -29,7 +29,7 @@ function parseAtRefs(content, baseDir) {
 // YAML frontmatter から単一フィールドを抽出。
 // インライン（key: value）と block scalar（key: > / |）の複数行に素朴対応。
 function parseYamlField(fm, key) {
-  const lines = fm.split("\n");
+  const lines = fm.replace(/\r/g, "").split("\n");
   let capturing = false;
   const buf = [];
   for (const line of lines) {
@@ -52,7 +52,7 @@ function parseYamlField(fm, key) {
 
 // SKILL.md の frontmatter から name / description を抽出。
 export function parseSkillFrontmatter(content) {
-  const m = content.match(/^---\n([\s\S]*?)\n---/);
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
   if (!m) return { name: "", description: "" };
   const fm = m[1];
   return {
@@ -243,9 +243,9 @@ export function analyzeOverhead() {
     if (p) {
       result.globalPlugins.push(p);
       always += p.totalAlwaysTokens;
-      // プラグイン CLAUDE.md は常時注入（always）なので、起動時上限はスキルの full のみ
+      // プラグイン CLAUDE.md は常時注入（always）なので、起動時上限はスキルの delta（full - always）のみ
       for (const f of p.files) {
-        if (f.label.startsWith("skills/")) invoke += f.fullTokens;
+        if (f.label.startsWith("skills/")) invoke += Math.max(0, f.fullTokens - f.alwaysTokens);
       }
     }
   }
@@ -254,7 +254,7 @@ export function analyzeOverhead() {
   result.personalSkills = measurePersonalSkills();
   for (const s of result.personalSkills) {
     always += s.alwaysTokens;
-    invoke += s.fullTokens;
+    invoke += Math.max(0, s.fullTokens - s.alwaysTokens);
   }
 
   // プロジェクトスコープのプラグイン（参考情報）

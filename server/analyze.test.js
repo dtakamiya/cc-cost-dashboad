@@ -22,6 +22,14 @@ describe("parseSkillFrontmatter", () => {
   it("frontmatter が無ければ空", () => {
     expect(parseSkillFrontmatter("no frontmatter here")).toEqual({ name: "", description: "" });
   });
+
+  it("CRLF 改行の frontmatter を正しく解析", () => {
+    const c = "---\r\nname: crlf-skill\r\ndescription: Windows line endings.\r\n---\r\nbody";
+    expect(parseSkillFrontmatter(c)).toEqual({
+      name: "crlf-skill",
+      description: "Windows line endings.",
+    });
+  });
 });
 
 describe("measureSkillContent (progressive disclosure)", () => {
