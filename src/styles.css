@@ -126,6 +126,9 @@ body {
   background: var(--success); animation: live-pulse 1.6s ease-in-out infinite;
 }
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  .topbar button.live-toggle.live-on .live-dot { animation: none; }
+}
 
 /* ---- summary cards ---- */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); margin-bottom: var(--sp-5); }

@@ -33,10 +33,11 @@ export default function App() {
     if (inFlight.current) return;
     inFlight.current = true;
     if (!silent) setLoading(true);
-    setError(null);
     try {
-      setData(await fetchSummary(reload));
+      const summary = await fetchSummary(reload);
+      setData(summary);
       setLastUpdated(Date.now());
+      setError(null);
     } catch (e) {
       if (!silent) setError(String(e));
     } finally {
