@@ -84,6 +84,67 @@ function computeProjection(records) {
   };
 }
 
+// レコード配列 → セッション別サマリ（コスト降順, 全件）。
+// 会話履歴は毎ターン再送されるため、長い／肥大化したセッションがコスト増の主因になる。
+// avgContextPerMsg = Σ(cacheRead + input) / messages を 1ターンの実コンテキストサイズの proxy とする。
+// 上位N件への制限はクライアント側（期間フィルタ後）で行う。
+function computeSessions(records) {
+  const map = new Map(); // sessionId -> 集計
+
+  for (const r of records) {
+    if (r.sessionId === "(unknown)") continue; // 集約すると無意味なため除外
+    const c = costOf(r.model, r);
+    const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+
+    let s = map.get(r.sessionId);
+    if (!s) {
+      s = {
+        sessionId: r.sessionId,
+        cwd: r.cwd,
+        cost: 0,
+        tokens: 0,
+        messages: 0,
+        input: 0,
+        output: 0,
+        cacheCreate: 0,
+        cacheRead: 0,
+        firstTs: r.ts || null, // undefined にならないよう null で初期化
+        lastTs: r.ts || null,
+        models: {}, // model -> cost（topModel 算出用）
+      };
+      map.set(r.sessionId, s);
+    }
+
+    s.cost += c.total;
+    s.tokens += tokens;
+    s.messages += 1;
+    s.input += r.input;
+    s.output += r.output;
+    s.cacheCreate += r.cacheCreate;
+    s.cacheRead += r.cacheRead;
+    s.models[r.model] = (s.models[r.model] || 0) + c.total;
+    if (r.ts) {
+      if (!s.firstTs || r.ts < s.firstTs) s.firstTs = r.ts;
+      if (!s.lastTs || r.ts > s.lastTs) {
+        s.lastTs = r.ts;
+        s.cwd = r.cwd; // lastTs が更新されるときだけ cwd を更新（resume で移動した場合の現在地）
+      }
+    }
+  }
+
+  return [...map.values()]
+    .map((s) => {
+      const topEntry = Object.entries(s.models).sort((a, z) => z[1] - a[1])[0];
+      const { models, ...rest } = s;
+      return {
+        ...rest,
+        avgContextPerMsg: s.messages > 0 ? (s.cacheRead + s.input) / s.messages : 0,
+        topModel: topEntry ? { model: topEntry[0], cost: topEntry[1] } : null,
+      };
+    })
+    .sort((a, b) => b.cost - a.cost);
+}
+
 // レコード配列 → 曜日(0=日)×時間帯(0-23) のトークン使用量行列 + ピーク。
 // ローカル時刻基準（サーバー = ユーザーのマシン）。
 function computeActivity(records) {
@@ -254,5 +315,6 @@ export function aggregate(records) {
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
+    bySession: computeSessions(records),
   };
 }
