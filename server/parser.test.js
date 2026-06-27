@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRecords } from "./parser.js";
 
 // JSONL 1行分の最小有効レコード
@@ -57,11 +57,14 @@ describe("loadRecords - CLAUDE_LOGS_DIR", () => {
   });
 
   it("CLAUDE_LOGS_DIR が空文字列の場合はデフォルト（~/.claude/projects）にフォールバックする", async () => {
+    const expectedDir = path.join(os.homedir(), ".claude", "projects");
+    const spy = vi.spyOn(fs, "readdirSync");
     process.env.CLAUDE_LOGS_DIR = "";
-    // デフォルトのパスが読まれることを確認（例外にならず結果が返る）
-    const result = await loadRecords();
-    expect(result).toHaveProperty("records");
-    expect(result).toHaveProperty("fileCount");
-    expect(Array.isArray(result.records)).toBe(true);
+    try {
+      await loadRecords();
+      expect(spy).toHaveBeenCalledWith(expectedDir, { withFileTypes: true });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
