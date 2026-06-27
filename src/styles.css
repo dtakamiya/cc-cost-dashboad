@@ -179,6 +179,20 @@ body {
 .driver.tone-good .driver-hint { color: var(--success); }
 .driver.tone-warn .driver-hint { color: var(--warn); }
 
+/* ---- optimization advisor ---- */
+.advisor-headline {
+  font-size: 14px; color: var(--text); margin-bottom: var(--sp-4);
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+}
+.advisor-headline strong { font-size: 20px; color: var(--success); font-variant-numeric: tabular-nums; }
+.advisor-note { font-size: 12px; color: var(--subtle); }
+.driver-title { display: flex; align-items: center; gap: var(--sp-2); }
+.advisor-saving { color: var(--success); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.driver-action { font-size: 12px; color: var(--text); line-height: 1.6; margin-top: var(--sp-2); }
+.badge.prio-high { background: var(--warn-soft); color: var(--warn); margin-left: 0; }
+.badge.prio-medium { background: var(--warn-soft); color: var(--warn); margin-left: 0; }
+.badge.prio-low { background: rgba(255,255,255,0.06); color: var(--muted); margin-left: 0; }
+
 /* ---- 2-col layout ---- */
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); align-items: start; }
 

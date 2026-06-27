@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { activeBurnWarning, fetchSummary, filterSummary, type Period, type Summary } from "./api";
 import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
+import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
 import { CostDrivers } from "./components/CostDrivers";
 import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
@@ -105,6 +106,7 @@ export default function App() {
             </div>
           )}
           <SummaryCards s={displayData} />
+          <OptimizationAdvisor s={displayData} />
           <BudgetProjection s={data!} />
           <BillingBlocks s={data!} />
           <CostDrivers s={displayData} />
