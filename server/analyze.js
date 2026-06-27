@@ -26,11 +26,72 @@ function parseAtRefs(content, baseDir) {
   return refs;
 }
 
+// YAML frontmatter から単一フィールドを抽出。
+// インライン（key: value）と block scalar（key: > / |）の複数行に素朴対応。
+function parseYamlField(fm, key) {
+  const lines = fm.replace(/\r/g, "").split("\n");
+  let capturing = false;
+  const buf = [];
+  for (const line of lines) {
+    if (!capturing) {
+      const m = line.match(new RegExp(`^${key}:[ \\t]*(.*)$`));
+      if (m) {
+        capturing = true;
+        const v = m[1].trim();
+        // block scalar 指示子（>, |）は本文ではないので除外
+        if (v && v !== ">" && v !== "|") buf.push(v);
+      }
+    } else {
+      // 次のトップレベルキー（行頭が非空白）に達したら終了
+      if (/^\S/.test(line)) break;
+      buf.push(line.trim());
+    }
+  }
+  return buf.join(" ").trim();
+}
+
+// SKILL.md の frontmatter から name / description を抽出。
+export function parseSkillFrontmatter(content) {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!m) return { name: "", description: "" };
+  const fm = m[1];
+  return {
+    name: parseYamlField(fm, "name"),
+    description: parseYamlField(fm, "description"),
+  };
+}
+
+// スキル本文を計測。
+// alwaysTokens = name + description（ベースのシステムプロンプトへ常時注入される近似）
+// fullTokens   = 全文（そのスキルを起動した時にのみ読まれる）
+export function measureSkillContent(content, label, filePath = null) {
+  const b = bytes(content);
+  const { name, description } = parseSkillFrontmatter(content);
+  const alwaysBytes = bytes(`${name}: ${description}`);
+  const alwaysTokens = toTokens(alwaysBytes);
+  return {
+    label,
+    path: filePath,
+    bytes: b,
+    alwaysTokens,
+    fullTokens: toTokens(b),
+    estimatedTokens: alwaysTokens, // baseline と整合（後方互換フィールド）
+  };
+}
+
+// 常時全文注入されるファイル（CLAUDE.md / @ref / プラグイン CLAUDE.md）。always === full。
 function measureFile(filePath, label) {
   const content = readSafe(filePath);
   if (!content) return null;
   const b = bytes(content);
-  return { label, path: filePath, bytes: b, estimatedTokens: toTokens(b) };
+  const t = toTokens(b);
+  return { label, path: filePath, bytes: b, alwaysTokens: t, fullTokens: t, estimatedTokens: t };
+}
+
+function measureSkill(filePath, label) {
+  const content = readSafe(filePath);
+  if (!content) return null;
+  return measureSkillContent(content, label, filePath);
 }
 
 // ~/.claude/plugins/cache 内で有効プラグインの CLAUDE.md / SKILL.md を計測。
@@ -47,20 +108,53 @@ function measurePlugin(pluginKey) {
 
   const files = [];
   let totalBytes = 0;
+  let totalAlwaysTokens = 0;
+  let totalFullTokens = 0;
 
   const main = measureFile(path.join(versionDir, "CLAUDE.md"), "CLAUDE.md");
-  if (main) { files.push(main); totalBytes += main.bytes; }
+  if (main) {
+    files.push(main);
+    totalBytes += main.bytes;
+    totalAlwaysTokens += main.alwaysTokens;
+    totalFullTokens += main.fullTokens;
+  }
 
   const skillsDir = path.join(versionDir, "skills");
   try {
     for (const s of fs.readdirSync(skillsDir, { withFileTypes: true })) {
       if (!s.isDirectory()) continue;
-      const sm = measureFile(path.join(skillsDir, s.name, "SKILL.md"), `skills/${s.name}`);
-      if (sm) { files.push(sm); totalBytes += sm.bytes; }
+      const sm = measureSkill(path.join(skillsDir, s.name, "SKILL.md"), `skills/${s.name}`);
+      if (sm) {
+        files.push(sm);
+        totalBytes += sm.bytes;
+        totalAlwaysTokens += sm.alwaysTokens;
+        totalFullTokens += sm.fullTokens;
+      }
     }
   } catch {}
 
-  return { name: pluginKey, files, totalBytes, totalEstimatedTokens: toTokens(totalBytes) };
+  return {
+    name: pluginKey,
+    files,
+    totalBytes,
+    totalAlwaysTokens,
+    totalFullTokens,
+    totalEstimatedTokens: totalAlwaysTokens, // 後方互換（baseline）
+  };
+}
+
+// 個人スキル（~/.claude/skills/*/SKILL.md、プラグイン外）を計測。
+function measurePersonalSkills() {
+  const dir = path.join(CLAUDE_DIR, "skills");
+  const out = [];
+  try {
+    for (const s of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!s.isDirectory()) continue;
+      const m = measureSkill(path.join(dir, s.name, "SKILL.md"), s.name);
+      if (m) out.push(m);
+    }
+  } catch {}
+  return out;
 }
 
 // installed_plugins.json からプロジェクトスコープのプラグイン一覧取得。
@@ -84,27 +178,56 @@ function projectScopedPlugins() {
   return result;
 }
 
+// 静的に定義された MCP サーバ名を列挙。
+// ~/.claude.json のトップレベル mcpServers と ~/.claude/settings.json の mcpServers をマージ。
+// ツール定義のトークンは実行時依存のため静的計測しない。差分の主因候補として名前のみ提示。
+// （アプリ管理のコネクタ由来 MCP はファイルに現れないため列挙対象外）
+function listMcpServers() {
+  const names = new Set();
+  for (const p of [
+    path.join(os.homedir(), ".claude.json"),
+    path.join(CLAUDE_DIR, "settings.json"),
+  ]) {
+    const content = readSafe(p);
+    if (!content) continue;
+    try {
+      const data = JSON.parse(content);
+      for (const k of Object.keys(data.mcpServers || {})) names.add(k);
+    } catch {}
+  }
+  return [...names];
+}
+
 export function analyzeOverhead() {
   const result = {
     claudeMd: null,
     atRefs: [],
     globalPlugins: [],
+    personalSkills: [],
     projectPlugins: [],
-    totalEstimatedTokens: 0,
+    mcpServers: [],
+    totalAlwaysTokens: 0,
+    totalInvokeTokens: 0,
+    totalEstimatedTokens: 0, // = totalAlwaysTokens（baseline、後方互換）
   };
 
-  // CLAUDE.md 本体
+  // baseline（常時注入）と起動時上限（全スキル fullTokens 合計）を別集計
+  let always = 0;
+  let invoke = 0;
+
+  // CLAUDE.md 本体（常時全文）
   const claudeMdContent = readSafe(path.join(CLAUDE_DIR, "CLAUDE.md"));
   if (claudeMdContent) {
     const b = bytes(claudeMdContent);
-    result.claudeMd = { label: "CLAUDE.md", bytes: b, estimatedTokens: toTokens(b) };
-    result.totalEstimatedTokens += toTokens(b);
+    const t = toTokens(b);
+    result.claudeMd = { label: "CLAUDE.md", bytes: b, alwaysTokens: t, fullTokens: t, estimatedTokens: t };
+    always += t;
 
     for (const ref of parseAtRefs(claudeMdContent, CLAUDE_DIR)) {
       const m = measureFile(ref.fullPath, ref.name);
       if (m) {
         result.atRefs.push(m);
-        result.totalEstimatedTokens += m.estimatedTokens;
+        always += m.alwaysTokens;
       }
     }
   }
@@ -119,12 +242,30 @@ export function analyzeOverhead() {
     const p = measurePlugin(key);
     if (p) {
       result.globalPlugins.push(p);
-      result.totalEstimatedTokens += p.totalEstimatedTokens;
+      always += p.totalAlwaysTokens;
+      // プラグイン CLAUDE.md は常時注入（always）なので、起動時上限はスキルの delta（full - always）のみ
+      for (const f of p.files) {
+        if (f.label.startsWith("skills/")) invoke += Math.max(0, f.fullTokens - f.alwaysTokens);
+      }
     }
+  }
+
+  // 個人スキル（~/.claude/skills）
+  result.personalSkills = measurePersonalSkills();
+  for (const s of result.personalSkills) {
+    always += s.alwaysTokens;
+    invoke += Math.max(0, s.fullTokens - s.alwaysTokens);
   }
 
   // プロジェクトスコープのプラグイン（参考情報）
   result.projectPlugins = projectScopedPlugins();
+
+  // MCP サーバ（静的計測対象外。名前のみ）
+  result.mcpServers = listMcpServers();
+
+  result.totalAlwaysTokens = always;
+  result.totalInvokeTokens = invoke;
+  result.totalEstimatedTokens = always;
 
   return result;
 }

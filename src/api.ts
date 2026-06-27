@@ -30,6 +30,14 @@ export interface SessionCost {
   topModel: { model: string; cost: number } | null;
 }
 
+export interface OverheadFile {
+  label: string;
+  bytes: number;
+  alwaysTokens: number; // name + description（常時注入の近似）
+  fullTokens: number;   // 全文（スキル起動時にのみ読まれる）
+  estimatedTokens: number; // = alwaysTokens（後方互換）
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -58,15 +66,21 @@ export interface Summary {
     coldStartCost: number;
   };
   overhead: {
-    claudeMd: { label: string; bytes: number; estimatedTokens: number } | null;
-    atRefs: Array<{ label: string; bytes: number; estimatedTokens: number }>;
+    claudeMd: OverheadFile | null;
+    atRefs: OverheadFile[];
     globalPlugins: Array<{
       name: string;
-      files: Array<{ label: string; bytes: number; estimatedTokens: number }>;
+      files: OverheadFile[];
       totalBytes: number;
+      totalAlwaysTokens: number;
+      totalFullTokens: number;
       totalEstimatedTokens: number;
     }>;
+    personalSkills: OverheadFile[];
     projectPlugins: Array<{ name: string; projectPaths: string[] }>;
+    mcpServers: string[];
+    totalAlwaysTokens: number;
+    totalInvokeTokens: number;
     totalEstimatedTokens: number;
   };
   warnings: { fallbackModels: string[] };
