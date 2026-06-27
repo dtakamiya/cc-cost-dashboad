@@ -25,7 +25,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
   if (!s.bySession || s.bySession.length === 0) return null;
 
   const rows = s.bySession.slice(0, 15);
-  const bloatedCount = s.bySession.filter(isBloatedSession).length;
+  const bloatedCount = s.bySession.filter((sess) => isBloatedSession(sess)).length;
 
   return (
     <section className="panel">
