@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 
-const PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
+const DEFAULT_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
 /**
  * .claude/projects 配下の全 .jsonl ファイルを再帰列挙する。
@@ -66,7 +66,8 @@ function toRecord(obj) {
  * @returns {Promise<{ records: object[], fileCount: number }>}
  */
 export async function loadRecords() {
-  const files = findJsonlFiles(PROJECTS_DIR);
+  const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
+  const files = findJsonlFiles(projectsDir);
   const records = [];
 
   for (const file of files) {
