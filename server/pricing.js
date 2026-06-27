@@ -40,8 +40,8 @@ export function costOf(model, usage) {
   const { rate, isFallback } = resolve(model);
   const inUSD = rate.input * PER_TOKEN;
   const outUSD = rate.output * PER_TOKEN;
-  const cacheWriteUSD = inUSD * (usage.cache1h ? 2 : 1.25);
-  const cacheReadUSD = inUSD * 0.1;
+  const cacheWriteUSD = inUSD * (usage.cache1h ? CACHE_WRITE_1H_MULTIPLIER : CACHE_WRITE_5M_MULTIPLIER);
+  const cacheReadUSD = inUSD * CACHE_READ_MULTIPLIER;
 
   const input = (usage.input || 0) * inUSD;
   const output = (usage.output || 0) * outUSD;
