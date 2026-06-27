@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchSummary, filterSummary, type Period, type Summary } from "./api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { activeBurnWarning, fetchSummary, filterSummary, type Period, type Summary } from "./api";
+import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
 import { CostDrivers } from "./components/CostDrivers";
 import { ModelBreakdown } from "./components/ModelBreakdown";
@@ -16,27 +17,44 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<Period>('7d');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const inFlight = useRef(false);
 
   const displayData = useMemo(
     () => (data ? filterSummary(data, period) : null),
     [data, period]
   );
 
-  async function load(reload = false) {
-    setLoading(true);
-    setError(null);
+  const burn = data ? activeBurnWarning(data.blocks) : null;
+
+  // reload=true で再集計。silent=true のときは全画面ローディングを出さず data だけ差し替える（オートリフレッシュ用）。
+  async function load(reload = false, silent = false) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    if (!silent) setLoading(true);
     try {
-      setData(await fetchSummary(reload));
+      const summary = await fetchSummary(reload);
+      setData(summary);
+      setLastUpdated(Date.now());
+      setError(null);
     } catch (e) {
-      setError(String(e));
+      if (!silent) setError(String(e));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+      inFlight.current = false;
     }
   }
 
   useEffect(() => {
     load(false);
   }, []);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const id = setInterval(() => load(true, true), 30_000);
+    return () => clearInterval(id);
+  }, [autoRefresh]);
 
   return (
     <div className="app">
@@ -46,6 +64,21 @@ export default function App() {
           <div className="sub">JSONL ログから算出した利用コストの推定値</div>
         </div>
         <div className="topbar-actions">
+          {lastUpdated && (
+            <span className="last-updated">
+              最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
+            </span>
+          )}
+          <button
+            type="button"
+            className={`live-toggle ${autoRefresh ? "live-on" : ""}`}
+            aria-pressed={autoRefresh}
+            onClick={() => setAutoRefresh((v) => !v)}
+            title="30秒ごとに自動で再集計します"
+          >
+            <span className="live-dot" />
+            ライブ更新 {autoRefresh ? "ON" : "OFF"}
+          </button>
           <PeriodSelector period={period} onChange={setPeriod} />
           <button className="reload" onClick={() => load(true)} disabled={loading}>
             {loading ? "集計中…" : "再読込"}
@@ -55,6 +88,12 @@ export default function App() {
 
       {error && <div className="error">読み込み失敗: {error}</div>}
       {!data && !error && <div className="loading">集計中…</div>}
+
+      {burn && (
+        <div className="burn-warn">
+          ⚠ 高バーンレート: {usd(burn.perMin)}/分（残り {burn.remainMin} 分）
+        </div>
+      )}
 
       {displayData && (
         <>

@@ -88,6 +88,20 @@ export interface Projection {
   projectedMonthCost: number;
 }
 
+// アクティブブロックのバーンレート(USD/分)がこの値以上なら高バーンレート警告を出す。
+// 5時間フルブロック換算の目安 ≒ threshold × 300分（0.5 → 約 $150/ブロック）。
+export const DEFAULT_BURN_THRESHOLD_PER_MIN = 0.5;
+
+// アクティブな課金ブロックが高バーンレートなら警告情報を、そうでなければ null を返す純粋関数。
+export function activeBurnWarning(
+  blocks: Block[],
+  threshold = DEFAULT_BURN_THRESHOLD_PER_MIN
+): { perMin: number; remainMin: number } | null {
+  const active = blocks.find((b) => b.isActive);
+  if (!active || active.burnRatePerMin < threshold) return null;
+  return { perMin: active.burnRatePerMin, remainMin: active.remainMin };
+}
+
 export type Period = '7d' | '30d' | '90d' | 'all';
 
 const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
