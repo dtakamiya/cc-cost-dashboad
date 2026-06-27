@@ -100,6 +100,32 @@ body {
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--r-sm); margin-bottom: var(--sp-4); font-size: 13px;
 }
+.burn-warn {
+  background: var(--danger-soft); color: var(--danger);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm); margin-bottom: var(--sp-4);
+  font-size: 13px; font-weight: 600;
+}
+
+/* ---- live refresh ---- */
+.last-updated { color: var(--subtle); font-size: 12px; white-space: nowrap; }
+.topbar button.live-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--elevated); color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: filter 0.15s, color 0.15s, border-color 0.15s;
+}
+.topbar button.live-toggle:hover { filter: brightness(1.15); }
+.topbar button.live-toggle .live-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--subtle);
+}
+.topbar button.live-toggle.live-on { color: var(--success); border-color: rgba(52, 211, 153, 0.4); }
+.topbar button.live-toggle.live-on .live-dot {
+  background: var(--success); animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
 /* ---- summary cards ---- */
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); margin-bottom: var(--sp-5); }
@@ -218,7 +244,7 @@ body {
   padding: 2px 7px; border-radius: var(--r-sm); letter-spacing: 0.05em;
 }
 .block-active-remain { color: var(--muted); margin-left: auto; }
-.block-active-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-3); }
+.block-active-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: var(--sp-3); }
 .block-active-model { color: var(--muted); font-size: 12px; margin-top: 10px; }
 .block-stat-label { color: var(--muted); font-size: 11px; margin-bottom: var(--sp-1); }
 .block-stat-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }

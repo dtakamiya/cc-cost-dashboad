@@ -1,5 +1,5 @@
 import type { Summary } from "../api";
-import { compact } from "../format";
+import { compact, usd } from "../format";
 
 function fmt(iso: string) {
   return new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -26,6 +26,14 @@ export function BillingBlocks({ s }: { s: Summary }) {
             <div className="block-stat">
               <div className="block-stat-label">総トークン</div>
               <div className="block-stat-value">{compact(active.tokens)}</div>
+            </div>
+            <div className="block-stat">
+              <div className="block-stat-label">コスト</div>
+              <div className="block-stat-value">{usd(active.cost)}</div>
+            </div>
+            <div className="block-stat">
+              <div className="block-stat-label">バーンレート</div>
+              <div className="block-stat-value">{usd(active.burnRatePerMin)}<span className="block-stat-unit"> /分</span></div>
             </div>
             <div className="block-stat">
               <div className="block-stat-label">経過時間</div>
