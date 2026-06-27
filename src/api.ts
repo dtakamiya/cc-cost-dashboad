@@ -139,7 +139,7 @@ export type Period = '7d' | '30d' | '90d' | 'all';
 const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 export function filterSummary(s: Summary, period: Period): Summary {
-  if (period === 'all') return s;
+  if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
 
   const days = PERIOD_DAYS[period];
   const cutoff = new Date();
@@ -153,10 +153,11 @@ export function filterSummary(s: Summary, period: Period): Summary {
 
   const filteredDaily = s.daily.filter(d => d.date >= cutoffStr);
 
-  // セッションは単位として扱い、最終利用日(lastTs)が cutoff 以降のものを残す。
-  const filteredSessions = s.bySession.filter(
-    (sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr
-  );
+  // セッションは単位として扱い、最終利用日(lastTs)が cutoff 以降のものを残し、コスト降順 top30 に絞る。
+  // サーバーは全セッションを返すため、ここで期間フィルタ後の上位件数を決定する。
+  const filteredSessions = s.bySession
+    .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr)
+    .slice(0, 30);
 
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();

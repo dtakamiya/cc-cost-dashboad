@@ -84,9 +84,10 @@ function computeProjection(records) {
   };
 }
 
-// レコード配列 → セッション別サマリ（コスト降順, 上位30件）。
+// レコード配列 → セッション別サマリ（コスト降順, 全件）。
 // 会話履歴は毎ターン再送されるため、長い／肥大化したセッションがコスト増の主因になる。
 // avgContextPerMsg = Σ(cacheRead + input) / messages を 1ターンの実コンテキストサイズの proxy とする。
+// 上位N件への制限はクライアント側（期間フィルタ後）で行う。
 function computeSessions(records) {
   const map = new Map(); // sessionId -> 集計
 
@@ -107,8 +108,8 @@ function computeSessions(records) {
         output: 0,
         cacheCreate: 0,
         cacheRead: 0,
-        firstTs: r.ts,
-        lastTs: r.ts,
+        firstTs: r.ts || null, // undefined にならないよう null で初期化
+        lastTs: r.ts || null,
         models: {}, // model -> cost（topModel 算出用）
       };
       map.set(r.sessionId, s);
@@ -124,8 +125,10 @@ function computeSessions(records) {
     s.models[r.model] = (s.models[r.model] || 0) + c.total;
     if (r.ts) {
       if (!s.firstTs || r.ts < s.firstTs) s.firstTs = r.ts;
-      if (!s.lastTs || r.ts > s.lastTs) s.lastTs = r.ts;
-      s.cwd = r.cwd; // 最新の cwd を採用（resume で移動した場合の現在地）
+      if (!s.lastTs || r.ts > s.lastTs) {
+        s.lastTs = r.ts;
+        s.cwd = r.cwd; // lastTs が更新されるときだけ cwd を更新（resume で移動した場合の現在地）
+      }
     }
   }
 
@@ -139,8 +142,7 @@ function computeSessions(records) {
         topModel: topEntry ? { model: topEntry[0], cost: topEntry[1] } : null,
       };
     })
-    .sort((a, b) => b.cost - a.cost)
-    .slice(0, 30);
+    .sort((a, b) => b.cost - a.cost);
 }
 
 // レコード配列 → 曜日(0=日)×時間帯(0-23) のトークン使用量行列 + ピーク。
