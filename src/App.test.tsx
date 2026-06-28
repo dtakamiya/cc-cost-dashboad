@@ -138,3 +138,56 @@ describe("App - 自動更新エラー表示", () => {
     );
   });
 });
+
+describe("App - セクションナビゲーション", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("データロード後にセクションナビゲーションが表示される", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const nav = screen.getByRole("navigation", { name: /ダッシュボードセクション/ });
+    expect(nav).toBeInTheDocument();
+  });
+
+  it("セクションナビゲーションが5つのボタンを表示する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const buttons = screen.getAllByRole("button");
+    const navButtons = buttons.filter(btn =>
+      ["概要", "コストドライバー", "プロジェクト", "セッション", "最適化"].includes(btn.textContent || "")
+    );
+    expect(navButtons.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("各セクションが ID 属性を持つ", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    expect(container.querySelector('[id="section-summary"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-drivers"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-project"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-session"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-optimization"]')).toBeInTheDocument();
+  });
+
+  it("トップバー操作と SectionNav が共存する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const topbar = screen.getByRole("banner");
+    const sectionNav = screen.getByRole("navigation", { name: /ダッシュボードセクション/ });
+
+    expect(topbar).toBeInTheDocument();
+    expect(sectionNav).toBeInTheDocument();
+  });
+});

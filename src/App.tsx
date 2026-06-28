@@ -15,6 +15,7 @@ import { BudgetProjection } from "./components/BudgetProjection";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
 import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
+import { SectionNav, type SectionId } from "./components/SectionNav";
 
 export default function App() {
   const [data, setData] = useState<Summary | null>(null);
@@ -26,7 +27,14 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const inFlight = useRef(false);
+
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const driversRef = useRef<HTMLDivElement>(null);
+  const projectRef = useRef<HTMLDivElement>(null);
+  const sessionRef = useRef<HTMLDivElement>(null);
+  const optimizationRef = useRef<HTMLDivElement>(null);
 
   const canCompare = period !== 'all';
 
@@ -48,6 +56,21 @@ export default function App() {
   }, [period]);
 
   const burn = data ? activeBurnWarning(data.blocks) : null;
+
+  const handleSectionClick = (id: SectionId) => {
+    const refs: Record<SectionId, React.RefObject<HTMLDivElement>> = {
+      summary: summaryRef,
+      drivers: driversRef,
+      project: projectRef,
+      session: sessionRef,
+      optimization: optimizationRef,
+    };
+    const ref = refs[id];
+    if (ref?.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth' });
+      setActiveSection(id);
+    }
+  };
 
   // reload=true で再集計。silent=true のときは全画面ローディングを出さず data だけ差し替える（オートリフレッシュ用）。
   async function load(reload = false, silent = false) {
@@ -156,24 +179,45 @@ export default function App() {
               {displayData.warnings.fallbackModels.join(", ")}
             </div>
           )}
-          <SummaryCards s={displayData} prev={prevDisplayData ?? undefined} />
-          <OptimizationAdvisor s={displayData} />
-          <BudgetProjection s={data!} />
-          <BillingBlocks s={data!} />
-          <CostDrivers s={displayData} />
-          <div className="grid2">
-            <ModelBreakdown s={displayData} />
-            <DailyTrend
-              s={displayData}
-              prev={prevDisplayData ?? undefined}
-              prevOffsetDays={canCompare ? PERIOD_DAYS[period as Exclude<Period, 'all'>] : undefined}
-            />
-          </div>
-          <ProjectBreakdown s={displayData} />
-          <SessionBreakdown s={displayData} />
-          <ActivityHeatmap s={data!} />
-          <CacheEfficiency s={displayData} />
-          <OverheadAnalysis s={displayData} />
+          <SectionNav
+            sections={[
+              { id: 'summary', label: '概要' },
+              { id: 'drivers', label: 'コストドライバー' },
+              { id: 'project', label: 'プロジェクト' },
+              { id: 'session', label: 'セッション' },
+              { id: 'optimization', label: '最適化' },
+            ]}
+            activeSection={activeSection}
+            onSectionClick={handleSectionClick}
+          />
+          <section id="section-summary" ref={summaryRef}>
+            <SummaryCards s={displayData} prev={prevDisplayData ?? undefined} />
+            <OptimizationAdvisor s={displayData} />
+            <BudgetProjection s={data!} />
+            <BillingBlocks s={data!} />
+          </section>
+          <section id="section-drivers" ref={driversRef}>
+            <CostDrivers s={displayData} />
+            <div className="grid2">
+              <ModelBreakdown s={displayData} />
+              <DailyTrend
+                s={displayData}
+                prev={prevDisplayData ?? undefined}
+                prevOffsetDays={canCompare ? PERIOD_DAYS[period as Exclude<Period, 'all'>] : undefined}
+              />
+            </div>
+          </section>
+          <section id="section-project" ref={projectRef}>
+            <ProjectBreakdown s={displayData} />
+          </section>
+          <section id="section-session" ref={sessionRef}>
+            <SessionBreakdown s={displayData} />
+            <ActivityHeatmap s={data!} />
+          </section>
+          <section id="section-optimization" ref={optimizationRef}>
+            <CacheEfficiency s={displayData} />
+            <OverheadAnalysis s={displayData} />
+          </section>
           <footer className="foot">
             集計時刻 {new Date(displayData.generatedAt).toLocaleString("ja-JP")} ／ コストは価格表に基づく推定値
           </footer>
