@@ -13,51 +13,99 @@ import {
 import type { Summary } from "../api";
 import { shiftDailyDates } from "../api";
 import { toWeekly } from "../weekly";
-import { compact, modelColor } from "../format";
+import { compact, usd, modelColor } from "../format";
 
 const safeId = (m: string, i: number) => `grad-${i}-${m.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
 const PREV_KEY = "__prev_total";
 
 type View = "daily" | "weekly";
+type DisplayMode = "tokens" | "cost";
+
+interface DailyTrendTooltipProps {
+  active?: boolean;
+  payload?: Array<{ dataKey: string; payload: Record<string, unknown> }>;
+}
+
+function DailyTrendTooltip({ active, payload }: DailyTrendTooltipProps) {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload as Record<string, number | Record<string, number>>;
+  const tokens = data._allTokens as Record<string, number> | undefined;
+  const costs = data._allCosts as Record<string, number> | undefined;
+  const model = payload[0].dataKey;
+
+  if (!tokens || !costs) return null;
+
+  return (
+    <div style={{ background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.35)", padding: 8, color: "var(--text)" }}>
+      <p style={{ margin: "4px 0", fontWeight: 600 }}>{model}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Token: {compact(tokens[model] ?? 0)}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Cost: {usd(costs[model] ?? 0)}</p>
+    </div>
+  );
+}
 
 export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Summary; prevOffsetDays?: number }) {
   const [view, setView] = useState<View>("daily");
-  const models = s.models.map((m) => m.model);
+  const [mode, setMode] = useState<DisplayMode>("tokens");
 
+  const models = s.models.map((m) => m.model);
   const xKey = view === "weekly" ? "weekStart" : "date";
+  const fmt = mode === "cost" ? usd : compact;
+
   const rows =
     view === "weekly"
-      ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels }))
-      : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels }));
+      ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels, costModels: w.models }))
+      : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels, costModels: d.models }));
 
-  // 前期オーバーレイ（日次のみ）: 前期の日付を現在期間に合わせてずらし、日付→合計トークンの対応表を作る。
   const showPrev = view === "daily" && prev && prevOffsetDays != null;
   const prevTotalByDate = new Map<string, number>();
+  const prevTokenTotalByDate = new Map<string, number>();
   if (showPrev) {
     for (const d of shiftDailyDates(prev!.daily, prevOffsetDays!)) {
-      prevTotalByDate.set(d.date, d.tokenTotal ?? 0);
+      prevTotalByDate.set(d.date, d.total ?? 0);
+      prevTokenTotalByDate.set(d.date, d.tokenTotal ?? 0);
     }
   }
 
   const data = rows.map((r) => {
-    const row: Record<string, number | string> = { [xKey]: r.key };
-    for (const m of models) row[m] = r.tokenModels?.[m] ?? 0;
-    if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = prevTotalByDate.get(r.key)!;
+    const row: Record<string, number | string | Record<string, number>> = { [xKey]: r.key };
+    const allTokens: Record<string, number> = {};
+    const allCosts: Record<string, number> = {};
+    for (const m of models) {
+      const tokenVal = r.tokenModels?.[m] ?? 0;
+      const costVal = r.costModels?.[m] ?? 0;
+      allTokens[m] = tokenVal;
+      allCosts[m] = costVal;
+      row[m] = mode === "cost" ? costVal : tokenVal;
+    }
+    row._allTokens = allTokens;
+    row._allCosts = allCosts;
+    if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = mode === "cost" ? prevTotalByDate.get(r.key)! : prevTokenTotalByDate.get(r.key)!;
     return row;
   });
 
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>トークン推移</h2>
-        <div className="seg" role="group" aria-label="集計粒度">
-          <button type="button" aria-pressed={view === "daily"} className={view === "daily" ? "active" : ""} onClick={() => setView("daily")}>
-            日次
-          </button>
-          <button type="button" aria-pressed={view === "weekly"} className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
-            週次
-          </button>
+        <h2>{mode === "cost" ? "コスト推移" : "トークン推移"}</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div className="seg" role="group" aria-label="表示モード">
+            <button type="button" aria-pressed={mode === "tokens"} className={mode === "tokens" ? "active" : ""} onClick={() => setMode("tokens")}>
+              トークン
+            </button>
+            <button type="button" aria-pressed={mode === "cost"} className={mode === "cost" ? "active" : ""} onClick={() => setMode("cost")}>
+              コスト
+            </button>
+          </div>
+          <div className="seg" role="group" aria-label="集計粒度">
+            <button type="button" aria-pressed={view === "daily"} className={view === "daily" ? "active" : ""} onClick={() => setView("daily")}>
+              日次
+            </button>
+            <button type="button" aria-pressed={view === "weekly"} className={view === "weekly" ? "active" : ""} onClick={() => setView("weekly")}>
+              週次
+            </button>
+          </div>
         </div>
       </div>
       <ResponsiveContainer width="100%" height={320}>
@@ -72,16 +120,10 @@ export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Sum
           </defs>
           <CartesianGrid vertical={false} stroke="var(--grid)" />
           <XAxis dataKey={xKey} stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
-          <YAxis tickFormatter={(v) => compact(v)} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
+          <YAxis tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
           <Tooltip
-            formatter={(v: number) => compact(v)}
+            content={<DailyTrendTooltip />}
             cursor={{ stroke: "var(--axis)", strokeDasharray: "3 3" }}
-            contentStyle={{
-              background: "var(--tooltip-bg)",
-              border: "1px solid var(--tooltip-border)",
-              borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-            }}
           />
           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
           {models.map((m, i) => (
