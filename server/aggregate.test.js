@@ -83,6 +83,74 @@ describe("aggregate cacheStats", () => {
   });
 });
 
+describe("computeHourly (直近24時間の時間別集計)", () => {
+  const NOW = new Date("2026-06-28T10:00:00.000Z").getTime();
+  const INPUT_USD = 5 / 1_000_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("aggregates last 24 hours by hour", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // 直近30時間分のレコード作成（時間ごとに1つ）
+    const records = [];
+    for (let i = 29; i >= 0; i--) {
+      const ts = new Date(NOW - i * 60 * 60 * 1000).toISOString();
+      records.push(rec({ ts, input: 100_000 })); // 0.5 USD per record
+    }
+
+    const { hourly } = aggregate(records);
+
+    expect(hourly).toBeDefined();
+    expect(hourly.length).toBe(24);
+    expect(hourly[0].hour).toBe(0); // 最古の時間
+    expect(hourly[23].hour).toBe(23); // 最新の時間
+    expect(hourly.every((h) => h.tokens > 0)).toBe(true);
+    expect(hourly.every((h) => h.cost > 0)).toBe(true);
+  });
+
+  it("excludes records with null timestamp", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    const validTs = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    const records = [
+      rec({ ts: null, input: 100_000 }),
+      rec({ ts: validTs, input: 100_000 }),
+    ];
+
+    const { hourly } = aggregate(records);
+
+    expect(hourly).toBeDefined();
+    expect(hourly.length).toBe(24);
+    expect(hourly.some((h) => h.tokens > 0)).toBe(true);
+  });
+
+  it("includes per-model cost and token breakdown", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    const ts1 = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    const ts2 = new Date(NOW - 5 * 60 * 60 * 1000 + 10 * 60 * 1000).toISOString();
+
+    const records = [
+      rec({ ts: ts1, model: "claude-opus-4-8", input: 100_000 }),
+      rec({ ts: ts2, model: "claude-opus-4-8", input: 50_000 }),
+    ];
+
+    const { hourly } = aggregate(records);
+
+    const hour5 = hourly.find((h) => h.hour === 5);
+    expect(hour5).toBeDefined();
+    expect(hour5.models).toBeDefined();
+    expect(Array.isArray(hour5.models)).toBe(true);
+    expect(hour5.models.some((m) => m.model === "claude-opus-4-8")).toBe(true);
+  });
+});
+
 describe("computeBlocks recentBurnRatePerMin (スライディングウィンドウ)", () => {
   const NOW = new Date("2026-06-28T10:00:00.000Z").getTime();
   // opus input = 5 USD/MTok
