@@ -1,4 +1,5 @@
-import "@testing-library/jest-dom";
+import "@testing-library/jest-dom/vitest";
+import { beforeEach } from "vitest";
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -20,3 +21,7 @@ globalThis.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+beforeEach(() => {
+  localStorageMock.clear();
+});
