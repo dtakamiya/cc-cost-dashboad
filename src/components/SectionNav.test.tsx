@@ -1,7 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { SectionNav } from './SectionNav'
-
-type SectionId = 'summary' | 'drivers' | 'project' | 'session' | 'optimization'
+import { SectionNav, type SectionId } from './SectionNav'
 
 describe('SectionNav', () => {
   const mockSections: Array<{ id: SectionId; label: string }> = [
@@ -108,7 +106,7 @@ describe('SectionNav', () => {
   describe('Active State', () => {
     it('activeSection props に応じてボタンが active クラスを持つ', () => {
       const handleClick = vi.fn()
-      const { container } = render(
+      render(
         <SectionNav
           sections={mockSections}
           activeSection="summary"
@@ -154,7 +152,7 @@ describe('SectionNav', () => {
   describe('Styling', () => {
     it('active ボタンが視認できるスタイルを持つ', () => {
       const handleClick = vi.fn()
-      const { container } = render(
+      render(
         <SectionNav
           sections={mockSections}
           activeSection="summary"
@@ -164,7 +162,6 @@ describe('SectionNav', () => {
 
       const activeButton = screen.getByText('概要').closest('button') as HTMLElement
       const styles = window.getComputedStyle(activeButton)
-      // active ボタンは背景色が設定されている
       expect(styles.backgroundColor).not.toBe('transparent')
     })
   })
@@ -182,7 +179,6 @@ describe('SectionNav', () => {
 
       const nav = container.querySelector('.section-nav')
       expect(nav).toBeInTheDocument()
-      // モバイルで overflow-x: auto が設定されることを期待
     })
   })
 })

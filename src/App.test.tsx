@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import App from "./App";
@@ -189,5 +189,29 @@ describe("App - セクションナビゲーション", () => {
 
     expect(topbar).toBeInTheDocument();
     expect(sectionNav).toBeInTheDocument();
+  });
+
+  it("セクションボタンクリックで scrollIntoView が呼ばれる", async () => {
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("プロジェクト"));
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth" });
+  });
+
+  it("セクションボタンクリック後、該当ボタンの aria-current が page になる", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("プロジェクト"));
+
+    const projectBtn = screen.getByText("プロジェクト").closest("button");
+    expect(projectBtn).toHaveAttribute("aria-current", "page");
   });
 });
