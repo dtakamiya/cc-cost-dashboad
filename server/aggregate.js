@@ -45,11 +45,14 @@ function computeBlocks(records) {
       const durationMin = Math.round((Math.min(now, b.endMs) - b.startMs) / 60000);
       const remainMin = isActive ? Math.round((b.endMs - now) / 60000) : 0;
       const topModel = Object.entries(b.models).sort((a, z) => z[1] - a[1])[0];
-      const windowStart = now - BURN_WINDOW_MS;
+      const windowStart = Math.max(b.startMs, now - BURN_WINDOW_MS);
+      const windowDurationMin = (Math.min(now, b.endMs) - windowStart) / 60000;
       const recentCost = b.recs
-        .filter((rec) => rec.ts >= windowStart)
+        .filter((rec) => rec.ts >= windowStart && rec.ts <= now)
         .reduce((s, rec) => s + rec.cost, 0);
-      const recentBurnRatePerMin = recentCost / BURN_WINDOW_MIN;
+      const recentBurnRatePerMin = isActive && windowDurationMin > 0
+        ? recentCost / windowDurationMin
+        : 0;
       return {
         start: new Date(b.startMs).toISOString(),
         end: new Date(b.endMs).toISOString(),
