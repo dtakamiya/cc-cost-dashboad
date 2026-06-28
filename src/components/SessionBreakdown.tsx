@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { Summary, SessionCost, SessionTurn } from "../api";
 import { isBloatedSession, fetchSessionTurns, filterSessions } from "../api";
 import { usd, compact } from "../format";
@@ -25,7 +25,8 @@ function periodLabel(s: SessionCost): string {
 function CopyButton({ cwd }: { cwd: string }) {
   const [copied, setCopied] = useState(false);
 
-  const handleClick = async () => {
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(buildClearCommand(cwd));
       setCopied(true);
@@ -115,6 +116,8 @@ export function SessionBreakdown({ s }: { s: Summary }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [turnsData, setTurnsData] = useState<SessionTurn[] | null>(null);
   const [turnsLoading, setTurnsLoading] = useState(false);
+  // ref でインフライトリクエストのsessionIdを追跡し、古いレスポンスを破棄する
+  const requestedIdRef = useRef<string | null>(null);
 
   if (!s.bySession || s.bySession.length === 0) return null;
 
@@ -122,22 +125,24 @@ export function SessionBreakdown({ s }: { s: Summary }) {
   const rows = filtered.slice(0, 15);
   const bloatedCount = s.bySession.filter((sess) => isBloatedSession(sess)).length;
 
-  const handleRowClick = async (sessionId: string) => {
-    if (expandedId === sessionId) {
+  const handleToggle = async (sessionId: string) => {
+    if (requestedIdRef.current === sessionId) {
+      requestedIdRef.current = null;
       setExpandedId(null);
       setTurnsData(null);
       return;
     }
+    requestedIdRef.current = sessionId;
     setExpandedId(sessionId);
     setTurnsData(null);
     setTurnsLoading(true);
     try {
       const turns = await fetchSessionTurns(sessionId);
-      setTurnsData(turns);
+      if (requestedIdRef.current === sessionId) setTurnsData(turns);
     } catch {
-      setTurnsData([]);
+      if (requestedIdRef.current === sessionId) setTurnsData([]);
     } finally {
-      setTurnsLoading(false);
+      if (requestedIdRef.current === sessionId) setTurnsLoading(false);
     }
   };
 
@@ -210,13 +215,29 @@ export function SessionBreakdown({ s }: { s: Summary }) {
               <>
                 <tr
                   key={sess.sessionId}
-                  onClick={() => handleRowClick(sess.sessionId)}
                   style={{
-                    cursor: "pointer",
                     background: isExpanded ? "var(--hover-bg, rgba(59,130,246,0.06))" : undefined,
                   }}
                 >
                   <td>
+                    <button
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? "詳細を折りたたむ" : "詳細を展開"}
+                      onClick={() => handleToggle(sess.sessionId)}
+                      style={{
+                        marginRight: 6,
+                        padding: "1px 4px",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        background: "none",
+                        border: "1px solid var(--border, #e5e7eb)",
+                        borderRadius: 3,
+                        color: "var(--muted)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {isExpanded ? "▼" : "▶"}
+                    </button>
                     {projectName(sess.cwd)}
                     {bloated && (
                       <>
