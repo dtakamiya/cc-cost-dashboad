@@ -115,7 +115,13 @@ export interface Summary {
   };
   warnings: { fallbackModels: string[] };
   cacheStats?: CacheStats;
-  source?: { fileCount: number };
+  source?: {
+    fileCount: number;
+    parsedLines?: number;
+    skippedLines?: number;
+    parseErrors?: number;
+    unreadableFiles?: number;
+  };
   blocks: Block[];
   projection: Projection | null;
   activity: Activity;

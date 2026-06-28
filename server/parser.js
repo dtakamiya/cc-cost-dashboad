@@ -61,20 +61,24 @@ function toRecord(obj) {
 }
 
 /**
- * ~/.claude/projects 配下の全 JSONL を読み込み、正規化レコード配列を返す。
- * 壊れた行や対象外行は黙ってスキップする。
- * @returns {Promise<{ records: object[], fileCount: number }>}
+ * ~/.claude/projects 配下の全 JSONL を読み込み、正規化レコード配列と解析品質メタデータを返す。
+ * 壊れた行や対象外行はスキップし、その数をカウントする。
+ * @returns {Promise<{ records: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
  */
 export async function loadRecords() {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
   const files = findJsonlFiles(projectsDir);
   const records = [];
+  let parsedLines = 0;
+  let parseErrors = 0;
+  let unreadableFiles = 0;
 
   for (const file of files) {
     let stream;
     try {
       stream = fs.createReadStream(file, { encoding: "utf8" });
     } catch {
+      unreadableFiles++;
       continue;
     }
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
@@ -83,7 +87,9 @@ export async function loadRecords() {
       let obj;
       try {
         obj = JSON.parse(line);
+        parsedLines++;
       } catch {
+        parseErrors++;
         continue; // 壊れた行はスキップ
       }
       const rec = toRecord(obj);
@@ -91,5 +97,7 @@ export async function loadRecords() {
     }
   }
 
-  return { records, fileCount: files.length };
+  const skippedLines = parsedLines - records.length;
+
+  return { records, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles };
 }

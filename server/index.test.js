@@ -100,6 +100,57 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+describe("rebuild() - 解析品質メタデータ", () => {
+  it("rebuild() が parser からの品質メタを source に含めるか", async () => {
+    // Arrange
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      fileCount: 3,
+      parsedLines: 100,
+      parseErrors: 5,
+      skippedLines: 10,
+      unreadableFiles: 2,
+    });
+
+    // Act: POST /api/reload で rebuild() を実行
+    const res = await request(app).post("/api/reload");
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.body.source).toMatchObject({
+      fileCount: 3,
+      parsedLines: 100,
+      parseErrors: 5,
+      skippedLines: 10,
+      unreadableFiles: 2,
+    });
+  });
+
+  it("/api/summary が source.parsedLines, source.parseErrors を返すか", async () => {
+    // Arrange
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      fileCount: 5,
+      parsedLines: 200,
+      parseErrors: 3,
+      skippedLines: 7,
+      unreadableFiles: 1,
+    });
+
+    // Act
+    const res = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.body.source).toHaveProperty("parsedLines", 200);
+    expect(res.body.source).toHaveProperty("parseErrors", 3);
+    expect(res.body.source).toHaveProperty("skippedLines", 7);
+    expect(res.body.source).toHaveProperty("unreadableFiles", 1);
+  });
+});
+
 describe("GET /api/summary", () => {
   it("200 と JSON を返す", async () => {
     const res = await request(app).get("/api/summary");

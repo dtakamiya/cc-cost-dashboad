@@ -6,6 +6,18 @@ import { DeltaBadge } from "./DeltaBadge";
 export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
   const t = s.totals;
   const p = prev?.totals;
+  const src = s.source;
+  const qualityCard = src?.parsedLines !== undefined
+    ? {
+        icon: "✓",
+        label: "データ品質",
+        value: src.parsedLines.toLocaleString(),
+        sub: src.skippedLines
+          ? `スキップ: ${src.skippedLines} 行 (エラー: ${src.parseErrors ?? 0})`
+          : "完全",
+      }
+    : null;
+
   const cards: { icon: string; label: string; value: string; sub: string; primary?: boolean; delta?: Delta | null }[] = [
     {
       icon: "🔢",
@@ -23,6 +35,7 @@ export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
       sub: `${s.source?.fileCount ?? 0} ファイル`,
     },
     { icon: "📅", label: "期間", value: t.from ?? "-", sub: `〜 ${t.to ?? "-"}` },
+    ...(qualityCard ? [qualityCard] : []),
   ];
   return (
     <div className="cards">
