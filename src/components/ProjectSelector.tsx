@@ -4,8 +4,17 @@ interface ProjectOption {
   tokens: number;
 }
 
-function projectName(cwd: string): string {
-  return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
+function segments(cwd: string): string[] {
+  return cwd.split(/[\\/]+/).filter(Boolean);
+}
+
+function projectLabel(cwd: string, allCwds: string[]): string {
+  const segs = segments(cwd);
+  const name = segs.pop() ?? cwd;
+  const isDuplicate = allCwds.some(
+    (c) => c !== cwd && (segments(c).pop() ?? c) === name
+  );
+  return isDuplicate ? `${name} (${cwd})` : name;
 }
 
 export function ProjectSelector({
@@ -17,6 +26,7 @@ export function ProjectSelector({
   selected: string;
   onChange: (cwd: string) => void;
 }) {
+  const allCwds = projects.map((p) => p.cwd);
   return (
     <select
       className="project-selector"
@@ -27,7 +37,7 @@ export function ProjectSelector({
       <option value="">すべてのプロジェクト</option>
       {projects.map((p) => (
         <option key={p.cwd} value={p.cwd}>
-          {projectName(p.cwd)}
+          {projectLabel(p.cwd, allCwds)}
         </option>
       ))}
     </select>

@@ -269,10 +269,27 @@ describe("filterSummaryByProject", () => {
     expect(result.daily[1].total).toBeCloseTo(90, 5);
   });
 
-  it("totals.cost と totals.tokens をフィルタ後 bySession から再計算する", () => {
+  it("totals.cost と totals.tokens を daily（切り詰め前）から再計算する", () => {
     const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
-    expect(result.totals.cost).toBe(100);
+    // day[0]: 60 * (40_000/60_000) = 40、day[1]: 90 * 1 = 90 → 合計 130
+    expect(result.totals.cost).toBeCloseTo(130, 5);
+    // tokenTotal: 40_000 + 90_000 = 130_000
     expect(result.totals.tokens).toBe(130_000);
+  });
+
+  it("models をフィルタ後 daily から再集計する", () => {
+    const s = summaryWithProjects();
+    const result = filterSummaryByProject(s, "/home/u/projA");
+    expect(result.models).toHaveLength(1);
+    // day[0]: opus cost = 60*(2/3)=40, day[1]: opus cost = 90*1=90 → 130
+    expect(result.models[0].model).toBe("claude-opus-4-8");
+    expect(result.models[0].cost).toBeCloseTo(130, 5);
+  });
+
+  it("totals.messages をフィルタ後 bySession から再計算する", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    // projA のセッションは 1 件、messages=10
+    expect(result.totals.messages).toBe(10);
   });
 
   it("projects を選択した cwd のみに絞り込む", () => {

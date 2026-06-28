@@ -34,10 +34,12 @@ export default function App() {
     [data, period, selectedProject]
   );
 
-  const prevDisplayData = useMemo(
-    () => (compareMode && data ? filterPreviousPeriod(data, period) : null),
-    [data, period, compareMode]
-  );
+  const prevDisplayData = useMemo(() => {
+    if (!compareMode || !data) return null;
+    const prev = filterPreviousPeriod(data, period);
+    if (!prev) return null;
+    return filterSummaryByProject(prev, selectedProject);
+  }, [data, period, compareMode, selectedProject]);
 
   // 全期間では前期が定義できないため比較モードを自動 OFF にする
   useEffect(() => {
