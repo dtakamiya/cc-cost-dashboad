@@ -82,12 +82,15 @@ export default function App() {
     inFlight.current = true;
     if (!silent) setLoading(true);
     try {
-      const [summary, hourlyList] = await Promise.all([
-        fetchSummary(reload),
-        fetchHourly(),
-      ]);
+      const summary = await fetchSummary(reload);
       setData(summary);
-      setHourlyData(toHourly(hourlyList));
+
+      try {
+        const hourlyList = await fetchHourly();
+        setHourlyData(toHourly(hourlyList));
+      } catch {
+        setHourlyData([]);
+      }
       setLastUpdated(Date.now());
       setError(null);
       setAutoRefreshError(null);
