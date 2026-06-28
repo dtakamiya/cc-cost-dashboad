@@ -74,11 +74,12 @@ export default function App() {
 
   // SSE でファイル変更を受信したら自動リロード
   useEffect(() => {
+    if (!autoRefresh) return;
     const unsubscribe = subscribeToUpdates(() => {
       load(false, true);
     });
     return unsubscribe;
-  }, []);
+  }, [autoRefresh]);
 
   return (
     <div className="app">

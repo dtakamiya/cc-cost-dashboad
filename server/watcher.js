@@ -23,7 +23,9 @@ export function createWatcher(dir, callback) {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      callback();
+      Promise.resolve(callback()).catch((error) => {
+        console.error("watcher callback failed", error);
+      });
     }, DEBOUNCE_MS);
   };
 
@@ -33,7 +35,10 @@ export function createWatcher(dir, callback) {
         debounced();
       }
     });
-  } catch {
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
     // ディレクトリが存在しない場合はスキップ
   }
 

@@ -108,7 +108,9 @@ describe("createWatcher", () => {
 
   it("監視対象ディレクトリが存在しない場合は例外にならない", () => {
     mockWatch.mockImplementation(() => {
-      throw new Error("ENOENT: no such file or directory");
+      const err = new Error("ENOENT: no such file or directory");
+      err.code = "ENOENT";
+      throw err;
     });
 
     const callback = vi.fn();
