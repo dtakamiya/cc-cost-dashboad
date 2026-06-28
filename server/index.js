@@ -15,6 +15,15 @@ const app = express();
 
 let cache = null; // 直近の集計結果をメモリ保持
 
+// SSE クライアント管理
+const clients = new Set();
+
+function notifyClients() {
+  for (const res of clients) {
+    res.write("event: update\ndata: {}\n\n");
+  }
+}
+
 async function rebuild() {
   const { records, fileCount } = await loadRecords();
   const summary = aggregate(records);
@@ -42,6 +51,18 @@ app.post("/api/reload", async (_req, res) => {
   }
 });
 
+app.get("/api/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+  res.write("event: connected\ndata: {}\n\n");
+  clients.add(res);
+  req.on("close", () => {
+    clients.delete(res);
+  });
+});
+
 app.get("/api/pricing", (_req, res) => {
   res.json({
     models: PRICING,
@@ -59,11 +80,17 @@ if (fs.existsSync(DIST)) {
   app.get("*", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 }
 
-export { app };
+export { app, notifyClients };
 
 // テスト時はサーバーを起動しない
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   app.listen(PORT, () => {
     console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
+  });
+
+  const { createWatcher } = await import("./watcher.js");
+  createWatcher(null, async () => {
+    await rebuild();
+    notifyClients();
   });
 }

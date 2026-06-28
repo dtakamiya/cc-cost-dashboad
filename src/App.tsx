@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, filterPreviousPeriod, PERIOD_DAYS, type Period, type Summary } from "./api";
+import { activeBurnWarning, fetchSummary, filterSummary, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary } from "./api";
 import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
@@ -71,6 +71,14 @@ export default function App() {
     const id = setInterval(() => load(true, true), 30_000);
     return () => clearInterval(id);
   }, [autoRefresh]);
+
+  // SSE でファイル変更を受信したら自動リロード
+  useEffect(() => {
+    const unsubscribe = subscribeToUpdates(() => {
+      load(false, true);
+    });
+    return unsubscribe;
+  }, []);
 
   return (
     <div className="app">

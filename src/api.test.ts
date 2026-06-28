@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, fetchPricing, type Summary, type DailyCost, type Pricing } from "./api";
+import { filterSummary, fetchPricing, subscribeToUpdates, type Summary, type DailyCost, type Pricing } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -96,6 +96,62 @@ describe("fetchPricing", () => {
       status: 500,
     }));
     await expect(fetchPricing()).rejects.toThrow("pricing fetch failed");
+  });
+});
+
+describe("subscribeToUpdates", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("EventSource を /api/events に接続する", () => {
+    const mockClose = vi.fn();
+    const mockAddEventListener = vi.fn();
+    const MockEventSource = vi.fn().mockImplementation(() => ({
+      close: mockClose,
+      addEventListener: mockAddEventListener,
+    }));
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    subscribeToUpdates(() => {});
+
+    expect(MockEventSource).toHaveBeenCalledWith("/api/events");
+  });
+
+  it("update イベント受信時にコールバックを呼ぶ", () => {
+    const mockClose = vi.fn();
+    const captured: { listener: (() => void) | null } = { listener: null };
+    const mockAddEventListener = vi.fn().mockImplementation((event: string, listener: () => void) => {
+      if (event === "update") captured.listener = listener;
+    });
+    const MockEventSource = vi.fn().mockImplementation(() => ({
+      close: mockClose,
+      addEventListener: mockAddEventListener,
+    }));
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    const onUpdate = vi.fn();
+    subscribeToUpdates(onUpdate);
+
+    expect(mockAddEventListener).toHaveBeenCalledWith("update", onUpdate);
+
+    // リスナーを直接呼び出してコールバックが動くか確認
+    captured.listener?.();
+    expect(onUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("戻り値の unsubscribe() を呼ぶと EventSource を閉じる", () => {
+    const mockClose = vi.fn();
+    const MockEventSource = vi.fn().mockImplementation(() => ({
+      close: mockClose,
+      addEventListener: vi.fn(),
+    }));
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    const unsubscribe = subscribeToUpdates(() => {});
+    unsubscribe();
+
+    expect(mockClose).toHaveBeenCalledOnce();
   });
 });
 
