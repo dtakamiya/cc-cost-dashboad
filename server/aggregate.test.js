@@ -442,6 +442,6 @@ describe("computeBlocks 基本動作", () => {
       return rec({ ts: new Date(ms).toISOString(), sessionId: `s${i}`, input: 100 });
     });
     const { blocks } = aggregate(records);
-    expect(blocks.length).toBeLessThanOrEqual(20);
+    expect(blocks).toHaveLength(20);
   });
 });

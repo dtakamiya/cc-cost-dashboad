@@ -55,9 +55,10 @@ describe("CacheEfficiency", () => {
   it("roiNet >= 0 のとき黒字表示（プラス符号）", () => {
     const s = makeSummary({ cacheStats: { ...defaultCacheStats, roiNet: 0.05 } });
     render(<CacheEfficiency s={s} />);
-    // 複数の純益表示のうち少なくとも1つがプラス
-    const cells = screen.getAllByText(/^\+\$\d/);
-    expect(cells.length).toBeGreaterThan(0);
+    expect(screen.getAllByText("+$0.05")).toHaveLength(2);
+    expect(
+      screen.getByText("キャッシュ書き込みコストを読み込み節約で回収できている（黒字）。"),
+    ).toBeInTheDocument();
   });
 
   it("roiNet < 0 のとき赤字ヒントを表示する", () => {

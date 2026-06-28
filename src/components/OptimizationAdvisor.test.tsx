@@ -76,9 +76,7 @@ describe("OptimizationAdvisor", () => {
       },
     });
     render(<OptimizationAdvisor s={s} />);
-    // アドバイスアイテムが表示される（優先度バッジ or アクション）
-    const badges = screen.queryAllByText(/優先度/);
-    expect(badges.length).toBeGreaterThan(0);
+    expect(screen.getByText("優先度 中")).toBeInTheDocument();
   });
 
   it("推奨がある場合「→」始まりのアクションが表示される", () => {
