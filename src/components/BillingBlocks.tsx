@@ -32,7 +32,11 @@ export function BillingBlocks({ s }: { s: Summary }) {
               <div className="block-stat-value">{usd(active.cost)}</div>
             </div>
             <div className="block-stat">
-              <div className="block-stat-label">バーンレート</div>
+              <div className="block-stat-label">直近15分バーンレート</div>
+              <div className="block-stat-value">{usd(active.recentBurnRatePerMin)}<span className="block-stat-unit"> /分</span></div>
+            </div>
+            <div className="block-stat">
+              <div className="block-stat-label">平均バーンレート</div>
               <div className="block-stat-value">{usd(active.burnRatePerMin)}<span className="block-stat-unit"> /分</span></div>
             </div>
             <div className="block-stat">

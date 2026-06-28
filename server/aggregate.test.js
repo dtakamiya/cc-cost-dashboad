@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { aggregate } from "./aggregate.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -80,5 +80,99 @@ describe("aggregate cacheStats", () => {
       s.cacheStats.readSavings - s.cacheStats.writeCost,
       10
     );
+  });
+});
+
+describe("computeBlocks recentBurnRatePerMin (スライディングウィンドウ)", () => {
+  const NOW = new Date("2026-06-28T10:00:00.000Z").getTime();
+  // opus input = 5 USD/MTok
+  const INPUT_USD = 5 / 1_000_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ウィンドウ外の古いレコードは recentBurnRatePerMin に含まれない", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // 16分前のレコードはウィンドウ外（ウィンドウは15分）
+    const outsideTs = new Date(NOW - 16 * 60 * 1000).toISOString();
+    const { blocks } = aggregate([
+      rec({ ts: outsideTs, input: 1_000_000 }), // 5 USD だがウィンドウ外
+    ]);
+
+    const active = blocks.find((b) => b.isActive);
+    expect(active).toBeTruthy();
+    expect(active.recentBurnRatePerMin).toBe(0);
+  });
+
+  it("ウィンドウ内のコストのみでバーンレートを計算する", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    const outsideTs = new Date(NOW - 60 * 60 * 1000).toISOString(); // 60分前（ウィンドウ外）
+    const insideTs = new Date(NOW - 10 * 60 * 1000).toISOString();  // 10分前（ウィンドウ内）
+
+    const { blocks } = aggregate([
+      rec({ ts: outsideTs, input: 1_000_000 }), // 5 USD、ウィンドウ外
+      rec({ ts: insideTs, input: 300_000 }),      // 1.5 USD、ウィンドウ内
+    ]);
+
+    const active = blocks.find((b) => b.isActive);
+    expect(active).toBeTruthy();
+    // recentBurnRatePerMin = 1.5 USD / 15分 = 0.1
+    expect(active.recentBurnRatePerMin).toBeCloseTo(300_000 * INPUT_USD / 15, 8);
+  });
+
+  it("ウィンドウ内にレコードが複数ある場合は合算する", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // ブロックを60分前に開始させてウィンドウが15分フルになるよう設定
+    const blockStartTs = new Date(NOW - 60 * 60 * 1000).toISOString(); // 60分前
+    const ts1 = new Date(NOW - 14 * 60 * 1000).toISOString(); // 14分前（ウィンドウ内）
+    const ts2 = new Date(NOW - 5 * 60 * 1000).toISOString();  // 5分前（ウィンドウ内）
+
+    const { blocks } = aggregate([
+      rec({ ts: blockStartTs, input: 0 }), // ブロック起点（コストなし）
+      rec({ ts: ts1, input: 100_000 }), // 0.5 USD
+      rec({ ts: ts2, input: 200_000 }), // 1.0 USD
+    ]);
+
+    const active = blocks.find((b) => b.isActive);
+    expect(active).toBeTruthy();
+    // windowStart = max(60分前, 15分前) = 15分前、windowDurationMin = 15
+    // recentCost = 0.5 + 1.0 = 1.5 USD、recentBurnRatePerMin = 1.5 / 15 = 0.1
+    expect(active.recentBurnRatePerMin).toBeCloseTo(300_000 * INPUT_USD / 15, 8);
+  });
+
+  it("ブロック開始直後（5分経過）はウィンドウを実経過時間に縮める", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // ブロック開始5分後: windowStart=ブロック開始、windowDurationMin=5
+    const ts = new Date(NOW - 3 * 60 * 1000).toISOString(); // 3分前にレコード
+
+    const { blocks } = aggregate([
+      rec({ ts: new Date(NOW - 5 * 60 * 1000).toISOString(), input: 0 }), // ブロック起点
+      rec({ ts, input: 300_000 }), // 1.5 USD
+    ]);
+
+    const active = blocks.find((b) => b.isActive);
+    expect(active).toBeTruthy();
+    // windowDurationMin = 5分（ブロック開始からの経過時間）
+    // recentBurnRatePerMin = 1.5 USD / 5分 = 0.3
+    expect(active.recentBurnRatePerMin).toBeCloseTo(300_000 * INPUT_USD / 5, 8);
+  });
+
+  it("非アクティブブロックの recentBurnRatePerMin は 0", () => {
+    // 5時間以上前のレコードなので非アクティブになる
+    const oldTs = "2026-06-27T00:00:00.000Z";
+    const { blocks } = aggregate([rec({ ts: oldTs, input: 1_000_000 })]);
+
+    const inactive = blocks.find((b) => !b.isActive);
+    expect(inactive).toBeTruthy();
+    expect(inactive.recentBurnRatePerMin).toBe(0);
   });
 });

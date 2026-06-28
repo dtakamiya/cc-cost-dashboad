@@ -11,13 +11,14 @@ const block = (over: Partial<Block>): Block => ({
   durationMin: 0,
   remainMin: 0,
   burnRatePerMin: 0,
+  recentBurnRatePerMin: 0,
   topModel: null,
   ...over,
 });
 
 describe("activeBurnWarning", () => {
   it("アクティブブロックが無ければ null", () => {
-    const blocks = [block({ isActive: false, burnRatePerMin: 99 })];
+    const blocks = [block({ isActive: false, recentBurnRatePerMin: 99 })];
     expect(activeBurnWarning(blocks)).toBeNull();
   });
 
@@ -25,23 +26,23 @@ describe("activeBurnWarning", () => {
     expect(activeBurnWarning([])).toBeNull();
   });
 
-  it("バーンレートが閾値未満なら null", () => {
+  it("recentBurnRatePerMin が閾値未満なら null", () => {
     const blocks = [
-      block({ isActive: true, burnRatePerMin: DEFAULT_BURN_THRESHOLD_PER_MIN - 0.01 }),
+      block({ isActive: true, recentBurnRatePerMin: DEFAULT_BURN_THRESHOLD_PER_MIN - 0.01 }),
     ];
     expect(activeBurnWarning(blocks)).toBeNull();
   });
 
   it("閾値以上なら perMin と remainMin を返す", () => {
     const blocks = [
-      block({ isActive: true, burnRatePerMin: 0.8, remainMin: 42 }),
+      block({ isActive: true, recentBurnRatePerMin: 0.8, remainMin: 42 }),
     ];
     expect(activeBurnWarning(blocks)).toEqual({ perMin: 0.8, remainMin: 42 });
   });
 
   it("閾値ちょうどでも警告を返す", () => {
     const blocks = [
-      block({ isActive: true, burnRatePerMin: DEFAULT_BURN_THRESHOLD_PER_MIN, remainMin: 10 }),
+      block({ isActive: true, recentBurnRatePerMin: DEFAULT_BURN_THRESHOLD_PER_MIN, remainMin: 10 }),
     ];
     expect(activeBurnWarning(blocks)).toEqual({
       perMin: DEFAULT_BURN_THRESHOLD_PER_MIN,
@@ -50,8 +51,22 @@ describe("activeBurnWarning", () => {
   });
 
   it("カスタム閾値を尊重する", () => {
-    const blocks = [block({ isActive: true, burnRatePerMin: 0.3, remainMin: 5 })];
+    const blocks = [block({ isActive: true, recentBurnRatePerMin: 0.3, remainMin: 5 })];
     expect(activeBurnWarning(blocks, 0.2)).toEqual({ perMin: 0.3, remainMin: 5 });
     expect(activeBurnWarning(blocks, 0.5)).toBeNull();
+  });
+
+  it("burnRatePerMin が高くても recentBurnRatePerMin が閾値未満なら null", () => {
+    const blocks = [
+      block({ isActive: true, burnRatePerMin: 0.9, recentBurnRatePerMin: 0.1 }),
+    ];
+    expect(activeBurnWarning(blocks)).toBeNull();
+  });
+
+  it("burnRatePerMin が低くても recentBurnRatePerMin が閾値以上なら警告", () => {
+    const blocks = [
+      block({ isActive: true, burnRatePerMin: 0.1, recentBurnRatePerMin: 0.8, remainMin: 30 }),
+    ];
+    expect(activeBurnWarning(blocks)).toEqual({ perMin: 0.8, remainMin: 30 });
   });
 });

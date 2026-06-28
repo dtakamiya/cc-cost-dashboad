@@ -138,6 +138,7 @@ export interface Block {
   durationMin: number;
   remainMin: number;
   burnRatePerMin: number;
+  recentBurnRatePerMin: number;
   topModel: { model: string; cost: number } | null;
 }
 
@@ -160,8 +161,8 @@ export function activeBurnWarning(
   threshold = DEFAULT_BURN_THRESHOLD_PER_MIN
 ): { perMin: number; remainMin: number } | null {
   const active = blocks.find((b) => b.isActive);
-  if (!active || active.burnRatePerMin < threshold) return null;
-  return { perMin: active.burnRatePerMin, remainMin: active.remainMin };
+  if (!active || active.recentBurnRatePerMin < threshold) return null;
+  return { perMin: active.recentBurnRatePerMin, remainMin: active.remainMin };
 }
 
 // コンテキスト肥大化の判定閾値（初期値、実データを見て調整する）。
