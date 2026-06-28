@@ -117,11 +117,11 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="topbar-title">
-          <h1>Claude Code コストダッシュボード</h1>
-          <div className="sub">JSONL ログから算出した利用コストの推定値</div>
-        </div>
-        <div className="topbar-actions">
+        <div className="topbar-row-1">
+          <div className="topbar-title">
+            <h1>Claude Code コストダッシュボード</h1>
+            <div className="sub">JSONL ログから算出した利用コストの推定値</div>
+          </div>
           {lastUpdated && (
             <span className="last-updated">
               最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
@@ -132,33 +132,37 @@ export default function App() {
               )}
             </span>
           )}
-          <button
-            type="button"
-            className={`live-toggle ${autoRefresh ? "live-on" : ""}`}
-            aria-pressed={autoRefresh}
-            onClick={() => setAutoRefresh((v) => !v)}
-            title="30秒ごとに自動で再集計します"
-          >
-            <span className="live-dot" />
-            ライブ更新 {autoRefresh ? "ON" : "OFF"}
-          </button>
-          {data && data.projects.length > 0 && (
-            <ProjectSelector
-              projects={data.projects}
-              selected={selectedProject}
-              onChange={setSelectedProject}
+        </div>
+        <div className="topbar-row-2">
+          <div className="topbar-controls">
+            <button
+              type="button"
+              className={`live-toggle ${autoRefresh ? "live-on" : ""}`}
+              aria-pressed={autoRefresh}
+              onClick={() => setAutoRefresh((v) => !v)}
+              title="30秒ごとに自動で再集計します"
+            >
+              <span className="live-dot" />
+              ライブ更新 {autoRefresh ? "ON" : "OFF"}
+            </button>
+            {data && data.projects.length > 0 && (
+              <ProjectSelector
+                projects={data.projects}
+                selected={selectedProject}
+                onChange={setSelectedProject}
+              />
+            )}
+            <PeriodSelector
+              period={period}
+              onChange={setPeriod}
+              compareMode={compareMode}
+              onCompareChange={setCompareMode}
+              canCompare={canCompare}
             />
-          )}
-          <PeriodSelector
-            period={period}
-            onChange={setPeriod}
-            compareMode={compareMode}
-            onCompareChange={setCompareMode}
-            canCompare={canCompare}
-          />
-          <button className="reload" onClick={() => load(true)} disabled={loading}>
-            {loading ? "集計中…" : "再読込"}
-          </button>
+            <button className="reload" onClick={() => load(true)} disabled={loading}>
+              {loading ? "集計中…" : "再読込"}
+            </button>
+          </div>
         </div>
       </header>
 
