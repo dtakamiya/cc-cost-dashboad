@@ -106,6 +106,65 @@ describe("GET /api/summary", () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("generatedAt");
   });
+
+  it("初回呼び出し時 rebuild() が実行されてキャッシュが生成される", async () => {
+    // Arrange: モックは beforeEach でデフォルト値に設定済み
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+
+    // Act
+    const res = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("generatedAt");
+    expect(res.body).toHaveProperty("totals");
+    expect(res.body).toHaveProperty("tokenSplit");
+    expect(res.body).toHaveProperty("costSplit");
+    expect(vi.mocked(loadRecords)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(1);
+  });
+
+  it("同じキャッシュから連続で /api/summary を呼び出すと generatedAt が同じ", async () => {
+    // Arrange
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(aggregate).mockReturnValue({
+      generatedAt: "2026-06-28T10:00:00.000Z",
+      totals: { cost: 0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [], projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+    });
+
+    // Act
+    const res1 = await request(app).get("/api/summary");
+    const res2 = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res1.body.generatedAt).toBe("2026-06-28T10:00:00.000Z");
+    expect(res2.body.generatedAt).toBe("2026-06-28T10:00:00.000Z");
+    // キャッシュ効果: loadRecords は1回のみ
+    expect(vi.mocked(loadRecords)).toHaveBeenCalledTimes(1);
+  });
+
+  it("キャッシュから返却したレスポンスは完全に同じ値", async () => {
+    // Act
+    const res1 = await request(app).get("/api/summary");
+    const res2 = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    expect(res1.body).toEqual(res2.body);
+  });
 });
 
 describe("POST /api/reload", () => {
@@ -113,6 +172,142 @@ describe("POST /api/reload", () => {
     const res = await request(app).post("/api/reload");
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("generatedAt");
+  });
+
+  it("reload 前後で generatedAt が異なる（キャッシュが更新される）", async () => {
+    // Arrange: 1回目の generatedAt
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(aggregate).mockReturnValue({
+      generatedAt: "2026-06-28T10:00:00.000Z",
+      totals: { cost: 0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [], projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+    });
+
+    // Act: 1回目
+    const res1 = await request(app).get("/api/summary");
+
+    // Arrange: 2回目用に generatedAt を更新
+    vi.mocked(aggregate).mockReturnValue({
+      generatedAt: "2026-06-28T10:01:00.000Z",
+      totals: { cost: 0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [], projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+    });
+    await request(app).post("/api/reload");
+
+    // Act: 2回目
+    const res2 = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res1.body.generatedAt).toBe("2026-06-28T10:00:00.000Z");
+    expect(res2.body.generatedAt).toBe("2026-06-28T10:01:00.000Z");
+    expect(res1.body.generatedAt).not.toBe(res2.body.generatedAt);
+  });
+
+  it("reload 後の /api/summary は新しい totals.cost を返す", async () => {
+    // Arrange: 初期 cost
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(aggregate).mockReturnValue({
+      generatedAt: "2026-06-28T10:00:00.000Z",
+      totals: { cost: 10.0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [], projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+    });
+
+    // Act: 初回
+    const res1 = await request(app).get("/api/summary");
+    expect(res1.body.totals.cost).toBe(10.0);
+
+    // Arrange: cost を変更
+    vi.mocked(aggregate).mockReturnValue({
+      generatedAt: "2026-06-28T10:01:00.000Z",
+      totals: { cost: 20.0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [], projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+    });
+    await request(app).post("/api/reload");
+
+    // Act: reload 後
+    const res2 = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res2.body.totals.cost).toBe(20.0);
+  });
+});
+
+describe("エラーハンドリング", () => {
+  it("GET /api/summary - aggregate() が例外を throw するとステータス 500", async () => {
+    // Arrange: キャッシュなし状態で aggregate が例外を投げる
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(aggregate).mockImplementationOnce(() => {
+      throw new Error("Aggregate failed");
+    });
+
+    // Act
+    const res = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("POST /api/reload - loadRecords() が rejection するとステータス 500", async () => {
+    // Arrange
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockRejectedValueOnce(new Error("Load failed"));
+
+    // Act
+    const res = await request(app).post("/api/reload");
+
+    // Assert
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("GET /api/summary（キャッシュなし時）- loadRecords() が rejection するとステータス 500", async () => {
+    // Arrange: キャッシュなし（beforeEach でモジュール再ロードされているので初回 GET になる）
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockRejectedValueOnce(new Error("Load failed"));
+
+    // Act
+    const res = await request(app).get("/api/summary");
+
+    // Assert
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
   });
 });
 
