@@ -80,11 +80,11 @@ describe("SummaryCards - 総コストカード", () => {
     // Act
     render(<SummaryCards s={s} prev={prev} />);
 
-    // Assert: delta バッジが表示される（+100% = 2倍）
+    // Assert: delta バッジが総コストカード内に表示される（+100% = 2倍）
     expect(screen.getByText("総コスト")).toBeInTheDocument();
-    // DeltaBadge は aria-label 等を持たないが、+記号を含む要素が出る
     const costCard = screen.getByText("総コスト").closest(".card");
     expect(costCard).toBeInTheDocument();
+    expect(costCard).toHaveTextContent("+100.0% ▲");
   });
 
   it("カード順が 総トークン→セッション数→期間→総コスト になる", () => {
