@@ -110,6 +110,7 @@ body {
 
 /* ---- live refresh ---- */
 .last-updated { color: var(--subtle); font-size: 12px; white-space: nowrap; }
+.auto-refresh-error { color: var(--warn); font-size: 11px; margin-left: var(--sp-2); }
 .topbar button.live-toggle {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--elevated); color: var(--muted);

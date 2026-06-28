@@ -25,6 +25,7 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+  const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   const canCompare = period !== 'all';
@@ -58,8 +59,13 @@ export default function App() {
       setData(summary);
       setLastUpdated(Date.now());
       setError(null);
+      setAutoRefreshError(null);
     } catch (e) {
-      if (!silent) setError(String(e));
+      if (silent) {
+        setAutoRefreshError(String(e));
+      } else {
+        setError(String(e));
+      }
     } finally {
       if (!silent) setLoading(false);
       inFlight.current = false;
@@ -96,6 +102,11 @@ export default function App() {
           {lastUpdated && (
             <span className="last-updated">
               最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
+              {autoRefreshError && (
+                <span className="auto-refresh-error" title={autoRefreshError}>
+                  　⚠ 自動更新失敗
+                </span>
+              )}
             </span>
           )}
           <button
