@@ -1,0 +1,136 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom";
+import type { Summary, SessionCost, SessionTurn } from "../api";
+
+// fetchSessionTurns だけモックし他は本物を使う
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  return {
+    ...actual,
+    fetchSessionTurns: vi.fn(),
+  };
+});
+
+import { fetchSessionTurns } from "../api";
+import { SessionBreakdown } from "./SessionBreakdown";
+
+function makeSummary(sessions: SessionCost[], overrides: Partial<Summary> = {}): Summary {
+  return {
+    generatedAt: "2026-06-28T00:00:00.000Z",
+    totals: { cost: 10, tokens: 100_000, sessions: sessions.length, messages: 50, from: "2026-06-01", to: "2026-06-28" },
+    tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+    costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+    models: [],
+    daily: [],
+    projects: [],
+    drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+    sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+    overhead: {
+      claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [],
+      projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0,
+    },
+    warnings: { fallbackModels: [] },
+    blocks: [],
+    projection: null,
+    activity: { matrix: [], max: 0, total: 0, peak: null },
+    bySession: sessions,
+    ...overrides,
+  };
+}
+
+function makeSession(overrides: Partial<SessionCost> = {}): SessionCost {
+  return {
+    sessionId: "test-session-1",
+    cwd: "/home/user/myproject",
+    cost: 1.5,
+    tokens: 30_000,
+    messages: 10,
+    input: 10_000,
+    output: 5_000,
+    cacheCreate: 8_000,
+    cacheRead: 7_000,
+    firstTs: "2026-06-15T10:00:00.000Z",
+    lastTs: "2026-06-15T12:00:00.000Z",
+    avgContextPerMsg: 1_700,
+    topModel: { model: "claude-opus-4-8", cost: 1.5 },
+    ...overrides,
+  };
+}
+
+describe("SessionBreakdown", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("セッションが空のとき「セッションなし」相当のメッセージを表示する", () => {
+    render(<SessionBreakdown s={makeSummary([])} />);
+    // セッションなしの場合は行が存在しないことを確認
+    expect(screen.queryByText(/test-session/)).not.toBeInTheDocument();
+  });
+
+  it("セッション一覧が表示される（プロジェクト名が出る）", () => {
+    const s = makeSummary([makeSession()]);
+    render(<SessionBreakdown s={s} />);
+    // cwd の最後のディレクトリ名が表示される
+    expect(screen.getByText("myproject")).toBeInTheDocument();
+  });
+
+  it("セッションのコストが USD 形式で表示される", () => {
+    const s = makeSummary([makeSession({ cost: 1.5 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("$1.50")).toBeInTheDocument();
+  });
+
+  it("展開ボタンクリックで fetchSessionTurns が呼ばれる", async () => {
+    const turns: SessionTurn[] = [
+      { ts: "2026-06-15T10:00:00.000Z", model: "claude-opus-4-8", input: 100, output: 50, cacheCreate: 0, cacheRead: 0, cost: 0.001 },
+    ];
+    vi.mocked(fetchSessionTurns).mockResolvedValue(turns);
+
+    const s = makeSummary([makeSession()]);
+    render(<SessionBreakdown s={s} />);
+
+    // 展開ボタン（aria-label="詳細を展開"）をクリック
+    const expandBtn = screen.getByRole("button", { name: "詳細を展開" });
+    fireEvent.click(expandBtn);
+
+    await waitFor(() => {
+      expect(fetchSessionTurns).toHaveBeenCalledWith("test-session-1");
+    });
+  });
+
+  it("fetchSessionTurns が成功するとターンデータが表示される", async () => {
+    const turns: SessionTurn[] = [
+      { ts: "2026-06-15T10:00:00.000Z", model: "claude-opus-4-8", input: 1000, output: 500, cacheCreate: 0, cacheRead: 0, cost: 0.01 },
+      { ts: "2026-06-15T10:05:00.000Z", model: "claude-opus-4-8", input: 2000, output: 800, cacheCreate: 0, cacheRead: 0, cost: 0.02 },
+    ];
+    vi.mocked(fetchSessionTurns).mockResolvedValue(turns);
+
+    const s = makeSummary([makeSession()]);
+    render(<SessionBreakdown s={s} />);
+
+    const expandBtn = screen.getByRole("button", { name: "詳細を展開" });
+    fireEvent.click(expandBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 ターン/)).toBeInTheDocument();
+    });
+  });
+
+  it("複数セッションがコスト降順で表示される", () => {
+    const sessions = [
+      makeSession({ sessionId: "cheap", cwd: "/home/u/cheap-proj", cost: 0.5 }),
+      makeSession({ sessionId: "expensive", cwd: "/home/u/expensive-proj", cost: 5.0 }),
+    ];
+    // bySession はサーバー側でコスト降順に返るものとして渡す
+    const sorted = [...sessions].sort((a, b) => b.cost - a.cost);
+    const s = makeSummary(sorted);
+    render(<SessionBreakdown s={s} />);
+
+    const rows = screen.getAllByRole("row");
+    // 最初のデータ行（ヘッダー除く）が expensive-proj になること
+    const dataRows = rows.slice(1); // ヘッダー行を除く
+    expect(dataRows[0]).toHaveTextContent("expensive-proj");
+  });
+});

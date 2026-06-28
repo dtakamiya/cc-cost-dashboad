@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { parseSkillFrontmatter, measureSkillContent } from "./analyze.js";
 
 const skill = (fm, body = "x".repeat(4000)) => `---\n${fm}\n---\n${body}`;
@@ -48,5 +48,82 @@ describe("measureSkillContent (progressive disclosure)", () => {
     const m = measureSkillContent(c, "s");
     expect(m.alwaysTokens).toBeLessThan(10);
     expect(m.fullTokens).toBeGreaterThan(900);
+  });
+});
+
+// ─── analyzeOverhead 結合テスト ──────────────────────────────────────────────
+
+// fs モックは watcher.test.js パターンに倣い、モジュールリセット + 動的インポートで実施。
+describe("analyzeOverhead", () => {
+  let mockFs;
+
+  beforeEach(() => {
+    vi.resetModules();
+    mockFs = {
+      readFileSync: vi.fn().mockReturnValue(null),
+      readdirSync: vi.fn().mockReturnValue([]),
+    };
+    vi.doMock("node:fs", () => ({ default: mockFs }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("CLAUDE.mdがないときclaudeMdはnull", async () => {
+    // readFileSync は常に例外を投げる（ファイルなし相当）
+    mockFs.readFileSync.mockImplementation(() => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    expect(result.claudeMd).toBeNull();
+  });
+
+  it("CLAUDE.mdがあるときbytes/alwaysTokens/fullTokensを返す", async () => {
+    const content = "# My CLAUDE.md\n\nThis is a test config file.";
+
+    mockFs.readFileSync.mockImplementation((p) => {
+      // CLAUDE.md のパスのみ返し、その他はエラー
+      if (String(p).endsWith("CLAUDE.md")) return content;
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+    // settings.json 等も readFileSync で読むので、JSON parse エラーにならないよう空オブジェクトを返す
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith("CLAUDE.md")) return content;
+      if (String(p).endsWith("settings.json")) return "{}";
+      if (String(p).endsWith(".claude.json")) return "{}";
+      if (String(p).endsWith("installed_plugins.json")) return "{}";
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    expect(result.claudeMd).not.toBeNull();
+    expect(result.claudeMd.bytes).toBe(Buffer.byteLength(content, "utf8"));
+    expect(result.claudeMd.alwaysTokens).toBeGreaterThan(0);
+    expect(result.claudeMd.fullTokens).toBe(result.claudeMd.alwaysTokens);
+  });
+
+  it("totalAlwaysTokensが各ソースの合計になる", async () => {
+    const claudeMdContent = "# CLAUDE\n" + "A".repeat(400);
+
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith("CLAUDE.md")) return claudeMdContent;
+      if (String(p).endsWith("settings.json")) return "{}";
+      if (String(p).endsWith(".claude.json")) return "{}";
+      if (String(p).endsWith("installed_plugins.json")) return "{}";
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    // CLAUDE.md の alwaysTokens が totalAlwaysTokens に反映されていること
+    expect(result.totalAlwaysTokens).toBeGreaterThan(0);
+    expect(result.totalAlwaysTokens).toBe(result.claudeMd.alwaysTokens);
+    // personalSkills / plugins がない場合は claudeMd のみ
+    expect(result.totalEstimatedTokens).toBe(result.totalAlwaysTokens);
   });
 });
