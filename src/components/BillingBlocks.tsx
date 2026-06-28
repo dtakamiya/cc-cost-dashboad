@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Summary } from "../api";
 import { compact, usd } from "../format";
 
@@ -6,10 +7,12 @@ function fmt(iso: string) {
 }
 
 export function BillingBlocks({ s }: { s: Summary }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
   const blocks = s.blocks ?? [];
   if (!blocks.length) return null;
 
   const active = blocks.find((b) => b.isActive);
+  const history = blocks.filter((b) => !b.isActive);
 
   return (
     <section className="panel">
@@ -54,16 +57,29 @@ export function BillingBlocks({ s }: { s: Summary }) {
         </div>
       )}
 
-      <div className="block-list">
-        {blocks.slice(0, 10).map((b, i) => (
-          <div key={i} className={`block-row ${b.isActive ? "block-row-active" : ""}`}>
-            <div className="block-row-time">{fmt(b.start)}</div>
-            <div className="block-row-tokens">{compact(b.tokens)} tok</div>
-            <div className="block-row-model">{b.topModel?.model ?? "-"}</div>
-            <div className="block-row-dur">{b.durationMin} 分</div>
-          </div>
-        ))}
-      </div>
+      {history.length > 0 && (
+        <>
+          <button
+            className="history-toggle"
+            aria-expanded={historyOpen}
+            onClick={() => setHistoryOpen((prev) => !prev)}
+          >
+            {historyOpen ? "▼" : "▶"} 履歴（{history.length}件）
+          </button>
+          {historyOpen && (
+            <div className="block-list">
+              {history.slice(0, 10).map((b, i) => (
+                <div key={i} className="block-row">
+                  <div className="block-row-time">{fmt(b.start)}</div>
+                  <div className="block-row-tokens">{compact(b.tokens)} tok</div>
+                  <div className="block-row-model">{b.topModel?.model ?? "-"}</div>
+                  <div className="block-row-dur">{b.durationMin} 分</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
