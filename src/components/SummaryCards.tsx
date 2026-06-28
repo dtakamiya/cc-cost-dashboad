@@ -12,9 +12,13 @@ export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
         icon: "✓",
         label: "データ品質",
         value: src.parsedLines.toLocaleString(),
-        sub: src.skippedLines
-          ? `スキップ: ${src.skippedLines} 行 (エラー: ${src.parseErrors ?? 0})`
-          : "完全",
+        sub: (() => {
+          const parts: string[] = [];
+          if ((src.skippedLines ?? 0) > 0) parts.push(`スキップ: ${src.skippedLines} 行`);
+          if ((src.parseErrors ?? 0) > 0) parts.push(`パースエラー: ${src.parseErrors}`);
+          if ((src.unreadableFiles ?? 0) > 0) parts.push(`読込失敗: ${src.unreadableFiles} ファイル`);
+          return parts.length > 0 ? parts.join(" / ") : "完全";
+        })(),
       }
     : null;
 

@@ -74,15 +74,23 @@ export async function loadRecords() {
   let unreadableFiles = 0;
 
   for (const file of files) {
-    let stream;
-    try {
-      stream = fs.createReadStream(file, { encoding: "utf8" });
-    } catch {
-      unreadableFiles++;
-      continue;
-    }
+    const stream = fs.createReadStream(file, { encoding: "utf8" });
+    let fileReadFailed = false;
+
+    const handleError = () => {
+      if (!fileReadFailed) {
+        fileReadFailed = true;
+        unreadableFiles++;
+      }
+    };
+
+    stream.on("error", handleError);
+
     const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    rl.on("error", handleError);
+
     for await (const line of rl) {
+      if (fileReadFailed) break;
       if (!line) continue;
       let obj;
       try {

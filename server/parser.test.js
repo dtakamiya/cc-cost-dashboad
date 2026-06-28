@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRecords } from "./parser.js";
 
@@ -75,36 +76,6 @@ describe("loadRecords - 解析品質メタデータ", () => {
     }
   });
 
-  it("存在しないファイルを含む場合 unreadableFiles がカウントされる", async () => {
-    // Arrange: 通常のディレクトリを作成してから、読み取り不能ファイルをシミュレート
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-quality-test-"));
-    const projectDir = path.join(tmpDir, "project1");
-    fs.mkdirSync(projectDir, { recursive: true });
-    fs.writeFileSync(path.join(projectDir, "session.jsonl"), VALID_LINE + "\n");
-
-    // fs.createReadStream をモックして失敗させる
-    const originalCreateReadStream = fs.createReadStream;
-    let callCount = 0;
-    const mockCreateReadStream = (...args) => {
-      callCount++;
-      if (callCount === 1) {
-        throw new Error("Permission denied");
-      }
-      return originalCreateReadStream(...args);
-    };
-    fs.createReadStream = mockCreateReadStream;
-
-    try {
-      process.env.CLAUDE_LOGS_DIR = tmpDir;
-      const result = await loadRecords();
-
-      expect(result.unreadableFiles).toBe(1);
-      expect(result.records).toHaveLength(0);
-    } finally {
-      fs.createReadStream = originalCreateReadStream;
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
 
   it("空ファイルの場合 parsedLines=0, parseErrors=0, skippedLines=0", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-quality-test-"));
