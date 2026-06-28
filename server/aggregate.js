@@ -3,6 +3,8 @@ import { costOf, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_REA
 const dayOf = (ts) => (ts ? ts.slice(0, 10) : "(unknown)");
 
 const BLOCK_DURATION_MS = 5 * 60 * 60 * 1000; // 5時間
+const BURN_WINDOW_MS = 15 * 60 * 1000; // スライディングウィンドウ: 15分
+const BURN_WINDOW_MIN = 15;
 
 /**
  * レコード配列から 5 時間課金ブロック配列を生成する（新しい順、最大 20 件）。
@@ -24,13 +26,14 @@ function computeBlocks(records) {
     if (!block || t >= block.endMs) {
       // 新ブロック開始（最初の利用時刻を起点に 5 時間）
       const startMs = t;
-      block = { startMs, endMs: startMs + BLOCK_DURATION_MS, cost: 0, tokens: 0, models: {}, lastTs: t };
+      block = { startMs, endMs: startMs + BLOCK_DURATION_MS, cost: 0, tokens: 0, models: {}, lastTs: t, recs: [] };
       blocks.push(block);
     }
     block.cost += c.total;
     block.tokens += tokens;
     block.models[r.model] = (block.models[r.model] || 0) + c.total;
     block.lastTs = t;
+    block.recs.push({ ts: t, cost: c.total });
   }
 
   const now = Date.now();
@@ -42,6 +45,11 @@ function computeBlocks(records) {
       const durationMin = Math.round((Math.min(now, b.endMs) - b.startMs) / 60000);
       const remainMin = isActive ? Math.round((b.endMs - now) / 60000) : 0;
       const topModel = Object.entries(b.models).sort((a, z) => z[1] - a[1])[0];
+      const windowStart = now - BURN_WINDOW_MS;
+      const recentCost = b.recs
+        .filter((rec) => rec.ts >= windowStart)
+        .reduce((s, rec) => s + rec.cost, 0);
+      const recentBurnRatePerMin = recentCost / BURN_WINDOW_MIN;
       return {
         start: new Date(b.startMs).toISOString(),
         end: new Date(b.endMs).toISOString(),
@@ -51,6 +59,7 @@ function computeBlocks(records) {
         durationMin,
         remainMin,
         burnRatePerMin: durationMin > 0 ? b.cost / durationMin : 0,
+        recentBurnRatePerMin,
         topModel: topModel ? { model: topModel[0], cost: topModel[1] } : null,
       };
     });
