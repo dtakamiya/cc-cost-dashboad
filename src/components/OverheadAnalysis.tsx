@@ -1,6 +1,12 @@
 import type { Summary, OverheadFile } from "../api";
-import { OVERHEAD_FILE_WARN_TOKENS, OVERHEAD_FILE_CAUTION_TOKENS } from "../advisor";
+import {
+  OVERHEAD_FILE_WARN_TOKENS,
+  OVERHEAD_FILE_CAUTION_TOKENS,
+  calculateOverheadStatus,
+  rankFilesByImpact,
+} from "../advisor";
 import { compact, usd } from "../format";
+import { OverheadGauge } from "./OverheadGauge";
 
 const KB = (b: number) => `${(b / 1024).toFixed(1)} KB`;
 const tok = (n: number) => `~${compact(n)} tok`;
@@ -69,10 +75,44 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
   const fileMonthlyCost = (alwaysTokens: number) =>
     alwaysTokens * cacheCreateRate * s.totals.sessions * monthlyFactor;
 
+  const overheadStatus = calculateOverheadStatus(overhead.totalAlwaysTokens);
+  const impacts = rankFilesByImpact(s, cacheCreateRate, s.totals.sessions, monthlyFactor);
+  const topImpacts = impacts.slice(0, 3);
+
   return (
     <section className="panel">
       <h2>コンテキストオーバーヘッド分析</h2>
       <div className="drivers">
+        {/* 削減達成度ゲージ */}
+        <div className="driver">
+          <div className="driver-title">削減達成度ゲージ</div>
+          <div className="driver-hint">
+            現在の常時注入トークン数と目標値の比較。目標: 1,500 tok 以下が理想的。
+          </div>
+          <OverheadGauge status={overheadStatus} />
+        </div>
+
+        {/* ファイルインパクトランキング */}
+        {topImpacts.length > 0 && (
+          <div className="driver">
+            <div className="driver-title">ファイルインパクト Top {topImpacts.length}（削減効果順）</div>
+            <div className="driver-hint">
+              削除または縮小した場合の月間推定節約額が大きい順。
+            </div>
+            <div className="impact-ranking">
+              {topImpacts.map((item) => (
+                <div key={item.label} className={`impact-item rank-${item.rank}`}>
+                  <span className="rank-badge">#{item.rank}</span>
+                  <span className="label">{item.label}</span>
+                  <span className="savings">
+                    {item.monthlySavings > 0.001 ? usd(item.monthlySavings) + "/月" : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* システムプロンプト構成（常時注入の baseline） */}
         <div className="driver">
           <div className="driver-title">システムプロンプト baseline（毎セッション常時注入）</div>
@@ -95,36 +135,30 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
               </tr>
             </thead>
             <tbody>
-              {overhead.claudeMd && (
-                <Row
-                  label={overhead.claudeMd.label}
-                  file={overhead.claudeMd}
-                  monthlyCost={fileMonthlyCost(overhead.claudeMd.alwaysTokens)}
-                />
-              )}
-              {[...overhead.atRefs]
-                .sort((a, b) => b.alwaysTokens - a.alwaysTokens)
-                .map((r) => (
-                  <Row key={r.label} label={`@${r.label}`} file={r} monthlyCost={fileMonthlyCost(r.alwaysTokens)} />
-                ))}
-              {overhead.globalPlugins.flatMap((p) =>
-                p.files.map((f) => (
+              {impacts.map((item) => {
+                // source メタデータから元の OverheadFile を引き当てる
+                let file: OverheadFile | undefined;
+                const source = item.source;
+                if (source.kind === "claudeMd") {
+                  file = overhead.claudeMd || undefined;
+                } else if (source.kind === "atRef") {
+                  file = overhead.atRefs.find((r) => r.label === source.label);
+                } else if (source.kind === "plugin") {
+                  const plugin = overhead.globalPlugins.find((p) => p.name === source.pluginName);
+                  file = plugin?.files.find((f) => f.label === source.label);
+                } else if (source.kind === "skill") {
+                  file = overhead.personalSkills.find((sk) => sk.label === source.label);
+                }
+                if (!file) return null;
+                return (
                   <Row
-                    key={`${p.name}/${f.label}`}
-                    label={`[plugin] ${p.name} / ${f.label}`}
-                    file={f}
-                    monthlyCost={fileMonthlyCost(f.alwaysTokens)}
+                    key={item.label}
+                    label={item.label}
+                    file={file}
+                    monthlyCost={fileMonthlyCost(file.alwaysTokens)}
                   />
-                ))
-              )}
-              {overhead.personalSkills.map((sk) => (
-                <Row
-                  key={`personal/${sk.label}`}
-                  label={`[skill] ${sk.label}`}
-                  file={sk}
-                  monthlyCost={fileMonthlyCost(sk.alwaysTokens)}
-                />
-              ))}
+                );
+              })}
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 600 }}>

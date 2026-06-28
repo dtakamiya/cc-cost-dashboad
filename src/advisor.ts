@@ -9,6 +9,26 @@ import { isBloatedSession, type Summary } from "./api";
 
 export type Priority = "high" | "medium" | "low";
 
+export interface OverheadStatus {
+  current: number;
+  target: number;
+  status: "good" | "caution" | "warn";
+  percentage: number;
+  color: string;
+}
+
+export interface FileImpact {
+  label: string;
+  alwaysTokens: number;
+  monthlySavings: number;
+  rank: number;
+  source:
+    | { kind: "claudeMd"; label: string }
+    | { kind: "atRef"; label: string }
+    | { kind: "plugin"; pluginName: string; label: string }
+    | { kind: "skill"; label: string };
+}
+
 export interface Recommendation {
   id: string;
   priority: Priority;
@@ -51,6 +71,75 @@ function periodDaysOf(from: string | null, to: string | null): number {
 
 /** コスト/トークン比率を安全に計算する（トークン 0 の場合は 0 を返す）。 */
 const safeRate = (cost: number, tokens: number): number => (tokens > 0 ? cost / tokens : 0);
+
+/** 常時注入トークン数から削減達成度ステータスを計算する。 */
+export function calculateOverheadStatus(
+  totalAlwaysTokens: number,
+  target: number = OVERHEAD_TARGET_TOKENS
+): OverheadStatus {
+  const percentage = target > 0 ? (totalAlwaysTokens / target) * 100 : 0;
+  let status: OverheadStatus["status"];
+  let color: string;
+  if (totalAlwaysTokens <= target) {
+    status = "good";
+    color = "var(--success)";
+  } else if (totalAlwaysTokens <= OVERHEAD_TOKEN_THRESHOLD) {
+    status = "caution";
+    color = "var(--warn)";
+  } else {
+    status = "warn";
+    color = "var(--danger)";
+  }
+  return { current: totalAlwaysTokens, target, status, percentage, color };
+}
+
+/** ファイル別常時注入をmonthlySavings降順でランク付けして返す。 */
+export function rankFilesByImpact(
+  s: Summary,
+  cacheCreateRate: number,
+  sessionFactor: number,
+  monthlyFactor: number
+): FileImpact[] {
+  const candidates: Array<Omit<FileImpact, "monthlySavings" | "rank">> = [];
+  if (s.overhead.claudeMd) {
+    candidates.push({
+      label: s.overhead.claudeMd.label,
+      alwaysTokens: s.overhead.claudeMd.alwaysTokens,
+      source: { kind: "claudeMd", label: s.overhead.claudeMd.label },
+    });
+  }
+  for (const r of s.overhead.atRefs) {
+    candidates.push({
+      label: `@${r.label}`,
+      alwaysTokens: r.alwaysTokens,
+      source: { kind: "atRef", label: r.label },
+    });
+  }
+  for (const p of s.overhead.globalPlugins) {
+    for (const f of p.files) {
+      candidates.push({
+        label: `[plugin] ${p.name} / ${f.label}`,
+        alwaysTokens: f.alwaysTokens,
+        source: { kind: "plugin", pluginName: p.name, label: f.label },
+      });
+    }
+  }
+  for (const sk of s.overhead.personalSkills) {
+    candidates.push({
+      label: `[skill] ${sk.label}`,
+      alwaysTokens: sk.alwaysTokens,
+      source: { kind: "skill", label: sk.label },
+    });
+  }
+  return candidates
+    .map((c) => ({
+      ...c,
+      monthlySavings: c.alwaysTokens * cacheCreateRate * sessionFactor * monthlyFactor,
+      rank: 0,
+    }))
+    .sort((a, b) => b.monthlySavings - a.monthlySavings)
+    .map((item, i) => ({ ...item, rank: i + 1 }));
+}
 
 /** Summary を解析してコスト削減推奨アクション一覧を生成する。 */
 export function buildRecommendations(s: Summary): AdvisorResult {

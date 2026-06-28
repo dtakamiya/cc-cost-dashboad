@@ -375,6 +375,81 @@ body {
   border: 1px solid var(--border-soft);
 }
 
+/* 削減達成度ゲージ */
+.gauge {
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+  background: var(--elevated);
+  margin-top: var(--sp-3);
+}
+.gauge-bar-bg {
+  position: relative;
+  height: 10px;
+  background: var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.gauge-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.3s ease;
+}
+.gauge.gauge-good .gauge-bar-fill    { background-color: var(--success); }
+.gauge.gauge-caution .gauge-bar-fill { background-color: var(--warn); }
+.gauge.gauge-warn .gauge-bar-fill    { background-color: var(--danger); }
+.gauge-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ファイルインパクトランキング */
+.impact-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.impact-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--elevated);
+  font-size: 12px;
+}
+.impact-item.rank-1,
+.impact-item.rank-2,
+.impact-item.rank-3 {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+}
+.rank-badge {
+  font-weight: 600;
+  color: var(--accent);
+  min-width: 20px;
+}
+.impact-item .label {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.impact-item .savings {
+  color: var(--success);
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+}
+
 @media (max-width: 520px) {
   .cards { grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
   .topbar-actions { width: 100%; justify-content: space-between; }
