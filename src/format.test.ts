@@ -66,4 +66,14 @@ describe("modelColor", () => {
     expect(hexPattern.test(modelColor("claude-3-5-sonnet-20241022"))).toBe(true);
     expect(hexPattern.test(modelColor("unknown-future-model"))).toBe(true);
   });
+
+  it("未知モデルは既知Claudeの固定色と衝突しない", () => {
+    modelColor("claude-3-opus-20240229");
+    modelColor("claude-3-5-sonnet-20241022");
+    modelColor("claude-3-5-haiku-20241022");
+    modelColor("claude-3-haiku-20240307");
+
+    const unknownColor = modelColor("unknown-model-xyz");
+    expect(["#fb7185", "#c084fc", "#22d3ee", "#a3e635"]).not.toContain(unknownColor);
+  });
 });

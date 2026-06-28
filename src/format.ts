@@ -17,6 +17,11 @@ export const MODEL_COLOR_MAP: Record<string, string> = {
   "claude-3-haiku": "#a3e635",
 };
 
+// 予約済み色を除いたフォールバックパレット（未知モデルが既知モデルと衝突しないよう分離）
+const RESERVED_COLORS = new Set(Object.values(MODEL_COLOR_MAP));
+const FALLBACK_PALETTE = PALETTE.filter((c) => !RESERVED_COLORS.has(c));
+let nextFallbackIndex = 0;
+
 const colorCache = new Map<string, string>();
 export function modelColor(model: string): string {
   if (colorCache.has(model)) return colorCache.get(model)!;
@@ -25,7 +30,9 @@ export function modelColor(model: string): string {
   const hit = Object.keys(MODEL_COLOR_MAP)
     .filter((prefix) => model.startsWith(prefix))
     .sort((a, b) => b.length - a.length)[0];
-  const color = hit ? MODEL_COLOR_MAP[hit] : PALETTE[colorCache.size % PALETTE.length];
+  const color = hit
+    ? MODEL_COLOR_MAP[hit]
+    : FALLBACK_PALETTE[nextFallbackIndex++ % FALLBACK_PALETTE.length];
 
   colorCache.set(model, color);
   return color;
