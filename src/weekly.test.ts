@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { weekStartOf, toWeekly } from "./weekly";
-import type { DailyCost } from "./api";
+import { weekStartOf, toWeekly, toHourly } from "./weekly";
+import type { DailyCost, HourlyData } from "./api";
 
 const day = (date: string, models: Record<string, number>, tokenModels: Record<string, number>): DailyCost => ({
   date,
@@ -68,5 +68,72 @@ describe("toWeekly", () => {
     expect(w.map((x) => x.weekStart)).toEqual(["2026-06-22", "2026-06-29"]);
     expect(w[0].total).toBe(1);
     expect(w[1].total).toBe(9);
+  });
+});
+
+describe("toHourly", () => {
+  it("空配列は空配列を返す", () => {
+    expect(toHourly([])).toEqual([]);
+  });
+
+  it("単一データを変換する", () => {
+    const hourly: HourlyData[] = [
+      {
+        hour: 0,
+        tokens: 1500,
+        cost: 0.5,
+        models: [
+          { model: "claude-opus-4-8", cost: 0.3 },
+          { model: "claude-sonnet-4-6", cost: 0.2 }
+        ]
+      }
+    ];
+    const result = toHourly(hourly);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toHaveProperty("hour", 0);
+    expect(result[0]).toHaveProperty("tokens", 1500);
+    expect(result[0]).toHaveProperty("cost", 0.5);
+    expect(result[0]).toHaveProperty("breakdown");
+  });
+
+  it("複数時間のデータを変換する", () => {
+    const hourly: HourlyData[] = [
+      {
+        hour: 0,
+        tokens: 1500,
+        cost: 0.5,
+        models: [{ model: "claude-opus-4-8", cost: 0.5 }]
+      },
+      {
+        hour: 1,
+        tokens: 2300,
+        cost: 0.8,
+        models: [{ model: "claude-opus-4-8", cost: 0.8 }]
+      }
+    ];
+    const result = toHourly(hourly);
+    expect(result).toHaveLength(2);
+    expect(result[0].hour).toBe(0);
+    expect(result[1].hour).toBe(1);
+  });
+
+  it("モデル内訳を保持する", () => {
+    const hourly: HourlyData[] = [
+      {
+        hour: 2,
+        tokens: 3000,
+        cost: 1.2,
+        models: [
+          { model: "claude-opus-4-8", cost: 0.7 },
+          { model: "claude-sonnet-4-6", cost: 0.5 }
+        ]
+      }
+    ];
+    const result = toHourly(hourly);
+    expect(result[0].breakdown).toHaveLength(2);
+    expect(result[0].breakdown[0].model).toBe("claude-opus-4-8");
+    expect(result[0].breakdown[0].cost).toBe(0.7);
+    expect(result[0].breakdown[1].model).toBe("claude-sonnet-4-6");
+    expect(result[0].breakdown[1].cost).toBe(0.5);
   });
 });
