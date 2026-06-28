@@ -22,6 +22,11 @@ export interface FileImpact {
   alwaysTokens: number;
   monthlySavings: number;
   rank: number;
+  source:
+    | { kind: "claudeMd"; label: string }
+    | { kind: "atRef"; label: string }
+    | { kind: "plugin"; pluginName: string; label: string }
+    | { kind: "skill"; label: string };
 }
 
 export interface Recommendation {
@@ -95,25 +100,40 @@ export function rankFilesByImpact(
   sessionFactor: number,
   monthlyFactor: number
 ): FileImpact[] {
-  const candidates: Array<{ label: string; alwaysTokens: number }> = [];
+  const candidates: Array<Omit<FileImpact, "monthlySavings" | "rank">> = [];
   if (s.overhead.claudeMd) {
-    candidates.push({ label: s.overhead.claudeMd.label, alwaysTokens: s.overhead.claudeMd.alwaysTokens });
+    candidates.push({
+      label: s.overhead.claudeMd.label,
+      alwaysTokens: s.overhead.claudeMd.alwaysTokens,
+      source: { kind: "claudeMd", label: s.overhead.claudeMd.label },
+    });
   }
   for (const r of s.overhead.atRefs) {
-    candidates.push({ label: `@${r.label}`, alwaysTokens: r.alwaysTokens });
+    candidates.push({
+      label: `@${r.label}`,
+      alwaysTokens: r.alwaysTokens,
+      source: { kind: "atRef", label: r.label },
+    });
   }
   for (const p of s.overhead.globalPlugins) {
     for (const f of p.files) {
-      candidates.push({ label: `[plugin] ${p.name}/${f.label}`, alwaysTokens: f.alwaysTokens });
+      candidates.push({
+        label: `[plugin] ${p.name} / ${f.label}`,
+        alwaysTokens: f.alwaysTokens,
+        source: { kind: "plugin", pluginName: p.name, label: f.label },
+      });
     }
   }
   for (const sk of s.overhead.personalSkills) {
-    candidates.push({ label: `[skill] ${sk.label}`, alwaysTokens: sk.alwaysTokens });
+    candidates.push({
+      label: `[skill] ${sk.label}`,
+      alwaysTokens: sk.alwaysTokens,
+      source: { kind: "skill", label: sk.label },
+    });
   }
   return candidates
     .map((c) => ({
-      label: c.label,
-      alwaysTokens: c.alwaysTokens,
+      ...c,
       monthlySavings: c.alwaysTokens * cacheCreateRate * sessionFactor * monthlyFactor,
       rank: 0,
     }))

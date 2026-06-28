@@ -358,6 +358,59 @@ describe("rankFilesByImpact", () => {
     expect(labels.some((l) => l.includes("my-plugin"))).toBe(true);
     expect(labels.some((l) => l.includes("my-skill"))).toBe(true);
   });
+
+  it("source メタデータが正しく設定される（plugin の / エスケープテスト）", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 1000,
+          alwaysTokens: 100,
+          fullTokens: 100,
+          estimatedTokens: 100,
+        },
+        atRefs: [{ label: "path/to/ref", bytes: 200, alwaysTokens: 150, fullTokens: 150, estimatedTokens: 150 }],
+        globalPlugins: [
+          {
+            name: "plugin-with/slash",
+            totalBytes: 100,
+            totalAlwaysTokens: 200,
+            totalFullTokens: 200,
+            totalEstimatedTokens: 200,
+            files: [
+              { label: "file/with/slash", bytes: 100, alwaysTokens: 200, fullTokens: 200, estimatedTokens: 200 },
+            ],
+          },
+        ],
+        personalSkills: [
+          { label: "skill/name", bytes: 500, alwaysTokens: 250, fullTokens: 500, estimatedTokens: 250 },
+        ],
+        totalAlwaysTokens: 700,
+      },
+    });
+    const impacts = rankFilesByImpact(s, 0.001, 5, 1);
+    // source フィールドの構造を確認
+    const claudeMdImpact = impacts.find((i) => i.source.kind === "claudeMd");
+    expect(claudeMdImpact).toBeDefined();
+    expect(claudeMdImpact?.source.kind).toBe("claudeMd");
+
+    const atRefImpact = impacts.find((i) => i.source.kind === "atRef");
+    expect(atRefImpact).toBeDefined();
+    expect(atRefImpact?.source.kind).toBe("atRef");
+    expect((atRefImpact?.source as any).label).toBe("path/to/ref");
+
+    const pluginImpact = impacts.find((i) => i.source.kind === "plugin");
+    expect(pluginImpact).toBeDefined();
+    expect(pluginImpact?.source.kind).toBe("plugin");
+    expect((pluginImpact?.source as any).pluginName).toBe("plugin-with/slash");
+    expect((pluginImpact?.source as any).label).toBe("file/with/slash");
+
+    const skillImpact = impacts.find((i) => i.source.kind === "skill");
+    expect(skillImpact).toBeDefined();
+    expect(skillImpact?.source.kind).toBe("skill");
+    expect((skillImpact?.source as any).label).toBe("skill/name");
+  });
 });
 
   it("200トークン以下のファイルはファイル別アドバイスを出さない", () => {

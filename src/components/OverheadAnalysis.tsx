@@ -136,29 +136,24 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
             </thead>
             <tbody>
               {impacts.map((item) => {
-                // ラベルから元の OverheadFile を引き当てる
+                // source メタデータから元の OverheadFile を引き当てる
                 let file: OverheadFile | undefined;
-                let displayLabel = item.label;
-                if (overhead.claudeMd && item.label === overhead.claudeMd.label) {
-                  file = overhead.claudeMd;
-                } else if (item.label.startsWith("@")) {
-                  const refLabel = item.label.slice(1);
-                  file = overhead.atRefs.find((r) => r.label === refLabel);
-                } else if (item.label.startsWith("[plugin] ")) {
-                  const pluginPath = item.label.slice("[plugin] ".length);
-                  const [pluginName, fileName] = pluginPath.split("/");
-                  const plugin = overhead.globalPlugins.find((p) => p.name === pluginName);
-                  file = plugin?.files.find((f) => f.label === fileName);
-                  displayLabel = `[plugin] ${pluginName} / ${fileName}`;
-                } else if (item.label.startsWith("[skill] ")) {
-                  const skillLabel = item.label.slice("[skill] ".length);
-                  file = overhead.personalSkills.find((sk) => sk.label === skillLabel);
+                const source = item.source;
+                if (source.kind === "claudeMd") {
+                  file = overhead.claudeMd || undefined;
+                } else if (source.kind === "atRef") {
+                  file = overhead.atRefs.find((r) => r.label === source.label);
+                } else if (source.kind === "plugin") {
+                  const plugin = overhead.globalPlugins.find((p) => p.name === source.pluginName);
+                  file = plugin?.files.find((f) => f.label === source.label);
+                } else if (source.kind === "skill") {
+                  file = overhead.personalSkills.find((sk) => sk.label === source.label);
                 }
                 if (!file) return null;
                 return (
                   <Row
                     key={item.label}
-                    label={displayLabel}
+                    label={item.label}
                     file={file}
                     monthlyCost={fileMonthlyCost(file.alwaysTokens)}
                   />
