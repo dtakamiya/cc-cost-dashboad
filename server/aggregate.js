@@ -69,6 +69,53 @@ function computeBlocks(records) {
 }
 
 /**
+ * 直近24時間をを時間ごとに集計する。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} 24時間分のデータ（hour, tokens, cost, models）
+ */
+function computeHourly(records) {
+  const withTs = records.filter((r) => r.ts);
+  if (!withTs.length) {
+    return Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      tokens: 0,
+      cost: 0,
+      models: [],
+    }));
+  }
+
+  const now = new Date();
+  const hourly = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    tokens: 0,
+    cost: 0,
+    models: {},
+  }));
+
+  const cutoffMs = now.getTime() - 24 * 60 * 60 * 1000;
+
+  for (const r of withTs) {
+    const recordDate = new Date(r.ts);
+    const recordMs = recordDate.getTime();
+
+    if (recordMs < cutoffMs) continue;
+
+    const hour = recordDate.getHours();
+    const c = costOf(r.model, r);
+    const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+
+    hourly[hour].tokens += tokens;
+    hourly[hour].cost += c.total;
+    hourly[hour].models[r.model] = (hourly[hour].models[r.model] || 0) + c.total;
+  }
+
+  return hourly.map((h) => ({
+    ...h,
+    models: Object.entries(h.models).map(([model, cost]) => ({ model, cost })),
+  }));
+}
+
+/**
  * レコード配列から当月の着地予測を計算する。データがなければ null を返す。
  * @param {object[]} records - 正規化レコード配列
  * @returns {object|null} 当月コスト予測オブジェクト
@@ -378,5 +425,6 @@ export function aggregate(records) {
     projection: computeProjection(records),
     activity: computeActivity(records),
     bySession: computeSessions(records),
+    hourly: computeHourly(records),
   };
 }

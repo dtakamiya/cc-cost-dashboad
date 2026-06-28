@@ -133,8 +133,11 @@ describe("computeHourly (直近24時間の時間別集計)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
 
-    const ts1 = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
-    const ts2 = new Date(NOW - 5 * 60 * 60 * 1000 + 10 * 60 * 1000).toISOString();
+    // NOW は 2026-06-28T10:00:00.000Z (UTC)
+    // JST では 2026-06-28T19:00:00 (hour 19)
+    // 2 時間前なら hour 17
+    const ts1 = new Date(NOW - 2 * 60 * 60 * 1000).toISOString();
+    const ts2 = new Date(NOW - 2 * 60 * 60 * 1000 + 10 * 60 * 1000).toISOString();
 
     const records = [
       rec({ ts: ts1, model: "claude-opus-4-8", input: 100_000 }),
@@ -143,11 +146,16 @@ describe("computeHourly (直近24時間の時間別集計)", () => {
 
     const { hourly } = aggregate(records);
 
-    const hour5 = hourly.find((h) => h.hour === 5);
-    expect(hour5).toBeDefined();
-    expect(hour5.models).toBeDefined();
-    expect(Array.isArray(hour5.models)).toBe(true);
-    expect(hour5.models.some((m) => m.model === "claude-opus-4-8")).toBe(true);
+    // 2時間前のレコードなので、JST の hour を確認
+    const nowLocal = new Date(NOW);
+    const currentHour = nowLocal.getHours();
+    const targetHour = (currentHour - 2 + 24) % 24;
+
+    const targetHourData = hourly.find((h) => h.hour === targetHour);
+    expect(targetHourData).toBeDefined();
+    expect(targetHourData.models).toBeDefined();
+    expect(Array.isArray(targetHourData.models)).toBe(true);
+    expect(targetHourData.models.some((m) => m.model === "claude-opus-4-8")).toBe(true);
   });
 });
 
