@@ -1,4 +1,4 @@
-import type { DailyCost } from "./api";
+import type { DailyCost, HourlyData } from "./api";
 
 export interface WeeklyCost {
   weekStart: string; // その週の月曜の日付 (YYYY-MM-DD)
@@ -6,6 +6,17 @@ export interface WeeklyCost {
   total: number;
   tokenModels: Record<string, number>;
   tokenTotal: number;
+}
+
+export interface HourlyDisplay {
+  hour: number;
+  tokens: number;
+  cost: number;
+  breakdown: Array<{
+    model: string;
+    cost: number;
+    tokens: number;
+  }>;
 }
 
 // "YYYY-MM-DD" を含む週の月曜の日付文字列を返す（月曜始まり、UTC ベース）。
@@ -37,4 +48,18 @@ export function toWeekly(daily: DailyCost[]): WeeklyCost[] {
     w.tokenTotal += d.tokenTotal ?? 0;
   }
   return [...byWeek.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+}
+
+// HourlyData配列をUI表示用のHourlyDisplay形式に変換する。
+export function toHourly(hourlyData: HourlyData[]): HourlyDisplay[] {
+  return hourlyData.map(hour => ({
+    hour: hour.hour,
+    tokens: hour.tokens,
+    cost: hour.cost,
+    breakdown: hour.models.map(item => ({
+      model: item.model,
+      cost: item.cost,
+      tokens: item.tokens,
+    }))
+  }));
 }

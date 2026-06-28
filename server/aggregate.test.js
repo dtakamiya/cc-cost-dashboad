@@ -83,6 +83,85 @@ describe("aggregate cacheStats", () => {
   });
 });
 
+describe("computeHourly (直近24時間の時間別集計)", () => {
+  const NOW = new Date("2026-06-28T10:00:00.000Z").getTime();
+  const INPUT_USD = 5 / 1_000_000;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("aggregates last 24 hours by hour", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // 直近30時間分のレコード作成（時間ごとに1つ）
+    const records = [];
+    for (let i = 29; i >= 0; i--) {
+      const ts = new Date(NOW - i * 60 * 60 * 1000).toISOString();
+      records.push(rec({ ts, input: 100_000 })); // 0.5 USD per record
+    }
+
+    const { hourly } = aggregate(records);
+
+    expect(hourly).toBeDefined();
+    expect(hourly.length).toBe(24);
+    // ローリングウィンドウ: bucket[23] = 現在時間、bucket[0] = 23時間前
+    const nowHour = new Date(NOW).getHours();
+    expect(hourly[23].hour).toBe(nowHour);
+    expect(hourly[0].hour).toBe((nowHour - 23 + 24) % 24);
+    expect(hourly.every((h) => h.tokens > 0)).toBe(true);
+    expect(hourly.every((h) => h.cost > 0)).toBe(true);
+  });
+
+  it("excludes records with null timestamp", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    const validTs = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    const records = [
+      rec({ ts: null, input: 100_000 }),
+      rec({ ts: validTs, input: 100_000 }),
+    ];
+
+    const { hourly } = aggregate(records);
+
+    expect(hourly).toBeDefined();
+    expect(hourly.length).toBe(24);
+    expect(hourly.some((h) => h.tokens > 0)).toBe(true);
+  });
+
+  it("includes per-model cost and token breakdown", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+
+    // NOW は 2026-06-28T10:00:00.000Z (UTC)
+    // JST では 2026-06-28T19:00:00 (hour 19)
+    // 2 時間前なら hour 17
+    const ts1 = new Date(NOW - 2 * 60 * 60 * 1000).toISOString();
+    const ts2 = new Date(NOW - 2 * 60 * 60 * 1000 + 10 * 60 * 1000).toISOString();
+
+    const records = [
+      rec({ ts: ts1, model: "claude-opus-4-8", input: 100_000 }),
+      rec({ ts: ts2, model: "claude-opus-4-8", input: 50_000 }),
+    ];
+
+    const { hourly } = aggregate(records);
+
+    // 2時間前のレコードなので、JST の hour を確認
+    const nowLocal = new Date(NOW);
+    const currentHour = nowLocal.getHours();
+    const targetHour = (currentHour - 2 + 24) % 24;
+
+    const targetHourData = hourly.find((h) => h.hour === targetHour);
+    expect(targetHourData).toBeDefined();
+    expect(targetHourData.models).toBeDefined();
+    expect(Array.isArray(targetHourData.models)).toBe(true);
+    expect(targetHourData.models.some((m) => m.model === "claude-opus-4-8")).toBe(true);
+    expect(targetHourData.models.some((m) => m.model === "claude-opus-4-8" && m.tokens > 0)).toBe(true);
+  });
+});
+
 describe("computeBlocks recentBurnRatePerMin (スライディングウィンドウ)", () => {
   const NOW = new Date("2026-06-28T10:00:00.000Z").getTime();
   // opus input = 5 USD/MTok

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, fetchPricing, subscribeToUpdates, type Summary, type DailyCost, type Pricing, type SessionCost } from "./api";
+import { filterSummary, filterSummaryByProject, fetchPricing, subscribeToUpdates, fetchHourly, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -296,5 +296,53 @@ describe("filterSummaryByProject", () => {
     const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0].cwd).toBe("/home/u/projA");
+  });
+});
+
+describe("HourlyData type", () => {
+  it("HourlyData type is properly defined", () => {
+    const data: HourlyData = {
+      hour: 10,
+      tokens: 1000,
+      cost: 5.0,
+      models: [{ model: "claude-opus-4-8", cost: 5.0, tokens: 1000 }],
+    };
+    expect(data.hour).toBe(10);
+    expect(data.tokens).toBe(1000);
+    expect(data.cost).toBe(5.0);
+    expect(data.models).toHaveLength(1);
+    expect(data.models[0].tokens).toBe(1000);
+  });
+});
+
+describe("fetchHourly API function", () => {
+  const mockHourly: HourlyData[] = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    tokens: 100 + i,
+    cost: 1.0 + i * 0.1,
+    models: [{ model: "claude-opus-4-8", cost: 1.0 + i * 0.1, tokens: 100 + i }],
+  }));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns unwrapped HourlyData array on success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ hourly: mockHourly }),
+    }));
+
+    const result = await fetchHourly();
+    expect(result).toHaveLength(24);
+    expect(result[0].hour).toBe(0);
+    expect(result[0].tokens).toBe(100);
+    expect(result[0].models[0].tokens).toBe(100);
+  });
+
+  it("throws on non-ok response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+
+    await expect(fetchHourly()).rejects.toThrow("hourly fetch failed");
   });
 });

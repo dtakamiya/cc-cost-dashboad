@@ -9,6 +9,7 @@ vi.mock("./api", async (importOriginal) => {
   return {
     ...actual,
     fetchSummary: vi.fn(),
+    fetchHourly: vi.fn().mockResolvedValue([]),
     subscribeToUpdates: vi.fn(() => () => {}),
     activeBurnWarning: vi.fn(() => null),
     filterSummary: vi.fn((s: api.Summary) => s),

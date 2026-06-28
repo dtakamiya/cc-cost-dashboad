@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary } from "./api";
+import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary, fetchHourly } from "./api";
 import { usd } from "./format";
+import { toHourly, type HourlyDisplay } from "./weekly";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
 import { CostDrivers } from "./components/CostDrivers";
 import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
+import { HourlyTrend } from "./components/HourlyTrend";
 import { OverheadAnalysis } from "./components/OverheadAnalysis";
 import { CacheEfficiency } from "./components/CacheEfficiency";
 import { PeriodSelector } from "./components/PeriodSelector";
@@ -28,6 +30,8 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [hourlyData, setHourlyData] = useState<HourlyDisplay[]>([]);
+  const [hourlyMetric, setHourlyMetric] = useState<"cost" | "tokens">("cost");
   const inFlight = useRef(false);
 
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -80,6 +84,13 @@ export default function App() {
     try {
       const summary = await fetchSummary(reload);
       setData(summary);
+
+      try {
+        const hourlyList = await fetchHourly();
+        setHourlyData(toHourly(hourlyList));
+      } catch {
+        setHourlyData([]);
+      }
       setLastUpdated(Date.now());
       setError(null);
       setAutoRefreshError(null);
@@ -113,6 +124,7 @@ export default function App() {
     });
     return unsubscribe;
   }, [autoRefresh]);
+
 
   return (
     <div className="app">
@@ -202,6 +214,13 @@ export default function App() {
           </section>
           <section id="section-drivers" ref={driversRef}>
             <CostDrivers s={displayData} />
+            {hourlyData.length > 0 && (
+              <HourlyTrend
+                data={hourlyData}
+                metric={hourlyMetric}
+                onMetricChange={setHourlyMetric}
+              />
+            )}
             <div className="grid2">
               <ModelBreakdown s={displayData} />
               <DailyTrend

@@ -44,6 +44,15 @@ app.get("/api/summary", async (_req, res) => {
   }
 });
 
+app.get("/api/hourly", async (_req, res) => {
+  try {
+    if (!cache) await rebuild();
+    res.json({ hourly: cache.hourly });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 app.post("/api/reload", async (_req, res) => {
   try {
     const summary = await rebuild();

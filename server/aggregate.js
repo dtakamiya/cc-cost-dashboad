@@ -69,6 +69,61 @@ function computeBlocks(records) {
 }
 
 /**
+ * 直近24時間を時間ごとに集計する。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {object[]} 24時間分のデータ（hour, tokens, cost, models）
+ */
+function computeHourly(records) {
+  const withTs = records.filter((r) => r.ts);
+
+  const now = new Date();
+  // 現在時間の開始（分・秒をゼロに）でアンカーを作る
+  const nowHourStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0, 0);
+
+  // 24バケット: index 0 = 23時間前、index 23 = 現在時間（時刻順）
+  const hourly = Array.from({ length: 24 }, (_, i) => {
+    const bucketTime = new Date(nowHourStart.getTime() - (23 - i) * 60 * 60 * 1000);
+    return {
+      hour: bucketTime.getHours(),
+      tokens: 0,
+      cost: 0,
+      models: {},
+    };
+  });
+
+  if (!withTs.length) {
+    return hourly.map((h) => ({ ...h, models: [] }));
+  }
+
+  // 23時間前の時間の始まりをカットオフにする
+  const cutoffMs = nowHourStart.getTime() - 23 * 60 * 60 * 1000;
+
+  for (const r of withTs) {
+    const recordDate = new Date(r.ts);
+    const diffMs = recordDate.getTime() - cutoffMs;
+    if (diffMs < 0) continue;
+
+    const bucketIndex = Math.min(Math.floor(diffMs / (60 * 60 * 1000)), 23);
+    const cost = costOf(r.model, r);
+    const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+
+    hourly[bucketIndex].tokens += tokens;
+    hourly[bucketIndex].cost += cost.total;
+
+    if (!hourly[bucketIndex].models[r.model]) {
+      hourly[bucketIndex].models[r.model] = { cost: 0, tokens: 0 };
+    }
+    hourly[bucketIndex].models[r.model].cost += cost.total;
+    hourly[bucketIndex].models[r.model].tokens += tokens;
+  }
+
+  return hourly.map((h) => ({
+    ...h,
+    models: Object.entries(h.models).map(([model, v]) => ({ model, cost: v.cost, tokens: v.tokens })),
+  }));
+}
+
+/**
  * レコード配列から当月の着地予測を計算する。データがなければ null を返す。
  * @param {object[]} records - 正規化レコード配列
  * @returns {object|null} 当月コスト予測オブジェクト
@@ -378,5 +433,6 @@ export function aggregate(records) {
     projection: computeProjection(records),
     activity: computeActivity(records),
     bySession: computeSessions(records),
+    hourly: computeHourly(records),
   };
 }

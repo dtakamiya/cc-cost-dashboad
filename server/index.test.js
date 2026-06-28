@@ -27,6 +27,12 @@ vi.mock("./aggregate.js", () => ({
     projection: null,
     activity: { matrix: [], max: 0, total: 0, peak: null },
     bySession: [],
+    hourly: Array.from({ length: 24 }, (_, i) => ({
+      hour: i,
+      tokens: 0,
+      cost: 0,
+      models: [],
+    })),
   }),
 }));
 
@@ -75,6 +81,12 @@ beforeEach(async () => {
       projection: null,
       activity: { matrix: [], max: 0, total: 0, peak: null },
       bySession: [],
+      hourly: Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        tokens: 0,
+        cost: 0,
+        models: [],
+      })),
     }),
   }));
   vi.mock("./analyze.js", () => ({
@@ -431,6 +443,45 @@ describe("GET /api/sessions/:id/turns", () => {
     const res = await request(app).get("/api/sessions/s1/turns");
     expect(res.body[0].ts).toBe("2026-06-27T01:00:00.000Z");
     expect(res.body[1].ts).toBe("2026-06-27T02:00:00.000Z");
+  });
+});
+
+describe("GET /api/hourly (24時間集計)", () => {
+  it("returns 24-hour aggregated data", async () => {
+    // モックの戻り値を明示的に設定
+    const { aggregate } = await vi.importMock("./aggregate.js");
+    aggregate.mockReturnValueOnce({
+      hourly: Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        tokens: 100 + i,
+        cost: 1.0 + i * 0.1,
+        models: [{ model: "claude-opus-4-8", cost: 1.0 + i * 0.1 }],
+      })),
+    });
+
+    const res = await request(app).get("/api/hourly");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("hourly");
+    expect(Array.isArray(res.body.hourly)).toBe(true);
+    expect(res.body.hourly).toHaveLength(24);
+    expect(res.body.hourly[0]).toHaveProperty("hour", 0);
+    expect(res.body.hourly[23]).toHaveProperty("hour", 23);
+    expect(res.body.hourly[0]).toHaveProperty("tokens");
+    expect(res.body.hourly[0]).toHaveProperty("cost");
+    expect(res.body.hourly[0]).toHaveProperty("models");
+  });
+
+  it("returns 500 on aggregation error", async () => {
+    const { aggregate: mockAggregate } = await vi.importMock("./aggregate.js");
+    mockAggregate.mockImplementationOnce(() => {
+      throw new Error("Aggregation failed");
+    });
+
+    const res = await request(app).get("/api/hourly");
+
+    expect(res.status).toBe(500);
+    expect(res.body).toHaveProperty("error");
   });
 });
 
