@@ -1,6 +1,6 @@
 import type { Delta, Summary } from "../api";
 import { calcDelta } from "../api";
-import { compact } from "../format";
+import { compact, usd } from "../format";
 import { DeltaBadge } from "./DeltaBadge";
 
 export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
@@ -39,6 +39,13 @@ export function SummaryCards({ s, prev }: { s: Summary; prev?: Summary }) {
       sub: `${s.source?.fileCount ?? 0} ファイル`,
     },
     { icon: "📅", label: "期間", value: t.from ?? "-", sub: `〜 ${t.to ?? "-"}` },
+    {
+      icon: "💰",
+      label: "総コスト",
+      value: usd(t.cost),
+      sub: "期間内の合計",
+      delta: p ? calcDelta(t.cost, p.cost) : null,
+    },
     ...(qualityCard ? [qualityCard] : []),
   ];
   return (
