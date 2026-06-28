@@ -440,6 +440,87 @@ export function filterSessions(
   });
 }
 
+/** プロジェクト（cwd）で Summary を絞り込む。cwdFilter が空のときは s をそのまま返す。 */
+export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
+  if (!cwdFilter) return s;
+
+  // bySession は表示用（top30 切り詰め済みの可能性あり）。totals は daily から算出する。
+  const filteredSessions = s.bySession.filter((sess) => sess.cwd === cwdFilter);
+
+  const filteredDaily = s.daily
+    .filter((d) => (d.projectTokens[cwdFilter] ?? 0) > 0)
+    .map((d) => {
+      const projTokens = d.projectTokens[cwdFilter] ?? 0;
+      const ratio = d.tokenTotal > 0 ? projTokens / d.tokenTotal : 0;
+      return {
+        ...d,
+        tokenTotal: projTokens,
+        total: d.total * ratio,
+        models: Object.fromEntries(Object.entries(d.models).map(([m, c]) => [m, c * ratio])),
+        tokenModels: Object.fromEntries(Object.entries(d.tokenModels ?? {}).map(([m, t]) => [m, t * ratio])),
+        projectTokens: { [cwdFilter]: projTokens },
+      };
+    });
+
+  // totals は切り詰め前のデータである daily から算出（bySession top30 切り詰めの影響を受けない）
+  const totalCost = filteredDaily.reduce((sum, d) => sum + d.total, 0);
+  const totalTokens = filteredDaily.reduce((sum, d) => sum + d.tokenTotal, 0);
+  const totalMessages = filteredSessions.reduce((sum, sess) => sum + sess.messages, 0);
+  const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
+
+  // models をフィルタ後 daily から再集計
+  const costByModel = new Map<string, number>();
+  const tokenByModel = new Map<string, number>();
+  for (const d of filteredDaily) {
+    for (const [m, c] of Object.entries(d.models)) {
+      costByModel.set(m, (costByModel.get(m) ?? 0) + c);
+    }
+    for (const [m, t] of Object.entries(d.tokenModels ?? {})) {
+      tokenByModel.set(m, (tokenByModel.get(m) ?? 0) + t);
+    }
+  }
+  const filteredModels = s.models
+    .map((m) => ({ ...m, cost: costByModel.get(m.model) ?? 0, tokens: tokenByModel.get(m.model) ?? 0 }))
+    .filter((m) => m.cost > 0 || m.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens);
+
+  const filteredProjects = s.projects.filter((p) => p.cwd === cwdFilter);
+
+  return {
+    ...s,
+    daily: filteredDaily,
+    bySession: filteredSessions,
+    projects: filteredProjects,
+    models: filteredModels,
+    totals: {
+      ...s.totals,
+      cost: totalCost,
+      tokens: totalTokens,
+      sessions: filteredSessions.length,
+      messages: totalMessages,
+    },
+    drivers: {
+      ...s.drivers,
+      topModel: filteredModels[0] ?? null,
+    },
+    sessionStats: {
+      ...s.sessionStats,
+      coldStartCost: s.sessionStats.coldStartCost * costRatio,
+    },
+    cacheStats: s.cacheStats && {
+      ...s.cacheStats,
+      create1hTokens: s.cacheStats.create1hTokens * costRatio,
+      create5mTokens: s.cacheStats.create5mTokens * costRatio,
+      write1hCost: s.cacheStats.write1hCost * costRatio,
+      write5mCost: s.cacheStats.write5mCost * costRatio,
+      premium1h: s.cacheStats.premium1h * costRatio,
+      readSavings: s.cacheStats.readSavings * costRatio,
+      writeCost: s.cacheStats.writeCost * costRatio,
+      roiNet: s.cacheStats.roiNet * costRatio,
+    },
+  };
+}
+
 export async function fetchPricing(): Promise<Pricing> {
   const res = await fetch("/api/pricing");
   if (!res.ok) throw new Error("pricing fetch failed");

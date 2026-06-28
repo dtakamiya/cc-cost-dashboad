@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary } from "./api";
+import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary } from "./api";
 import { usd } from "./format";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
@@ -9,6 +9,7 @@ import { DailyTrend } from "./components/DailyTrend";
 import { OverheadAnalysis } from "./components/OverheadAnalysis";
 import { CacheEfficiency } from "./components/CacheEfficiency";
 import { PeriodSelector } from "./components/PeriodSelector";
+import { ProjectSelector } from "./components/ProjectSelector";
 import { BillingBlocks } from "./components/BillingBlocks";
 import { BudgetProjection } from "./components/BudgetProjection";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
@@ -20,6 +21,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<Period>('7d');
+  const [selectedProject, setSelectedProject] = useState("");
   const [compareMode, setCompareMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -28,14 +30,16 @@ export default function App() {
   const canCompare = period !== 'all';
 
   const displayData = useMemo(
-    () => (data ? filterSummary(data, period) : null),
-    [data, period]
+    () => (data ? filterSummaryByProject(filterSummary(data, period), selectedProject) : null),
+    [data, period, selectedProject]
   );
 
-  const prevDisplayData = useMemo(
-    () => (compareMode && data ? filterPreviousPeriod(data, period) : null),
-    [data, period, compareMode]
-  );
+  const prevDisplayData = useMemo(() => {
+    if (!compareMode || !data) return null;
+    const prev = filterPreviousPeriod(data, period);
+    if (!prev) return null;
+    return filterSummaryByProject(prev, selectedProject);
+  }, [data, period, compareMode, selectedProject]);
 
   // 全期間では前期が定義できないため比較モードを自動 OFF にする
   useEffect(() => {
@@ -104,6 +108,13 @@ export default function App() {
             <span className="live-dot" />
             ライブ更新 {autoRefresh ? "ON" : "OFF"}
           </button>
+          {data && data.projects.length > 0 && (
+            <ProjectSelector
+              projects={data.projects}
+              selected={selectedProject}
+              onChange={setSelectedProject}
+            />
+          )}
           <PeriodSelector
             period={period}
             onChange={setPeriod}
