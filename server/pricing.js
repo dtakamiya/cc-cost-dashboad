@@ -7,6 +7,7 @@ export const CACHE_WRITE_1H_MULTIPLIER = 2;    // cacheWrite 1h = input × 2
 export const CACHE_READ_MULTIPLIER = 0.1;       // cacheRead = input × 0.1
 
 export const PRICING = {
+  // Claude 4 シリーズ
   "claude-opus-4-8": { input: 5, output: 25 },
   "claude-opus-4-7": { input: 5, output: 25 },
   "claude-opus-4-6": { input: 5, output: 25 },
@@ -15,6 +16,12 @@ export const PRICING = {
   "claude-sonnet-4-5": { input: 3, output: 15 },
   "claude-haiku-4-5": { input: 1, output: 5 },
   "claude-fable-5": { input: 10, output: 50 },
+  // Claude 3.5 シリーズ
+  "claude-3-5-sonnet": { input: 3, output: 15 },
+  "claude-3-5-haiku": { input: 0.8, output: 4 },
+  // Claude 3 シリーズ
+  "claude-3-opus": { input: 15, output: 75 },
+  "claude-3-haiku": { input: 0.25, output: 1.25 },
 };
 
 // 未知モデルのフォールバック単価（opus 相当）。使われたら isFallback=true を返す。

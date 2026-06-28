@@ -72,6 +72,23 @@ describe("PRICING table", () => {
   it("claude-fable-5 の価格が input=10, output=50", () => {
     expect(PRICING["claude-fable-5"]).toEqual({ input: 10, output: 50 });
   });
+
+  // Claude 3 / 3.5 シリーズ
+  it("claude-3-5-sonnet の価格が input=3, output=15", () => {
+    expect(PRICING["claude-3-5-sonnet"]).toEqual({ input: 3, output: 15 });
+  });
+
+  it("claude-3-5-haiku の価格が input=0.8, output=4", () => {
+    expect(PRICING["claude-3-5-haiku"]).toEqual({ input: 0.8, output: 4 });
+  });
+
+  it("claude-3-opus の価格が input=15, output=75", () => {
+    expect(PRICING["claude-3-opus"]).toEqual({ input: 15, output: 75 });
+  });
+
+  it("claude-3-haiku の価格が input=0.25, output=1.25", () => {
+    expect(PRICING["claude-3-haiku"]).toEqual({ input: 0.25, output: 1.25 });
+  });
 });
 
 describe("costOf", () => {
@@ -90,6 +107,30 @@ describe("costOf", () => {
     const withoutSuffix = costOf("claude-haiku-4-5", { input: 1_000_000, output: 0 });
     expect(withSuffix.total).toBeCloseTo(withoutSuffix.total, 10);
     expect(withSuffix.isFallback).toBe(false);
+  });
+
+  it("claude-3-5-sonnet-20241022 が claude-3-5-sonnet の価格で計算される", () => {
+    const result = costOf("claude-3-5-sonnet-20241022", { input: 1_000_000, output: 0 });
+    expect(result.isFallback).toBe(false);
+    expect(result.input).toBeCloseTo(3, 6);
+  });
+
+  it("claude-3-5-haiku-20241022 が claude-3-5-haiku の価格で計算される", () => {
+    const result = costOf("claude-3-5-haiku-20241022", { input: 1_000_000, output: 0 });
+    expect(result.isFallback).toBe(false);
+    expect(result.input).toBeCloseTo(0.8, 6);
+  });
+
+  it("claude-3-opus-20240229 が claude-3-opus の価格で計算される", () => {
+    const result = costOf("claude-3-opus-20240229", { input: 1_000_000, output: 0 });
+    expect(result.isFallback).toBe(false);
+    expect(result.input).toBeCloseTo(15, 6);
+  });
+
+  it("claude-3-haiku-20240307 が claude-3-haiku の価格で計算される", () => {
+    const result = costOf("claude-3-haiku-20240307", { input: 1_000_000, output: 0 });
+    expect(result.isFallback).toBe(false);
+    expect(result.input).toBeCloseTo(0.25, 6);
   });
 
   it("input 1M トークンのコストが rate.input / 1_000_000 × 1_000_000 = rate.input になる", () => {
