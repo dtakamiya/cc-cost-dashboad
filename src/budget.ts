@@ -8,6 +8,9 @@ export function getBudgetLimit(): number | null {
 }
 
 export function setBudgetLimit(value: number): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new TypeError("Budget limit must be a positive finite number");
+  }
   localStorage.setItem(STORAGE_KEY, String(value));
 }
 
@@ -29,7 +32,7 @@ export function calcBudgetProgress(
 ): BudgetProgress | null {
   if (!budgetLimit || budgetLimit <= 0) return null;
 
-  const raw = (v: number) => Math.min(100, (v / budgetLimit) * 100);
+  const raw = (v: number) => Math.max(0, Math.min(100, (v / budgetLimit) * 100));
 
   const actualPct = raw(monthCostSoFar);
   const projectedPct = raw(projectedMonthCost);

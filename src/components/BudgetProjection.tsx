@@ -27,10 +27,9 @@ export function BudgetProjection({ s }: { s: Summary }) {
 
   const handleSave = () => {
     const n = parseFloat(inputVal);
-    if (Number.isFinite(n) && n > 0) {
-      setBudgetLimit(n);
-      setBudgetLimitState(n);
-    }
+    if (!Number.isFinite(n) || n <= 0) return;
+    setBudgetLimit(n);
+    setBudgetLimitState(n);
     setEditing(false);
     setInputVal("");
   };
@@ -61,8 +60,9 @@ export function BudgetProjection({ s }: { s: Summary }) {
 
       {editing && (
         <div className="budget-input-row">
-          <span>月額予算上限 $</span>
+          <label htmlFor="monthly-budget-limit">月額予算上限 $</label>
           <input
+            id="monthly-budget-limit"
             className="budget-input"
             type="number"
             min="0.01"

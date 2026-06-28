@@ -60,6 +60,19 @@ describe("setBudgetLimit", () => {
     setBudgetLimit(99.99);
     expect(localStorage.getItem(STORAGE_KEY)).toBe("99.99");
   });
+
+  test("0以下の値は TypeError を投げる", () => {
+    expect(() => setBudgetLimit(0)).toThrow(TypeError);
+    expect(() => setBudgetLimit(-10)).toThrow(TypeError);
+  });
+
+  test("NaN は TypeError を投げる", () => {
+    expect(() => setBudgetLimit(NaN)).toThrow(TypeError);
+  });
+
+  test("Infinity は TypeError を投げる", () => {
+    expect(() => setBudgetLimit(Infinity)).toThrow(TypeError);
+  });
 });
 
 describe("clearBudgetLimit", () => {
@@ -116,5 +129,11 @@ describe("calcBudgetProgress", () => {
     expect(result.projectedPct).toBe(0);
     expect(result.isOverBudget).toBe(false);
     expect(result.isProjectedOver).toBe(false);
+  });
+
+  test("負のコスト（クレジット等）は0%にクリップされる", () => {
+    const result = calcBudgetProgress(-10, -20, 100) as BudgetProgress;
+    expect(result.actualPct).toBe(0);
+    expect(result.projectedPct).toBe(0);
   });
 });
