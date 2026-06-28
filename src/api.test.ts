@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { filterSummary, type Summary, type DailyCost } from "./api";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { filterSummary, fetchPricing, type Summary, type DailyCost, type Pricing } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -67,20 +67,52 @@ const summary = (): Summary => ({
   bySession: [],
 });
 
+describe("fetchPricing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("正常レスポンスを Pricing 型として返す", async () => {
+    const mockPricing: Pricing = {
+      models: {
+        "claude-opus-4-8": { input: 5, output: 25 },
+        "claude-haiku-4-5": { input: 1, output: 5 },
+      },
+      multipliers: { cacheWrite5m: 1.25, cacheWrite1h: 2, cacheRead: 0.1 },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockPricing),
+    }));
+    const result = await fetchPricing();
+    expect(result.models["claude-opus-4-8"]).toEqual({ input: 5, output: 25 });
+    expect(result.multipliers.cacheWrite5m).toBe(1.25);
+    expect(result.multipliers.cacheRead).toBe(0.1);
+  });
+
+  it("fetch が失敗したとき Error をスローする", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+    }));
+    await expect(fetchPricing()).rejects.toThrow("pricing fetch failed");
+  });
+});
+
 describe("filterSummary cacheStats", () => {
   it("7d は cacheStats をコスト比でスケールする", () => {
     const filtered = filterSummary(summary(), "7d");
     // 7d の総コスト = 20、全期間 = 100 → 比 0.2
     const ratio = 0.2;
-    expect(filtered.cacheStats.premium1h).toBeCloseTo(7.5 * ratio, 6);
-    expect(filtered.cacheStats.writeCost).toBeCloseTo(40 * ratio, 6);
-    expect(filtered.cacheStats.roiNet).toBeCloseTo(50 * ratio, 6);
-    expect(filtered.cacheStats.create1hTokens).toBeCloseTo(50_000 * ratio, 6);
+    expect(filtered.cacheStats!.premium1h).toBeCloseTo(7.5 * ratio, 6);
+    expect(filtered.cacheStats!.writeCost).toBeCloseTo(40 * ratio, 6);
+    expect(filtered.cacheStats!.roiNet).toBeCloseTo(50 * ratio, 6);
+    expect(filtered.cacheStats!.create1hTokens).toBeCloseTo(50_000 * ratio, 6);
   });
 
   it("all は cacheStats をそのまま保持する", () => {
     const filtered = filterSummary(summary(), "all");
-    expect(filtered.cacheStats.premium1h).toBe(7.5);
-    expect(filtered.cacheStats.roiNet).toBe(50);
+    expect(filtered.cacheStats!.premium1h).toBe(7.5);
+    expect(filtered.cacheStats!.roiNet).toBe(50);
   });
 });

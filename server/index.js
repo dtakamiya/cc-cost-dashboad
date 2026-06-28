@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { loadRecords } from "./parser.js";
 import { aggregate } from "./aggregate.js";
 import { analyzeOverhead } from "./analyze.js";
+import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER } from "./pricing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, "..", "dist");
@@ -41,12 +42,28 @@ app.post("/api/reload", async (_req, res) => {
   }
 });
 
+app.get("/api/pricing", (_req, res) => {
+  res.json({
+    models: PRICING,
+    multipliers: {
+      cacheWrite5m: CACHE_WRITE_5M_MULTIPLIER,
+      cacheWrite1h: CACHE_WRITE_1H_MULTIPLIER,
+      cacheRead: CACHE_READ_MULTIPLIER,
+    },
+  });
+});
+
 // 本番: ビルド済みフロントを配信
 if (fs.existsSync(DIST)) {
   app.use(express.static(DIST));
   app.get("*", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 }
 
-app.listen(PORT, () => {
-  console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
-});
+export { app };
+
+// テスト時はサーバーを起動しない
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.listen(PORT, () => {
+    console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
+  });
+}

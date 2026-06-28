@@ -6,17 +6,21 @@ export interface ModelCost {
   tokenSplit?: { input: number; output: number; cacheCreate: number; cacheRead: number };
 }
 
-// USD per 1M tokens（クライアント側の試算用、server/pricing.js と同期させる）
-export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  "claude-opus-4-8": { input: 5, output: 25 },
-  "claude-opus-4-7": { input: 5, output: 25 },
-  "claude-opus-4-6": { input: 5, output: 25 },
-  "claude-opus-4-5": { input: 5, output: 25 },
-  "claude-sonnet-4-6": { input: 3, output: 15 },
-  "claude-sonnet-4-5": { input: 3, output: 15 },
-  "claude-haiku-4-5": { input: 1, output: 5 },
-  "claude-fable-5": { input: 10, output: 50 },
-};
+export interface ModelPrice {
+  input: number;
+  output: number;
+}
+
+export interface PricingMultipliers {
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+  cacheRead: number;
+}
+
+export interface Pricing {
+  models: Record<string, ModelPrice>;
+  multipliers: PricingMultipliers;
+}
 
 export interface DailyCost {
   date: string;
@@ -403,6 +407,12 @@ export function shiftDailyDates(daily: DailyCost[], offsetDays: number): DailyCo
     dt.setDate(dt.getDate() + offsetDays);
     return { ...d, date: ymd(dt) };
   });
+}
+
+export async function fetchPricing(): Promise<Pricing> {
+  const res = await fetch("/api/pricing");
+  if (!res.ok) throw new Error("pricing fetch failed");
+  return res.json() as Promise<Pricing>;
 }
 
 export async function fetchSummary(reload = false): Promise<Summary> {
