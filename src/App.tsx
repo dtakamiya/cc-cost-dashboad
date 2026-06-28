@@ -31,8 +31,6 @@ export default function App() {
   const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [hourlyData, setHourlyData] = useState<HourlyDisplay[]>([]);
-  const [hourlyLoading, setHourlyLoading] = useState(false);
-  const [hourlyError, setHourlyError] = useState<string | null>(null);
   const [hourlyMetric, setHourlyMetric] = useState<"cost" | "tokens">("cost");
   const inFlight = useRef(false);
 
@@ -84,8 +82,12 @@ export default function App() {
     inFlight.current = true;
     if (!silent) setLoading(true);
     try {
-      const summary = await fetchSummary(reload);
+      const [summary, hourlyList] = await Promise.all([
+        fetchSummary(reload),
+        fetchHourly(),
+      ]);
       setData(summary);
+      setHourlyData(toHourly(hourlyList));
       setLastUpdated(Date.now());
       setError(null);
       setAutoRefreshError(null);
@@ -120,23 +122,6 @@ export default function App() {
     return unsubscribe;
   }, [autoRefresh]);
 
-  // Hourly データ取得
-  useEffect(() => {
-    (async () => {
-      try {
-        setHourlyLoading(true);
-        setHourlyError(null);
-        const hourlyList = await fetchHourly();
-        const transformed = toHourly(hourlyList);
-        setHourlyData(transformed);
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        setHourlyError(errMsg);
-      } finally {
-        setHourlyLoading(false);
-      }
-    })();
-  }, []);
 
   return (
     <div className="app">
@@ -226,17 +211,13 @@ export default function App() {
           </section>
           <section id="section-drivers" ref={driversRef}>
             <CostDrivers s={displayData} />
-            {hourlyLoading ? (
-              <div className="panel">読み込み中...</div>
-            ) : hourlyError ? (
-              <div className="panel error">エラー: {hourlyError}</div>
-            ) : hourlyData.length > 0 ? (
+            {hourlyData.length > 0 && (
               <HourlyTrend
                 data={hourlyData}
                 metric={hourlyMetric}
                 onMetricChange={setHourlyMetric}
               />
-            ) : null}
+            )}
             <div className="grid2">
               <ModelBreakdown s={displayData} />
               <DailyTrend

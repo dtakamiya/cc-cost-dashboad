@@ -83,8 +83,8 @@ describe("toHourly", () => {
         tokens: 1500,
         cost: 0.5,
         models: [
-          { model: "claude-opus-4-8", cost: 0.3 },
-          { model: "claude-sonnet-4-6", cost: 0.2 }
+          { model: "claude-opus-4-8", cost: 0.3, tokens: 900 },
+          { model: "claude-sonnet-4-6", cost: 0.2, tokens: 600 }
         ]
       }
     ];
@@ -102,13 +102,13 @@ describe("toHourly", () => {
         hour: 0,
         tokens: 1500,
         cost: 0.5,
-        models: [{ model: "claude-opus-4-8", cost: 0.5 }]
+        models: [{ model: "claude-opus-4-8", cost: 0.5, tokens: 1500 }]
       },
       {
         hour: 1,
         tokens: 2300,
         cost: 0.8,
-        models: [{ model: "claude-opus-4-8", cost: 0.8 }]
+        models: [{ model: "claude-opus-4-8", cost: 0.8, tokens: 2300 }]
       }
     ];
     const result = toHourly(hourly);
@@ -124,8 +124,8 @@ describe("toHourly", () => {
         tokens: 3000,
         cost: 1.2,
         models: [
-          { model: "claude-opus-4-8", cost: 0.7 },
-          { model: "claude-sonnet-4-6", cost: 0.5 }
+          { model: "claude-opus-4-8", cost: 0.7, tokens: 1750 },
+          { model: "claude-sonnet-4-6", cost: 0.5, tokens: 1250 }
         ]
       }
     ];
@@ -133,6 +133,7 @@ describe("toHourly", () => {
     expect(result[0].breakdown).toHaveLength(2);
     expect(result[0].breakdown[0].model).toBe("claude-opus-4-8");
     expect(result[0].breakdown[0].cost).toBe(0.7);
+    expect(result[0].breakdown[0].tokens).toBe(1750);
     expect(result[0].breakdown[1].model).toBe("claude-sonnet-4-6");
     expect(result[0].breakdown[1].cost).toBe(0.5);
   });

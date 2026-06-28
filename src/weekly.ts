@@ -15,6 +15,7 @@ export interface HourlyDisplay {
   breakdown: Array<{
     model: string;
     cost: number;
+    tokens: number;
   }>;
 }
 
@@ -57,7 +58,8 @@ export function toHourly(hourlyData: HourlyData[]): HourlyDisplay[] {
     cost: hour.cost,
     breakdown: hour.models.map(item => ({
       model: item.model,
-      cost: item.cost
+      cost: item.cost,
+      tokens: item.tokens,
     }))
   }));
 }

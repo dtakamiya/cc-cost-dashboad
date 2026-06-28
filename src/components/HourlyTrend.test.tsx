@@ -10,8 +10,8 @@ describe("HourlyTrend", () => {
       tokens: 1500,
       cost: 0.5,
       breakdown: [
-        { model: "claude-opus-4-8", cost: 0.3 },
-        { model: "claude-sonnet-4-6", cost: 0.2 }
+        { model: "claude-opus-4-8", cost: 0.3, tokens: 900 },
+        { model: "claude-sonnet-4-6", cost: 0.2, tokens: 600 }
       ]
     },
     {
@@ -19,8 +19,8 @@ describe("HourlyTrend", () => {
       tokens: 2300,
       cost: 0.8,
       breakdown: [
-        { model: "claude-opus-4-8", cost: 0.5 },
-        { model: "claude-sonnet-4-6", cost: 0.3 }
+        { model: "claude-opus-4-8", cost: 0.5, tokens: 1400 },
+        { model: "claude-sonnet-4-6", cost: 0.3, tokens: 900 }
       ]
     }
   ];

@@ -26,7 +26,7 @@ interface HourlyTrendTooltipProps {
 function HourlyTrendTooltip({ active, payload }: HourlyTrendTooltipProps) {
   if (!active || !payload?.[0]) return null;
   const data = payload[0].payload as Record<string, unknown>;
-  const hour = data.hour as number;
+  const hourLabel = String(data.hour); // already formatted as "10:00"
   const model = payload[0].dataKey;
   const metric = data.metric as "cost" | "tokens";
 
@@ -47,7 +47,7 @@ function HourlyTrendTooltip({ active, payload }: HourlyTrendTooltipProps) {
       }}
     >
       <p style={{ margin: "4px 0", fontWeight: 600 }}>{model}</p>
-      <p style={{ margin: "2px 0", fontSize: 12 }}>時間: {hour}:00</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>時間: {hourLabel}</p>
       <p style={{ margin: "2px 0", fontSize: 12 }}>
         {metric === "cost" ? `コスト: ${usd(value)}` : `トークン: ${compact(value)}`}
       </p>
@@ -73,7 +73,7 @@ export function HourlyTrend({ data, metric, onMetricChange }: HourlyTrendProps) 
     };
 
     hour.breakdown.forEach(item => {
-      const value = showMetric === "cost" ? item.cost : (hour.tokens * item.cost) / hour.cost;
+      const value = showMetric === "cost" ? item.cost : item.tokens;
       row[item.model] = value;
       row.breakdown[item.model] = value;
     });

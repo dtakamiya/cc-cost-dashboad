@@ -557,7 +557,7 @@ export interface HourlyData {
   hour: number;
   tokens: number;
   cost: number;
-  models: Array<{ model: string; cost: number }>;
+  models: Array<{ model: string; cost: number; tokens: number }>;
 }
 
 export interface HourlyResponse {

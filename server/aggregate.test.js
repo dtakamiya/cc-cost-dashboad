@@ -106,8 +106,10 @@ describe("computeHourly (直近24時間の時間別集計)", () => {
 
     expect(hourly).toBeDefined();
     expect(hourly.length).toBe(24);
-    expect(hourly[0].hour).toBe(0); // 最古の時間
-    expect(hourly[23].hour).toBe(23); // 最新の時間
+    // ローリングウィンドウ: bucket[23] = 現在時間、bucket[0] = 23時間前
+    const nowHour = new Date(NOW).getHours();
+    expect(hourly[23].hour).toBe(nowHour);
+    expect(hourly[0].hour).toBe((nowHour - 23 + 24) % 24);
     expect(hourly.every((h) => h.tokens > 0)).toBe(true);
     expect(hourly.every((h) => h.cost > 0)).toBe(true);
   });
@@ -156,6 +158,7 @@ describe("computeHourly (直近24時間の時間別集計)", () => {
     expect(targetHourData.models).toBeDefined();
     expect(Array.isArray(targetHourData.models)).toBe(true);
     expect(targetHourData.models.some((m) => m.model === "claude-opus-4-8")).toBe(true);
+    expect(targetHourData.models.some((m) => m.model === "claude-opus-4-8" && m.tokens > 0)).toBe(true);
   });
 });
 
