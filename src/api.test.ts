@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, fetchPricing, subscribeToUpdates, type Summary, type DailyCost, type Pricing } from "./api";
+import { filterSummary, filterSummaryByProject, fetchPricing, subscribeToUpdates, type Summary, type DailyCost, type Pricing, type SessionCost } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -13,13 +13,73 @@ function ymdAgo(daysAgo: number): string {
   ].join("-");
 }
 
-const day = (date: string, total: number): DailyCost => ({
+const day = (date: string, total: number, projectTokens?: Record<string, number>): DailyCost => ({
   date,
   models: { "claude-opus-4-8": total },
   total,
   tokenModels: { "claude-opus-4-8": total * 1000 },
   tokenTotal: total * 1000,
-  projectTokens: { "/home/u/proj": total * 1000 },
+  projectTokens: projectTokens ?? { "/home/u/proj": total * 1000 },
+});
+
+const sess = (cwd: string, cost: number, tokens: number): SessionCost => ({
+  sessionId: `sess-${cwd}-${cost}`,
+  cwd,
+  cost,
+  tokens,
+  messages: 10,
+  input: tokens * 0.5,
+  output: tokens * 0.3,
+  cacheCreate: tokens * 0.1,
+  cacheRead: tokens * 0.1,
+  firstTs: "2026-06-27T00:00:00.000Z",
+  lastTs: "2026-06-27T01:00:00.000Z",
+  avgContextPerMsg: 100,
+  topModel: { model: "claude-opus-4-8", cost },
+});
+
+// プロジェクトフィルタテスト用 Summary
+const summaryWithProjects = (): Summary => ({
+  generatedAt: "2026-06-27T00:00:00.000Z",
+  totals: { cost: 150, tokens: 150_000, sessions: 3, messages: 30, from: ymdAgo(5), to: ymdAgo(0) },
+  tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+  costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+  models: [{ model: "claude-opus-4-8", cost: 150, tokens: 150_000, isFallback: false }],
+  daily: [
+    day(ymdAgo(3), 60, { "/home/u/projA": 40_000, "/home/u/projB": 20_000 }),
+    day(ymdAgo(1), 90, { "/home/u/projA": 90_000 }),
+  ],
+  projects: [
+    { cwd: "/home/u/projA", cost: 100, tokens: 130_000 },
+    { cwd: "/home/u/projB", cost: 50, tokens: 20_000 },
+  ],
+  drivers: {
+    topModel: { model: "claude-opus-4-8", cost: 150, tokens: 150_000, isFallback: false },
+    topDay: null,
+    topDayModel: null,
+    cacheReadRatio: 0,
+    outputCostRatio: 0,
+  },
+  sessionStats: { avgColdStartTokens: 1000, p90ColdStartTokens: 2000, coldStartCost: 5 },
+  overhead: {
+    claudeMd: null,
+    atRefs: [],
+    globalPlugins: [],
+    personalSkills: [],
+    projectPlugins: [],
+    mcpServers: [],
+    totalAlwaysTokens: 0,
+    totalInvokeTokens: 0,
+    totalEstimatedTokens: 0,
+  },
+  warnings: { fallbackModels: [] },
+  blocks: [],
+  projection: null,
+  activity: { matrix: [], max: 0, total: 0, peak: null },
+  bySession: [
+    sess("/home/u/projA", 100, 130_000),
+    sess("/home/u/projB", 50, 20_000),
+  ],
 });
 
 // 全期間 cost=100、cacheStats は全期間値。7d で一部のみ残す。
@@ -170,5 +230,54 @@ describe("filterSummary cacheStats", () => {
     const filtered = filterSummary(summary(), "all");
     expect(filtered.cacheStats!.premium1h).toBe(7.5);
     expect(filtered.cacheStats!.roiNet).toBe(50);
+  });
+});
+
+describe("filterSummaryByProject", () => {
+  it("空文字フィルタのときは元の Summary を返す", () => {
+    const s = summaryWithProjects();
+    const result = filterSummaryByProject(s, "");
+    expect(result).toBe(s);
+  });
+
+  it("bySession を選択した cwd のみに絞り込む", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.bySession).toHaveLength(1);
+    expect(result.bySession[0].cwd).toBe("/home/u/projA");
+  });
+
+  it("選択プロジェクトのデータがない日を daily から除外する", () => {
+    const s = summaryWithProjects();
+    // projB は ymdAgo(3) の日のみにデータがある
+    const result = filterSummaryByProject(s, "/home/u/projB");
+    expect(result.daily).toHaveLength(1);
+    expect(result.daily[0].date).toBe(s.daily[0].date);
+  });
+
+  it("daily の tokenTotal をそのプロジェクトのトークン数に更新する", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    // day[0]: projA=40_000, day[1]: projA=90_000
+    expect(result.daily[0].tokenTotal).toBe(40_000);
+    expect(result.daily[1].tokenTotal).toBe(90_000);
+  });
+
+  it("daily の total をトークン比でスケールする", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    // day[0]: total=60, projA比=40_000/60_000=2/3 → 40
+    expect(result.daily[0].total).toBeCloseTo(40, 5);
+    // day[1]: total=90, projA比=90_000/90_000=1 → 90
+    expect(result.daily[1].total).toBeCloseTo(90, 5);
+  });
+
+  it("totals.cost と totals.tokens をフィルタ後 bySession から再計算する", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.totals.cost).toBe(100);
+    expect(result.totals.tokens).toBe(130_000);
+  });
+
+  it("projects を選択した cwd のみに絞り込む", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].cwd).toBe("/home/u/projA");
   });
 });

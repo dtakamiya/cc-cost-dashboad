@@ -440,6 +440,45 @@ export function filterSessions(
   });
 }
 
+/** プロジェクト（cwd）で Summary を絞り込む。cwdFilter が空のときは s をそのまま返す。 */
+export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
+  if (!cwdFilter) return s;
+
+  const filteredSessions = s.bySession.filter((sess) => sess.cwd === cwdFilter);
+
+  const filteredDaily = s.daily
+    .filter((d) => (d.projectTokens[cwdFilter] ?? 0) > 0)
+    .map((d) => {
+      const projTokens = d.projectTokens[cwdFilter] ?? 0;
+      const ratio = d.tokenTotal > 0 ? projTokens / d.tokenTotal : 0;
+      return {
+        ...d,
+        tokenTotal: projTokens,
+        total: d.total * ratio,
+        models: Object.fromEntries(Object.entries(d.models).map(([m, c]) => [m, c * ratio])),
+        tokenModels: Object.fromEntries(Object.entries(d.tokenModels ?? {}).map(([m, t]) => [m, t * ratio])),
+        projectTokens: { [cwdFilter]: projTokens },
+      };
+    });
+
+  const filteredProjects = s.projects.filter((p) => p.cwd === cwdFilter);
+  const totalCost = filteredSessions.reduce((sum, sess) => sum + sess.cost, 0);
+  const totalTokens = filteredSessions.reduce((sum, sess) => sum + sess.tokens, 0);
+
+  return {
+    ...s,
+    daily: filteredDaily,
+    bySession: filteredSessions,
+    projects: filteredProjects,
+    totals: {
+      ...s.totals,
+      cost: totalCost,
+      tokens: totalTokens,
+      sessions: filteredSessions.length,
+    },
+  };
+}
+
 export async function fetchPricing(): Promise<Pricing> {
   const res = await fetch("/api/pricing");
   if (!res.ok) throw new Error("pricing fetch failed");
