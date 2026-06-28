@@ -552,3 +552,21 @@ export async function fetchSummary(reload = false): Promise<Summary> {
   if (!res.ok) throw new Error(reload ? "reload failed" : "fetch failed");
   return res.json();
 }
+
+export interface HourlyData {
+  hour: number;
+  tokens: number;
+  cost: number;
+  models: Array<{ model: string; cost: number }>;
+}
+
+export interface HourlyResponse {
+  hourly: HourlyData[];
+}
+
+export async function fetchHourly(): Promise<HourlyData[]> {
+  const res = await fetch("/api/hourly");
+  if (!res.ok) throw new Error("hourly fetch failed");
+  const data = (await res.json()) as HourlyResponse;
+  return data.hourly;
+}
