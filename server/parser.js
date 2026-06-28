@@ -81,6 +81,7 @@ export async function loadRecords() {
       if (!fileReadFailed) {
         fileReadFailed = true;
         unreadableFiles++;
+        stream.destroy();
       }
     };
 

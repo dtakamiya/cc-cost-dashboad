@@ -95,6 +95,42 @@ describe("loadRecords - 解析品質メタデータ", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("複数のファイルが存在する場合、各ファイルのメタデータが正確に集計される", async () => {
+    // Arrange: 複数の JSONL ファイルを作成
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-quality-test-"));
+    const project1 = path.join(tmpDir, "project1");
+    const project2 = path.join(tmpDir, "project2");
+    fs.mkdirSync(project1, { recursive: true });
+    fs.mkdirSync(project2, { recursive: true });
+
+    // project1: 正常行 + 壊れた行 + 対象外行
+    const project1Content = [VALID_LINE, BROKEN_LINE, SKIP_LINE].join("\n") + "\n";
+    fs.writeFileSync(path.join(project1, "session.jsonl"), project1Content);
+
+    // project2: 正常行のみ
+    fs.writeFileSync(path.join(project2, "session.jsonl"), VALID_LINE + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const result = await loadRecords();
+
+      // records: 正常行 2 件（project1 の VALID_LINE + project2 の VALID_LINE）
+      expect(result.records).toHaveLength(2);
+      // parsedLines: JSON.parse 成功行数（project1: 2行 + project2: 1行）
+      expect(result.parsedLines).toBe(3);
+      // parseErrors: JSON.parse エラー行数（project1: 1行）
+      expect(result.parseErrors).toBe(1);
+      // skippedLines: parsedLines - records.length = 3 - 2 = 1
+      expect(result.skippedLines).toBe(1);
+      // fileCount: 2 ファイル
+      expect(result.fileCount).toBe(2);
+      // unreadableFiles: 0（エラーなし）
+      expect(result.unreadableFiles).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("loadRecords - CLAUDE_LOGS_DIR", () => {
