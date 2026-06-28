@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import App from "./App";
@@ -136,5 +136,82 @@ describe("App - 自動更新エラー表示", () => {
     await waitFor(() =>
       expect(screen.queryByText(/自動更新失敗/)).toBeNull()
     );
+  });
+});
+
+describe("App - セクションナビゲーション", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("データロード後にセクションナビゲーションが表示される", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const nav = screen.getByRole("navigation", { name: /ダッシュボードセクション/ });
+    expect(nav).toBeInTheDocument();
+  });
+
+  it("セクションナビゲーションが5つのボタンを表示する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const buttons = screen.getAllByRole("button");
+    const navButtons = buttons.filter(btn =>
+      ["概要", "コストドライバー", "プロジェクト", "セッション", "最適化"].includes(btn.textContent || "")
+    );
+    expect(navButtons.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("各セクションが ID 属性を持つ", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    expect(container.querySelector('[id="section-summary"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-drivers"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-project"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-session"]')).toBeInTheDocument();
+    expect(container.querySelector('[id="section-optimization"]')).toBeInTheDocument();
+  });
+
+  it("トップバー操作と SectionNav が共存する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const topbar = screen.getByRole("banner");
+    const sectionNav = screen.getByRole("navigation", { name: /ダッシュボードセクション/ });
+
+    expect(topbar).toBeInTheDocument();
+    expect(sectionNav).toBeInTheDocument();
+  });
+
+  it("セクションボタンクリックで scrollIntoView が呼ばれる", async () => {
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("プロジェクト"));
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth" });
+  });
+
+  it("セクションボタンクリック後、該当ボタンの aria-current が page になる", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("プロジェクト"));
+
+    const projectBtn = screen.getByText("プロジェクト").closest("button");
+    expect(projectBtn).toHaveAttribute("aria-current", "page");
   });
 });
