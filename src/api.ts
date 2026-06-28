@@ -415,6 +415,18 @@ export async function fetchPricing(): Promise<Pricing> {
   return res.json() as Promise<Pricing>;
 }
 
+export type UpdateCallback = () => void;
+
+/**
+ * /api/events (SSE) に接続し、update イベント受信時にコールバックを呼ぶ。
+ * 戻り値の関数を呼ぶと EventSource を閉じて購読を解除する。
+ */
+export function subscribeToUpdates(onUpdate: UpdateCallback): () => void {
+  const es = new EventSource("/api/events");
+  es.addEventListener("update", onUpdate);
+  return () => es.close();
+}
+
 export async function fetchSummary(reload = false): Promise<Summary> {
   const res = reload
     ? await fetch("/api/reload", { method: "POST" })
