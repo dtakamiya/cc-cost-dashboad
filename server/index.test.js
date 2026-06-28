@@ -81,6 +81,12 @@ beforeEach(async () => {
       projection: null,
       activity: { matrix: [], max: 0, total: 0, peak: null },
       bySession: [],
+      hourly: Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        tokens: 0,
+        cost: 0,
+        models: [],
+      })),
     }),
   }));
   vi.mock("./analyze.js", () => ({
@@ -442,6 +448,17 @@ describe("GET /api/sessions/:id/turns", () => {
 
 describe("GET /api/hourly (24時間集計)", () => {
   it("returns 24-hour aggregated data", async () => {
+    // モックの戻り値を明示的に設定
+    const { aggregate } = await vi.importMock("./aggregate.js");
+    aggregate.mockReturnValueOnce({
+      hourly: Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        tokens: 100 + i,
+        cost: 1.0 + i * 0.1,
+        models: [{ model: "claude-opus-4-8", cost: 1.0 + i * 0.1 }],
+      })),
+    });
+
     const res = await request(app).get("/api/hourly");
 
     expect(res.status).toBe(200);
