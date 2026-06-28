@@ -24,6 +24,27 @@ const PALETTE = ["#818cf8", "#34d399", "#fbbf24", "#fb7185", "#c084fc", "#22d3ee
 
 type DisplayMode = "tokens" | "cost";
 
+interface ProjectBreakdownTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: Record<string, unknown> }>;
+}
+
+function ProjectBreakdownTooltip({ active, payload }: ProjectBreakdownTooltipProps) {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload as Record<string, unknown>;
+  const name = data.name as string;
+  const tokens = data.tokens as number;
+  const cost = data.cost as number;
+
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <p style={{ margin: "4px 0", fontWeight: 600 }}>{name}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Token: {compact(tokens)}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Cost: {usd(cost)}</p>
+    </div>
+  );
+}
+
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
 }
@@ -63,9 +84,8 @@ export function ProjectBreakdown({ s }: { s: Summary }) {
           <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={150} stroke="var(--axis)" tick={{ fontSize: 12 }} />
           <Tooltip
-            formatter={(v: number) => fmt(v)}
+            content={<ProjectBreakdownTooltip />}
             cursor={{ fill: "rgba(255,255,255,0.04)" }}
-            contentStyle={TOOLTIP_STYLE}
           />
           <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
             {data.map((d, i) => (

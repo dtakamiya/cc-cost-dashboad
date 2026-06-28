@@ -22,6 +22,29 @@ const PREV_KEY = "__prev_total";
 type View = "daily" | "weekly";
 type DisplayMode = "tokens" | "cost";
 
+interface DailyTrendTooltipProps {
+  active?: boolean;
+  payload?: Array<{ dataKey: string; payload: Record<string, unknown> }>;
+}
+
+function DailyTrendTooltip({ active, payload }: DailyTrendTooltipProps) {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload as Record<string, number | Record<string, number>>;
+  const tokens = data._allTokens as Record<string, number> | undefined;
+  const costs = data._allCosts as Record<string, number> | undefined;
+  const model = payload[0].dataKey;
+
+  if (!tokens || !costs) return null;
+
+  return (
+    <div style={{ background: "var(--tooltip-bg)", border: "1px solid var(--tooltip-border)", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.35)", padding: 8, color: "var(--text)" }}>
+      <p style={{ margin: "4px 0", fontWeight: 600 }}>{model}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Token: {compact(tokens[model] ?? 0)}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Cost: {usd(costs[model] ?? 0)}</p>
+    </div>
+  );
+}
+
 export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Summary; prevOffsetDays?: number }) {
   const [view, setView] = useState<View>("daily");
   const [mode, setMode] = useState<DisplayMode>("tokens");
@@ -37,21 +60,28 @@ export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Sum
 
   const showPrev = view === "daily" && prev && prevOffsetDays != null;
   const prevTotalByDate = new Map<string, number>();
+  const prevTokenTotalByDate = new Map<string, number>();
   if (showPrev) {
     for (const d of shiftDailyDates(prev!.daily, prevOffsetDays!)) {
-      const total = mode === "cost" ? d.total ?? 0 : d.tokenTotal ?? 0;
-      prevTotalByDate.set(d.date, total);
+      prevTotalByDate.set(d.date, d.total ?? 0);
+      prevTokenTotalByDate.set(d.date, d.tokenTotal ?? 0);
     }
   }
 
   const data = rows.map((r) => {
-    const row: Record<string, number | string> = { [xKey]: r.key };
+    const row: Record<string, number | string | Record<string, number>> = { [xKey]: r.key };
+    const allTokens: Record<string, number> = {};
+    const allCosts: Record<string, number> = {};
     for (const m of models) {
-      row[m] = mode === "cost"
-        ? (r.costModels?.[m] ?? 0)
-        : (r.tokenModels?.[m] ?? 0);
+      const tokenVal = r.tokenModels?.[m] ?? 0;
+      const costVal = r.costModels?.[m] ?? 0;
+      allTokens[m] = tokenVal;
+      allCosts[m] = costVal;
+      row[m] = mode === "cost" ? costVal : tokenVal;
     }
-    if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = prevTotalByDate.get(r.key)!;
+    row._allTokens = allTokens;
+    row._allCosts = allCosts;
+    if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = mode === "cost" ? prevTotalByDate.get(r.key)! : prevTokenTotalByDate.get(r.key)!;
     return row;
   });
 
@@ -92,14 +122,8 @@ export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Sum
           <XAxis dataKey={xKey} stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
           <YAxis tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
           <Tooltip
-            formatter={(v: number) => fmt(v)}
+            content={<DailyTrendTooltip />}
             cursor={{ stroke: "var(--axis)", strokeDasharray: "3 3" }}
-            contentStyle={{
-              background: "var(--tooltip-bg)",
-              border: "1px solid var(--tooltip-border)",
-              borderRadius: 8,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-            }}
           />
           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
           {models.map((m, i) => (

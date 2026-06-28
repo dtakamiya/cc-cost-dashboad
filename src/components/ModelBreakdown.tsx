@@ -22,6 +22,27 @@ const TOOLTIP_STYLE = {
 
 type DisplayMode = "tokens" | "cost";
 
+interface ModelBreakdownTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: Record<string, unknown> }>;
+}
+
+function ModelBreakdownTooltip({ active, payload }: ModelBreakdownTooltipProps) {
+  if (!active || !payload?.[0]) return null;
+  const data = payload[0].payload as Record<string, unknown>;
+  const model = data.model as string;
+  const tokens = data.tokens as number;
+  const cost = data.cost as number;
+
+  return (
+    <div style={TOOLTIP_STYLE}>
+      <p style={{ margin: "4px 0", fontWeight: 600 }}>{model}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Token: {compact(tokens)}</p>
+      <p style={{ margin: "2px 0", fontSize: 12 }}>Cost: {usd(cost)}</p>
+    </div>
+  );
+}
+
 export function ModelBreakdown({ s }: { s: Summary }) {
   const [mode, setMode] = useState<DisplayMode>("tokens");
 
@@ -54,9 +75,8 @@ export function ModelBreakdown({ s }: { s: Summary }) {
           <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="model" width={150} stroke="var(--axis)" tick={{ fontSize: 12 }} />
           <Tooltip
-            formatter={(v: number) => fmt(v)}
+            content={<ModelBreakdownTooltip />}
             cursor={{ fill: "rgba(255,255,255,0.04)" }}
-            contentStyle={TOOLTIP_STYLE}
           />
           <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
             {data.map((d) => (
