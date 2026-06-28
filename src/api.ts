@@ -409,6 +409,36 @@ export function shiftDailyDates(daily: DailyCost[], offsetDays: number): DailyCo
   });
 }
 
+export interface SessionTurn {
+  ts: string | null;
+  model: string;
+  input: number;
+  output: number;
+  cacheCreate: number;
+  cacheRead: number;
+  cost: number;
+}
+
+export async function fetchSessionTurns(sessionId: string): Promise<SessionTurn[]> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/turns`);
+  if (!res.ok) throw new Error("session turns fetch failed");
+  return res.json() as Promise<SessionTurn[]>;
+}
+
+export function filterSessions(
+  sessions: SessionCost[],
+  cwdQuery: string,
+  modelQuery: string
+): SessionCost[] {
+  const cwd = cwdQuery.toLowerCase();
+  const model = modelQuery.toLowerCase();
+  return sessions.filter((s) => {
+    const cwdMatch = !cwd || s.cwd.toLowerCase().includes(cwd);
+    const modelMatch = !model || (s.topModel?.model ?? "").toLowerCase().includes(model);
+    return cwdMatch && modelMatch;
+  });
+}
+
 export async function fetchPricing(): Promise<Pricing> {
   const res = await fetch("/api/pricing");
   if (!res.ok) throw new Error("pricing fetch failed");

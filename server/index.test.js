@@ -43,6 +43,7 @@ vi.mock("./pricing.js", () => ({
   CACHE_WRITE_5M_MULTIPLIER: 1.25,
   CACHE_WRITE_1H_MULTIPLIER: 2,
   CACHE_READ_MULTIPLIER: 0.1,
+  costOf: vi.fn().mockReturnValue({ total: 0.001, input: 0, output: 0.001, cacheWrite: 0, cacheRead: 0, isFallback: false }),
 }));
 
 let app;
@@ -88,6 +89,7 @@ beforeEach(async () => {
     CACHE_WRITE_5M_MULTIPLIER: 1.25,
     CACHE_WRITE_1H_MULTIPLIER: 2,
     CACHE_READ_MULTIPLIER: 0.1,
+    costOf: vi.fn().mockReturnValue({ total: 0.001, input: 0, output: 0.001, cacheWrite: 0, cacheRead: 0, isFallback: false }),
   }));
 
   const mod = await import("./index.js");
@@ -111,6 +113,72 @@ describe("POST /api/reload", () => {
     const res = await request(app).post("/api/reload");
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty("generatedAt");
+  });
+});
+
+describe("GET /api/sessions/:id/turns", () => {
+  it("recordsCache が未ロードの場合は空配列を返す", async () => {
+    const res = await request(app).get("/api/sessions/any-id/turns");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("存在しないセッションIDは空配列を返す", async () => {
+    await request(app).post("/api/reload");
+    const res = await request(app).get("/api/sessions/nonexistent/turns");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("指定セッションのターンを ts・model・input・output・cost 付きで返す", async () => {
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        {
+          ts: "2026-06-27T01:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-abc",
+          input: 1000,
+          output: 500,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+    });
+    await request(app).post("/api/reload");
+
+    const res = await request(app).get("/api/sessions/sess-abc/turns");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      ts: "2026-06-27T01:00:00.000Z",
+      model: "claude-sonnet-4-6",
+      input: 1000,
+      output: 500,
+      cacheCreate: 0,
+      cacheRead: 0,
+    });
+    expect(typeof res.body[0].cost).toBe("number");
+  });
+
+  it("ターンは ts 昇順でソートされる", async () => {
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        { ts: "2026-06-27T02:00:00.000Z", model: "claude-sonnet-4-6", cwd: "/p", sessionId: "s1", input: 100, output: 50, cacheCreate: 0, cacheCreate1h: 0, cacheRead: 0, cache1h: false },
+        { ts: "2026-06-27T01:00:00.000Z", model: "claude-sonnet-4-6", cwd: "/p", sessionId: "s1", input: 200, output: 100, cacheCreate: 0, cacheCreate1h: 0, cacheRead: 0, cache1h: false },
+      ],
+      fileCount: 1,
+    });
+    await request(app).post("/api/reload");
+
+    const res = await request(app).get("/api/sessions/s1/turns");
+    expect(res.body[0].ts).toBe("2026-06-27T01:00:00.000Z");
+    expect(res.body[1].ts).toBe("2026-06-27T02:00:00.000Z");
   });
 });
 
