@@ -131,6 +131,47 @@ describe("createWatcher", () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  it("コールバック実行中に変更が来ても直列化される（concurrent rebuild を防ぐ）", async () => {
+    vi.useFakeTimers();
+
+    let resolveFirst;
+    const firstDone = new Promise((r) => (resolveFirst = r));
+    const callOrder = [];
+
+    const callback = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        callOrder.push("start-1");
+        await firstDone;
+        callOrder.push("end-1");
+      })
+      .mockImplementationOnce(async () => {
+        callOrder.push("start-2");
+      });
+
+    createWatcher("/some/dir", callback);
+    const listener = mockWatch.mock.calls[0][2];
+
+    // 1 回目のイベント → デバウンス → runCallback 開始
+    listener("change", "a.jsonl");
+    await vi.runAllTimersAsync();
+
+    // 1 回目が実行中の間に 2 回目のイベント → pending=true になるはず
+    listener("change", "b.jsonl");
+    await vi.runAllTimersAsync();
+
+    // 1 回目が完了していないのでコールバックは 1 回だけ
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    // 1 回目を完了させる
+    resolveFirst();
+    await vi.runAllTimersAsync();
+
+    // pending が処理されて 2 回目が実行される
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callOrder).toEqual(["start-1", "end-1", "start-2"]);
+  });
+
   it("dir が null のとき CLAUDE_LOGS_DIR または デフォルトパスを使う", () => {
     const callback = vi.fn();
     process.env.CLAUDE_LOGS_DIR = "/custom/logs";

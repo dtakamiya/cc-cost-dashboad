@@ -18,14 +18,33 @@ export function createWatcher(dir, callback) {
 
   let timer = null;
   let watcher = null;
+  let running = false;
+  let pending = false;
+
+  const runCallback = async () => {
+    if (running) {
+      pending = true;
+      return;
+    }
+    running = true;
+    try {
+      await callback();
+    } catch (error) {
+      console.error("watcher callback failed", error);
+    } finally {
+      running = false;
+      if (pending) {
+        pending = false;
+        void runCallback();
+      }
+    }
+  };
 
   const debounced = () => {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      Promise.resolve(callback()).catch((error) => {
-        console.error("watcher callback failed", error);
-      });
+      void runCallback();
     }, DEBOUNCE_MS);
   };
 
