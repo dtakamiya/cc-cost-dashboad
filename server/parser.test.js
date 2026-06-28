@@ -111,6 +111,7 @@ describe("loadRecords - 解析品質メタデータ", () => {
     // project2: 正常行のみ
     fs.writeFileSync(path.join(project2, "session.jsonl"), VALID_LINE + "\n");
 
+    const previousLogsDir = process.env.CLAUDE_LOGS_DIR;
     try {
       process.env.CLAUDE_LOGS_DIR = tmpDir;
       const result = await loadRecords();
@@ -128,6 +129,11 @@ describe("loadRecords - 解析品質メタデータ", () => {
       // unreadableFiles: 0（エラーなし）
       expect(result.unreadableFiles).toBe(0);
     } finally {
+      if (previousLogsDir === undefined) {
+        delete process.env.CLAUDE_LOGS_DIR;
+      } else {
+        process.env.CLAUDE_LOGS_DIR = previousLogsDir;
+      }
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
