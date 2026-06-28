@@ -11,9 +11,26 @@ npm run dev:web      # Vite frontend only
 npm run build        # Production build
 npm test             # Run all tests once (Vitest)
 npm run test:watch   # Run tests in watch mode
+npm run typecheck    # TypeScript type check (tsc --noEmit)
 ```
 
 No lint script. TypeScript is configured with `strict: true`, `noUnusedLocals`, `noUnusedParameters`.
+
+## Dependency Updates
+
+Dependabot は毎週月曜（JST 09:00）に npm 依存の更新 PR を自動作成する（設定: `.github/dependabot.yml`）。
+
+依存を手動更新した場合は以下の順でまとめて検証する:
+
+```bash
+npm install          # 依存を更新
+npm test             # 全テスト（171 件）がパスすること
+npm run typecheck    # 型エラーがないこと
+npm run build        # ビルドが成功すること
+```
+
+メジャーバージョンアップ（React / Recharts / Express 等）は破壊的変更を伴う可能性があるため、
+Dependabot の自動 PR 対象から除外している。手動で変更ログを確認してから更新すること。
 
 ## Architecture
 
