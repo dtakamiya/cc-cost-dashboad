@@ -176,6 +176,7 @@ describe("POST /api/reload", () => {
 
   it("reload 前後で generatedAt が異なる（キャッシュが更新される）", async () => {
     // Arrange: 1回目の generatedAt
+    const { loadRecords } = await import("./parser.js");
     const { aggregate } = await import("./aggregate.js");
     vi.mocked(aggregate).mockReturnValue({
       generatedAt: "2026-06-28T10:00:00.000Z",
@@ -211,6 +212,8 @@ describe("POST /api/reload", () => {
       bySession: [],
     });
     await request(app).post("/api/reload");
+    expect(vi.mocked(loadRecords)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(2);
 
     // Act: 2回目
     const res2 = await request(app).get("/api/summary");
@@ -223,6 +226,7 @@ describe("POST /api/reload", () => {
 
   it("reload 後の /api/summary は新しい totals.cost を返す", async () => {
     // Arrange: 初期 cost
+    const { loadRecords } = await import("./parser.js");
     const { aggregate } = await import("./aggregate.js");
     vi.mocked(aggregate).mockReturnValue({
       generatedAt: "2026-06-28T10:00:00.000Z",
@@ -259,6 +263,8 @@ describe("POST /api/reload", () => {
       bySession: [],
     });
     await request(app).post("/api/reload");
+    expect(vi.mocked(loadRecords)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(2);
 
     // Act: reload 後
     const res2 = await request(app).get("/api/summary");
