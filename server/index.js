@@ -26,10 +26,10 @@ function notifyClients() {
 }
 
 async function rebuild() {
-  const { records, fileCount } = await loadRecords();
+  const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords();
   recordsCache = records;
   const summary = aggregate(records);
-  summary.source = { fileCount };
+  summary.source = { fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles };
   summary.overhead = analyzeOverhead();
   cache = summary;
   return summary;
