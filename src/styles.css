@@ -68,7 +68,7 @@ body {
 /* ---- topbar ---- */
 .topbar {
   position: sticky; top: 0; z-index: 10;
-  display: flex; flex-direction: column;
+  display: flex;
   gap: var(--sp-3);
   margin: calc(var(--sp-6) * -1) calc(var(--sp-5) * -1) var(--sp-5);
   padding: var(--sp-4) var(--sp-5);
@@ -78,7 +78,7 @@ body {
 }
 .topbar-row-1 {
   display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp-3); flex-wrap: wrap;
+  gap: var(--sp-3);
 }
 .topbar-row-2 {
   display: flex; align-items: center; justify-content: flex-start;
@@ -516,6 +516,7 @@ body {
 }
 
 @media (max-width: 599px) {
+  .topbar { flex-direction: column; }
   .topbar-row-1 { flex-wrap: nowrap; }
   .topbar-title h1 { font-size: 16px; }
   .topbar-controls { width: 100%; }
