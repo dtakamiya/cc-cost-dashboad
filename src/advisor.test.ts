@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   buildRecommendations,
+  calculateOverheadStatus,
+  rankFilesByImpact,
   OVERHEAD_TOKEN_THRESHOLD,
+  OVERHEAD_TARGET_TOKENS,
   OUTPUT_COST_RATIO_THRESHOLD,
 } from "./advisor";
 import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
@@ -237,6 +240,125 @@ describe("buildRecommendations", () => {
       expect(item.detail).toMatch(/トークン/);
     });
   });
+
+describe("calculateOverheadStatus", () => {
+  it("現在値が目標以下なら good を返す", () => {
+    const result = calculateOverheadStatus(1000, 1500);
+    expect(result.status).toBe("good");
+    expect(result.color).toBe("var(--success)");
+    expect(result.current).toBe(1000);
+    expect(result.target).toBe(1500);
+    expect(result.percentage).toBeCloseTo((1000 / 1500) * 100, 5);
+  });
+
+  it("現在値が目標超かつ3000以下なら caution を返す", () => {
+    const result = calculateOverheadStatus(2000, 1500);
+    expect(result.status).toBe("caution");
+    expect(result.color).toBe("var(--warn)");
+  });
+
+  it("現在値が3000超なら warn を返す", () => {
+    const result = calculateOverheadStatus(3500, 1500);
+    expect(result.status).toBe("warn");
+    expect(result.color).toBe("var(--danger)");
+  });
+
+  it("目標値が0の場合はpercentageを0にする", () => {
+    const result = calculateOverheadStatus(1000, 0);
+    expect(result.percentage).toBe(0);
+  });
+
+  it("現在値が0なら good を返す", () => {
+    const result = calculateOverheadStatus(0, 1500);
+    expect(result.status).toBe("good");
+    expect(result.percentage).toBe(0);
+  });
+
+  it("デフォルト target は OVERHEAD_TARGET_TOKENS", () => {
+    const result = calculateOverheadStatus(1000);
+    expect(result.target).toBe(OVERHEAD_TARGET_TOKENS);
+  });
+});
+
+describe("rankFilesByImpact", () => {
+  it("monthlySavings 降順でランク付けされる", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 1000,
+          alwaysTokens: 500,
+          fullTokens: 500,
+          estimatedTokens: 500,
+        },
+        personalSkills: [
+          { label: "big-skill", bytes: 5000, alwaysTokens: 800, fullTokens: 1200, estimatedTokens: 800 },
+          { label: "small-skill", bytes: 500, alwaysTokens: 100, fullTokens: 200, estimatedTokens: 100 },
+        ],
+        totalAlwaysTokens: 1400,
+      },
+    });
+    const impacts = rankFilesByImpact(s, 0.001, 5, 1);
+    // monthlySavings降順ならbig-skillが先
+    expect(impacts[0].alwaysTokens).toBeGreaterThanOrEqual(impacts[1].alwaysTokens);
+    // rank は 1-based
+    expect(impacts[0].rank).toBe(1);
+    expect(impacts[1].rank).toBe(2);
+  });
+
+  it("月間削減見積もり = alwaysTokens × cacheCreateRate × sessionFactor × monthlyFactor", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        claudeMd: {
+          label: "CLAUDE.md",
+          bytes: 1000,
+          alwaysTokens: 400,
+          fullTokens: 400,
+          estimatedTokens: 400,
+        },
+        totalAlwaysTokens: 400,
+      },
+    });
+    const rate = 0.002;
+    const sessions = 10;
+    const factor = 1.5;
+    const impacts = rankFilesByImpact(s, rate, sessions, factor);
+    const expected = 400 * rate * sessions * factor;
+    expect(impacts[0].monthlySavings).toBeCloseTo(expected, 6);
+  });
+
+  it("@ref, plugin, skill を含む複数タイプを集計してランク付けする", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        atRefs: [{ label: "ref1", bytes: 200, alwaysTokens: 300, fullTokens: 300, estimatedTokens: 300 }],
+        globalPlugins: [
+          {
+            name: "my-plugin",
+            totalBytes: 100,
+            totalAlwaysTokens: 200,
+            totalFullTokens: 400,
+            totalEstimatedTokens: 200,
+            files: [{ label: "main.md", bytes: 100, alwaysTokens: 200, fullTokens: 400, estimatedTokens: 200 }],
+          },
+        ],
+        personalSkills: [
+          { label: "my-skill", bytes: 500, alwaysTokens: 250, fullTokens: 500, estimatedTokens: 250 },
+        ],
+        totalAlwaysTokens: 750,
+      },
+    });
+    const impacts = rankFilesByImpact(s, 0.001, 5, 1);
+    expect(impacts.length).toBe(3);
+    // label が含まれることを確認
+    const labels = impacts.map((i) => i.label);
+    expect(labels.some((l) => l.includes("ref1"))).toBe(true);
+    expect(labels.some((l) => l.includes("my-plugin"))).toBe(true);
+    expect(labels.some((l) => l.includes("my-skill"))).toBe(true);
+  });
+});
 
   it("200トークン以下のファイルはファイル別アドバイスを出さない", () => {
     const s = baseSummary({
