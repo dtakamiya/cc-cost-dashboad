@@ -499,6 +499,7 @@ describe("セキュリティ強化", () => {
 
       // Assert
       expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
       expect(res.body.error).not.toContain("/home/user");
       expect(res.body.error).not.toContain("secret");
       expect(res.body.error).not.toContain("Internal path");
@@ -514,6 +515,7 @@ describe("セキュリティ強化", () => {
 
       // Assert
       expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
       expect(res.body.error).not.toContain("Stack trace");
       expect(res.body.error).not.toContain("/home/user");
     });
@@ -530,6 +532,7 @@ describe("セキュリティ強化", () => {
 
       // Assert
       expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
       expect(res.body.error).not.toContain("sk-ant-12345");
       expect(res.body.error).not.toContain("Secret key");
     });
@@ -550,7 +553,10 @@ describe("セキュリティ強化", () => {
 
       // Assert
       expect(res.status).toBe(429);
-      expect(res.body).toHaveProperty("error");
+      expect(res.body).toHaveProperty("error", "Rate limit exceeded");
+      expect(res.body).toHaveProperty("retryAfterSec");
+      expect(typeof res.body.retryAfterSec).toBe("number");
+      expect(res.headers["retry-after"]).toBeDefined();
     });
 
     it("429レスポンスには再試行可能時間のヒントが含まれる", async () => {
@@ -562,7 +568,9 @@ describe("セキュリティ強化", () => {
 
       // Assert
       expect(res.status).toBe(429);
-      expect(res.body.error).toMatch(/retry|再試行|秒|second/i);
+      expect(res.body.retryAfterSec).toBeGreaterThan(0);
+      expect(res.body.retryAfterSec).toBeLessThanOrEqual(30);
+      expect(res.headers["retry-after"]).toBe(String(res.body.retryAfterSec));
     });
   });
 });

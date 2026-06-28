@@ -61,7 +61,10 @@ app.post("/api/reload", async (_req, res) => {
   const elapsed = now - lastReloadTime;
   if (elapsed < RELOAD_COOLDOWN_MS) {
     const remainingSec = Math.ceil((RELOAD_COOLDOWN_MS - elapsed) / 1000);
-    return res.status(429).json({ error: `Rate limit: retry after ${remainingSec}s` });
+    return res
+      .status(429)
+      .set("Retry-After", String(remainingSec))
+      .json({ error: "Rate limit exceeded", retryAfterSec: remainingSec });
   }
   try {
     lastReloadTime = now;
