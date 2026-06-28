@@ -172,6 +172,37 @@ describe("createWatcher", () => {
     expect(callOrder).toEqual(["start-1", "end-1", "start-2"]);
   });
 
+  it("stop() 後に pending があっても再実行されない", async () => {
+    vi.useFakeTimers();
+
+    let resolveFirst;
+    const firstDone = new Promise((r) => (resolveFirst = r));
+    const callback = vi
+      .fn()
+      .mockImplementationOnce(() => firstDone)
+      .mockImplementation(vi.fn());
+
+    const w = createWatcher("/some/dir", callback);
+    const listener = mockWatch.mock.calls[0][2];
+
+    // 1 回目のイベント → runCallback 開始（実行中）
+    listener("change", "a.jsonl");
+    await vi.runAllTimersAsync();
+
+    // 実行中に 2 回目のイベント → pending = true
+    listener("change", "b.jsonl");
+    await vi.runAllTimersAsync();
+
+    // stop() で pending をクリア
+    w.stop();
+
+    // 1 回目を完了させても 2 回目は実行されない
+    resolveFirst();
+    await vi.runAllTimersAsync();
+
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
   it("dir が null のとき CLAUDE_LOGS_DIR または デフォルトパスを使う", () => {
     const callback = vi.fn();
     process.env.CLAUDE_LOGS_DIR = "/custom/logs";

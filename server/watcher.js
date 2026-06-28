@@ -18,12 +18,13 @@ export function createWatcher(dir, callback) {
 
   let timer = null;
   let watcher = null;
+  let stopped = false;
   let running = false;
   let pending = false;
 
   const runCallback = async () => {
-    if (running) {
-      pending = true;
+    if (stopped || running) {
+      if (!stopped) pending = true;
       return;
     }
     running = true;
@@ -33,7 +34,7 @@ export function createWatcher(dir, callback) {
       console.error("watcher callback failed", error);
     } finally {
       running = false;
-      if (pending) {
+      if (!stopped && pending) {
         pending = false;
         void runCallback();
       }
@@ -41,6 +42,7 @@ export function createWatcher(dir, callback) {
   };
 
   const debounced = () => {
+    if (stopped) return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
@@ -63,6 +65,8 @@ export function createWatcher(dir, callback) {
 
   return {
     stop() {
+      stopped = true;
+      pending = false;
       if (timer) {
         clearTimeout(timer);
         timer = null;
