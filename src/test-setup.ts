@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach } from "vitest";
+import { beforeEach, vi } from "vitest";
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -22,6 +22,22 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+Object.defineProperty(globalThis, "matchMedia", {
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })),
+  writable: true,
+});
+
 beforeEach(() => {
   localStorageMock.clear();
+  (globalThis.matchMedia as ReturnType<typeof vi.fn>).mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
 });

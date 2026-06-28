@@ -250,6 +250,76 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 });
 
+describe("App - テーマ切り替え", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    document.documentElement.removeAttribute("data-theme");
+  });
+
+  it("初期テーマがlocalStorageのthemeキーから復元される", async () => {
+    localStorage.setItem("theme", "light");
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("OSがprefers-color-scheme:lightのとき、localStorage未設定なら初期テーマがlightになる", async () => {
+    (globalThis.matchMedia as ReturnType<typeof vi.fn>).mockImplementation((query: string) => ({
+      matches: query === "(prefers-color-scheme: light)",
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("テーマトグルボタンが存在する", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+    expect(container.querySelector(".theme-toggle")).toBeInTheDocument();
+  });
+
+  it("テーマトグルボタンのクリックでライトモードに切り替わる", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
+    await userEvent.click(toggle);
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("ライトモード時にトグルボタンを押すとダークモードに戻る", async () => {
+    localStorage.setItem("theme", "light");
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
+    await userEvent.click(toggle);
+
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("テーマ切り替え後にlocalStorageが更新される", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
+    await userEvent.click(toggle);
+
+    expect(localStorage.getItem("theme")).toBe("light");
+  });
+});
+
 describe("App - セクションナビゲーション", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

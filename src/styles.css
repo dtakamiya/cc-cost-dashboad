@@ -1,4 +1,8 @@
 :root {
+  /* テーマ切り替え用 */
+  --topbar-bg: rgba(10, 10, 17, 0.78);
+  --accent-rgb: 124, 127, 255;
+
   /* 背景の階層 */
   --bg: #0a0a11;
   --panel: #14141e;
@@ -72,7 +76,7 @@ body {
   gap: var(--sp-3);
   margin: calc(var(--sp-6) * -1) calc(var(--sp-5) * -1) var(--sp-5);
   padding: var(--sp-4) var(--sp-5);
-  background: rgba(10, 10, 17, 0.78);
+  background: var(--topbar-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -535,4 +539,88 @@ body {
     flex-wrap: nowrap;
     -webkit-overflow-scrolling: touch;
   }
+}
+
+/* ---- ライトテーマ ---- */
+[data-theme="light"] {
+  --topbar-bg: rgba(248, 248, 252, 0.88);
+  --accent-rgb: 79, 70, 229;
+  --bg: #f8f8fc;
+  --panel: #ffffff;
+  --elevated: #f0f0f6;
+  --border: #d8d8e8;
+  --border-soft: #e4e4f0;
+  --text: #1a1a2e;
+  --muted: #5c5c78;
+  --subtle: #8080a0;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.12);
+  --accent-border: rgba(79, 70, 229, 0.35);
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.12);
+  --warn: #b45309;
+  --warn-soft: rgba(180, 83, 9, 0.12);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.12);
+  --grid: #e8e8f4;
+  --axis: #8080a0;
+  --tooltip-bg: #ffffff;
+  --tooltip-border: #d8d8e8;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --topbar-bg: rgba(248, 248, 252, 0.88);
+    --accent-rgb: 79, 70, 229;
+    --bg: #f8f8fc;
+    --panel: #ffffff;
+    --elevated: #f0f0f6;
+    --border: #d8d8e8;
+    --border-soft: #e4e4f0;
+    --text: #1a1a2e;
+    --muted: #5c5c78;
+    --subtle: #8080a0;
+    --accent: #4f46e5;
+    --accent-strong: #4338ca;
+    --accent-soft: rgba(79, 70, 229, 0.12);
+    --accent-border: rgba(79, 70, 229, 0.35);
+    --success: #059669;
+    --success-soft: rgba(5, 150, 105, 0.12);
+    --warn: #b45309;
+    --warn-soft: rgba(180, 83, 9, 0.12);
+    --danger: #dc2626;
+    --danger-soft: rgba(220, 38, 38, 0.12);
+    --grid: #e8e8f4;
+    --axis: #8080a0;
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #d8d8e8;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.08);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+}
+
+/* ---- テーマトグルボタン ---- */
+.topbar button.theme-toggle {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.topbar button.theme-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+/* ---- ヒートマップ横スクロール ---- */
+.heatmap-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.heatmap-scroll .heatmap {
+  min-width: 520px;
 }

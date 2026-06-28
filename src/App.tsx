@@ -32,6 +32,11 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
   const [hourlyData, setHourlyData] = useState<HourlyDisplay[]>([]);
   const [hourlyMetric, setHourlyMetric] = useState<"cost" | "tokens">("cost");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem("theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
   const inFlight = useRef(false);
 
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -58,6 +63,11 @@ export default function App() {
   useEffect(() => {
     if (period === 'all') setCompareMode(false);
   }, [period]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
   const burn = data ? activeBurnWarning(data.blocks) : null;
 
@@ -156,6 +166,15 @@ export default function App() {
             >
               <span className="live-dot" />
               ライブ更新 {autoRefresh ? "ON" : "OFF"}
+            </button>
+            <button
+              type="button"
+              className={`theme-toggle${theme === "light" ? " theme-light" : ""}`}
+              aria-pressed={theme === "light"}
+              aria-label="ライト/ダークモード切替"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            >
+              {theme === "light" ? "☀" : "🌙"}
             </button>
             {data && data.projects.length > 0 && (
               <ProjectSelector

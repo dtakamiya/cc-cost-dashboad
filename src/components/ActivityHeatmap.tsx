@@ -8,7 +8,11 @@ function cellColor(tokens: number, max: number): string {
   if (tokens <= 0 || max <= 0) return "transparent";
   const ratio = tokens / max;
   const alpha = 0.12 + ratio * 0.88; // 0.12〜1.0
-  return `rgba(124, 127, 255, ${alpha.toFixed(3)})`;
+  const rgb =
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--accent-rgb")
+      .trim() || "124, 127, 255";
+  return `rgba(${rgb}, ${alpha.toFixed(3)})`;
 }
 
 export function ActivityHeatmap({ s }: { s: Summary }) {
@@ -34,17 +38,19 @@ export function ActivityHeatmap({ s }: { s: Summary }) {
         </div>
       )}
 
-      <div className="heatmap">
-        <div className="heatmap-corner" />
-        {Array.from({ length: 24 }, (_, h) => (
-          <div key={`h${h}`} className="heatmap-hour">
-            {h % 6 === 0 ? h : ""}
-          </div>
-        ))}
+      <div className="heatmap-scroll">
+        <div className="heatmap" role="img" aria-label="時間帯別アクティビティ: 曜日×時間帯のトークン使用量">
+          <div className="heatmap-corner" />
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={`h${h}`} className="heatmap-hour">
+              {h % 6 === 0 ? h : ""}
+            </div>
+          ))}
 
-        {matrix.map((row, day) => (
-          <DayRow key={day} day={day} row={row} max={max} />
-        ))}
+          {matrix.map((row, day) => (
+            <DayRow key={day} day={day} row={row} max={max} />
+          ))}
+        </div>
       </div>
     </section>
   );
