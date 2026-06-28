@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { loadRecords } from "./parser.js";
 import { aggregate } from "./aggregate.js";
 import { analyzeOverhead } from "./analyze.js";
-import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER } from "./pricing.js";
+import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER, costOf } from "./pricing.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(__dirname, "..", "dist");
@@ -14,6 +14,7 @@ const PORT = process.env.PORT || 3001;
 const app = express();
 
 let cache = null; // 直近の集計結果をメモリ保持
+let recordsCache = null; // ターン詳細取得用の生レコードキャッシュ
 
 // SSE クライアント管理
 const clients = new Set();
@@ -26,6 +27,7 @@ function notifyClients() {
 
 async function rebuild() {
   const { records, fileCount } = await loadRecords();
+  recordsCache = records;
   const summary = aggregate(records);
   summary.source = { fileCount };
   summary.overhead = analyzeOverhead();
@@ -61,6 +63,24 @@ app.get("/api/events", (req, res) => {
   req.on("close", () => {
     clients.delete(res);
   });
+});
+
+app.get("/api/sessions/:id/turns", (req, res) => {
+  if (!recordsCache) return res.json([]);
+  const { id } = req.params;
+  const turns = recordsCache
+    .filter((r) => r.sessionId === id)
+    .map((r) => ({
+      ts: r.ts,
+      model: r.model,
+      input: r.input,
+      output: r.output,
+      cacheCreate: r.cacheCreate,
+      cacheRead: r.cacheRead,
+      cost: costOf(r.model, r).total,
+    }))
+    .sort((a, b) => (a.ts ?? "").localeCompare(b.ts ?? ""));
+  res.json(turns);
 });
 
 app.get("/api/pricing", (_req, res) => {
