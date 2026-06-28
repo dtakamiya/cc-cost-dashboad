@@ -16,11 +16,13 @@ export function PeriodSelector({ period, onChange, compareMode, onCompareChange,
 }) {
   return (
     <>
-      <div className="period-selector">
+      <div className="period-selector" role="group" aria-label="表示期間">
         {OPTIONS.map(o => (
           <button
             key={o.value}
+            type="button"
             className={period === o.value ? 'active' : ''}
+            aria-pressed={period === o.value}
             onClick={() => onChange(o.value)}
           >
             {o.label}
