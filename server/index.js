@@ -13,6 +13,9 @@ const PORT = process.env.PORT || 3001;
 
 const app = express();
 
+const RELOAD_COOLDOWN_MS = 30 * 1000;
+let lastReloadTime = 0;
+
 let cache = null; // 直近の集計結果をメモリ保持
 let recordsCache = null; // ターン詳細取得用の生レコードキャッシュ
 
@@ -40,7 +43,7 @@ app.get("/api/summary", async (_req, res) => {
     if (!cache) await rebuild();
     res.json(cache);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -49,16 +52,26 @@ app.get("/api/hourly", async (_req, res) => {
     if (!cache) await rebuild();
     res.json({ hourly: cache.hourly });
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 app.post("/api/reload", async (_req, res) => {
+  const now = Date.now();
+  const elapsed = now - lastReloadTime;
+  if (elapsed < RELOAD_COOLDOWN_MS) {
+    const remainingSec = Math.ceil((RELOAD_COOLDOWN_MS - elapsed) / 1000);
+    return res
+      .status(429)
+      .set("Retry-After", String(remainingSec))
+      .json({ error: "Rate limit exceeded", retryAfterSec: remainingSec });
+  }
   try {
+    lastReloadTime = now;
     const summary = await rebuild();
     res.json(summary);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -113,7 +126,7 @@ export { app, notifyClients };
 
 // テスト時はサーバーを起動しない
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  app.listen(PORT, () => {
+  app.listen(PORT, "127.0.0.1", () => {
     console.log(`cc-cost-dashboard API on http://localhost:${PORT}`);
   });
 

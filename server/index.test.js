@@ -485,6 +485,96 @@ describe("GET /api/hourly (24時間集計)", () => {
   });
 });
 
+describe("セキュリティ強化", () => {
+  describe("エラーレスポンスの汎用化", () => {
+    it("GET /api/summary - 500エラーレスポンスに内部詳細（スタックトレース等）が含まれない", async () => {
+      // Arrange
+      const { aggregate } = await import("./aggregate.js");
+      vi.mocked(aggregate).mockImplementationOnce(() => {
+        throw new Error("Internal path: /home/user/.claude/secret");
+      });
+
+      // Act
+      const res = await request(app).get("/api/summary");
+
+      // Assert
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
+      expect(res.body.error).not.toContain("/home/user");
+      expect(res.body.error).not.toContain("secret");
+      expect(res.body.error).not.toContain("Internal path");
+    });
+
+    it("POST /api/reload - 500エラーレスポンスに内部詳細が含まれない", async () => {
+      // Arrange
+      const { loadRecords } = await import("./parser.js");
+      vi.mocked(loadRecords).mockRejectedValueOnce(new Error("Stack trace: /home/user/.config"));
+
+      // Act
+      const res = await request(app).post("/api/reload");
+
+      // Assert
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
+      expect(res.body.error).not.toContain("Stack trace");
+      expect(res.body.error).not.toContain("/home/user");
+    });
+
+    it("GET /api/hourly - 500エラーレスポンスに内部詳細が含まれない", async () => {
+      // Arrange
+      const { aggregate } = await import("./aggregate.js");
+      vi.mocked(aggregate).mockImplementationOnce(() => {
+        throw new Error("Secret key: sk-ant-12345");
+      });
+
+      // Act
+      const res = await request(app).get("/api/hourly");
+
+      // Assert
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Internal server error");
+      expect(res.body.error).not.toContain("sk-ant-12345");
+      expect(res.body.error).not.toContain("Secret key");
+    });
+  });
+
+  describe("POST /api/reload - レート制限", () => {
+    it("最初の呼び出しは 200 を返す", async () => {
+      const res = await request(app).post("/api/reload");
+      expect(res.status).toBe(200);
+    });
+
+    it("30秒以内の連続呼び出しは 429 を返す", async () => {
+      // Arrange: 1回目は成功させる
+      await request(app).post("/api/reload");
+
+      // Act: 即座に2回目
+      const res = await request(app).post("/api/reload");
+
+      // Assert
+      expect(res.status).toBe(429);
+      expect(res.body).toHaveProperty("error", "Rate limit exceeded");
+      expect(res.body).toHaveProperty("retryAfterSec");
+      expect(typeof res.body.retryAfterSec).toBe("number");
+      expect(res.headers["retry-after"]).toBeDefined();
+    });
+
+    it("429レスポンスには再試行可能時間のヒントが含まれる", async () => {
+      // Arrange
+      await request(app).post("/api/reload");
+
+      // Act
+      const res = await request(app).post("/api/reload");
+
+      // Assert
+      expect(res.status).toBe(429);
+      expect(res.body.retryAfterSec).toBeGreaterThan(0);
+      expect(res.body.retryAfterSec).toBeLessThanOrEqual(30);
+      expect(res.headers["retry-after"]).toBe(String(res.body.retryAfterSec));
+    });
+  });
+});
+
 describe("GET /api/events (SSE)", () => {
   it("Content-Type: text/event-stream を返す", async () => {
     const res = await request(app)
