@@ -49,6 +49,61 @@ function makeSummary(overrides: Partial<Summary> = {}): Summary {
   };
 }
 
+describe("SummaryCards - 総コストカード", () => {
+  it("総コストカードが常に表示される", () => {
+    // Arrange
+    const s = makeSummary();
+
+    // Act
+    render(<SummaryCards s={s} />);
+
+    // Assert
+    expect(screen.getByText("総コスト")).toBeInTheDocument();
+  });
+
+  it("総コストの値が $X.XX 形式で表示される", () => {
+    // Arrange
+    const s = makeSummary({ totals: { cost: 12.345, tokens: 100_000, sessions: 5, messages: 50, from: "2026-06-01", to: "2026-06-28" } });
+
+    // Act
+    render(<SummaryCards s={s} />);
+
+    // Assert: usd() フォーマッタで $12.35 になる
+    expect(screen.getByText("$12.35")).toBeInTheDocument();
+  });
+
+  it("前期間との比較(delta)が総コストカードに表示される", () => {
+    // Arrange
+    const s = makeSummary({ totals: { cost: 20, tokens: 200_000, sessions: 10, messages: 100, from: "2026-06-01", to: "2026-06-28" } });
+    const prev = makeSummary({ totals: { cost: 10, tokens: 100_000, sessions: 5, messages: 50, from: "2026-05-01", to: "2026-05-28" } });
+
+    // Act
+    render(<SummaryCards s={s} prev={prev} />);
+
+    // Assert: delta バッジが表示される（+100% = 2倍）
+    expect(screen.getByText("総コスト")).toBeInTheDocument();
+    // DeltaBadge は aria-label 等を持たないが、+記号を含む要素が出る
+    const costCard = screen.getByText("総コスト").closest(".card");
+    expect(costCard).toBeInTheDocument();
+  });
+
+  it("カード順が 総トークン→セッション数→期間→総コスト になる", () => {
+    // Arrange
+    const s = makeSummary();
+
+    // Act
+    render(<SummaryCards s={s} />);
+
+    // Assert: 4枚のカードラベルが順番通りに出る
+    const labels = screen.getAllByText(/総トークン|セッション数|期間|総コスト/);
+    const texts = labels.map((el) => el.textContent);
+    expect(texts[0]).toBe("総トークン");
+    expect(texts[1]).toBe("セッション数");
+    expect(texts[2]).toBe("期間");
+    expect(texts[3]).toBe("総コスト");
+  });
+});
+
 describe("SummaryCards - データ品質カード", () => {
   it("source が undefined のとき parsedLines 表示はない", () => {
     // Arrange
