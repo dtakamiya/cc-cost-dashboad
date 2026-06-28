@@ -139,6 +139,116 @@ describe("App - 自動更新エラー表示", () => {
   });
 });
 
+describe("App - トップバーモバイル2段構成", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("トップバーに topbar-row-1 要素が存在する", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const row1 = container.querySelector(".topbar-row-1");
+    expect(row1).toBeInTheDocument();
+  });
+
+  it("トップバーに topbar-row-2 要素が存在する", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const row2 = container.querySelector(".topbar-row-2");
+    expect(row2).toBeInTheDocument();
+  });
+
+  it("topbar-row-1 に topbar-title が含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const row1 = container.querySelector(".topbar-row-1");
+    const title = row1?.querySelector(".topbar-title");
+    expect(title).toBeInTheDocument();
+  });
+
+  it("topbar-row-1 に last-updated が含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const row1 = container.querySelector(".topbar-row-1");
+    const lastUpdated = row1?.querySelector(".last-updated");
+    expect(lastUpdated).toBeInTheDocument();
+  });
+
+  it("topbar-row-2 に topbar-controls が含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const row2 = container.querySelector(".topbar-row-2");
+    const controls = row2?.querySelector(".topbar-controls");
+    expect(controls).toBeInTheDocument();
+  });
+
+  it("topbar-controls にライブ更新ボタンが含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const controls = container.querySelector(".topbar-controls");
+    const liveToggle = controls?.querySelector(".live-toggle");
+    expect(liveToggle).toBeInTheDocument();
+  });
+
+  it("topbar-controls に期間選択ボタンが含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const controls = container.querySelector(".topbar-controls");
+    const periodSelector = controls?.querySelector(".period-selector");
+    expect(periodSelector).toBeInTheDocument();
+  });
+
+  it("topbar-controls に再読込ボタンが含まれている", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const controls = container.querySelector(".topbar-controls");
+    const reloadBtn = controls?.querySelector(".reload");
+    expect(reloadBtn).toBeInTheDocument();
+  });
+
+  it("ライブ更新ボタンのクリックが機能する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const liveToggle = screen.getByRole("button", { name: /ライブ更新/ });
+    expect(liveToggle).toBeInTheDocument();
+
+    await userEvent.click(liveToggle);
+
+    // ボタンの状態が変わることを確認
+    expect(liveToggle.textContent).toMatch(/OFF/);
+  });
+
+  it("再読込ボタンのクリックが機能する", async () => {
+    render(<App />);
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const reloadBtn = screen.getByRole("button", { name: /再読込/ });
+    expect(reloadBtn).toBeInTheDocument();
+
+    await userEvent.click(reloadBtn);
+
+    // 再読込がトリガーされたことを確認
+    await waitFor(() =>
+      expect(mockFetchSummary).toHaveBeenCalledWith(true)
+    );
+  });
+});
+
 describe("App - セクションナビゲーション", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
