@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ComposedChart,
   Area,
@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   Legend,
 } from "recharts";
-import type { Summary } from "../api";
+import type { Summary, Period } from "../api";
 import { shiftDailyDates } from "../api";
 import { toWeekly } from "../weekly";
 import { compact, usd, modelColor } from "../format";
@@ -45,9 +45,16 @@ function DailyTrendTooltip({ active, payload }: DailyTrendTooltipProps) {
   );
 }
 
-export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Summary; prevOffsetDays?: number }) {
-  const [view, setView] = useState<View>("daily");
+const isLongPeriod = (period: Period | undefined): boolean =>
+  period === "90d" || period === "all";
+
+export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; prev?: Summary; prevOffsetDays?: number; period?: Period }) {
+  const [view, setView] = useState<View>(isLongPeriod(period) ? "weekly" : "daily");
   const [mode, setMode] = useState<DisplayMode>("tokens");
+
+  useEffect(() => {
+    setView(isLongPeriod(period) ? "weekly" : "daily");
+  }, [period]);
 
   const models = s.models.map((m) => m.model);
   const xKey = view === "weekly" ? "weekStart" : "date";
@@ -108,6 +115,11 @@ export function DailyTrend({ s, prev, prevOffsetDays }: { s: Summary; prev?: Sum
           </div>
         </div>
       </div>
+      {view === "weekly" && isLongPeriod(period) && (
+        <p className="aggregation-note" aria-live="polite">
+          データ量が多いため週次集約で表示しています
+        </p>
+      )}
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart data={data} margin={{ left: 8, right: 24, top: 8 }}>
           <defs>
