@@ -186,9 +186,20 @@ export function isBloatedSession(
   return s.messages >= minMessages && s.avgContextPerMsg > contextThreshold;
 }
 
-export type Period = '7d' | '30d' | '90d' | 'all';
+export interface DateRange {
+  from: string; // YYYY-MM-DD
+  to: string;   // YYYY-MM-DD
+}
 
-export const PERIOD_DAYS: Record<Exclude<Period, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
+export type FixedPeriod = '7d' | '30d' | '90d' | 'all';
+
+export type Period = FixedPeriod | DateRange;
+
+export const PERIOD_DAYS: Record<Exclude<FixedPeriod, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
+
+export function isDateRange(p: Period): p is DateRange {
+  return typeof p === 'object' && p !== null && 'from' in p && 'to' in p;
+}
 
 // 今日(00:00)から n 日前の Date を返す。期間フィルタの基準日計算に使う。
 function dayStart(daysAgo: number): Date {
@@ -209,6 +220,18 @@ function ymd(d: Date): string {
 
 /** Summary を指定期間でフィルタして再集計した Summary を返す。 */
 export function filterSummary(s: Summary, period: Period): Summary {
+  if (isDateRange(period)) {
+    const { from, to } = period;
+    const filteredDaily = s.daily.filter(d => d.date >= from && d.date <= to);
+    const filteredSessions = s.bySession
+      .filter((sess) => {
+        const d = sess.lastTs?.slice(0, 10) ?? "";
+        return d >= from && d <= to;
+      })
+      .slice(0, 30);
+    return buildPeriodSummary(s, filteredDaily, filteredSessions);
+  }
+
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
 
   const days = PERIOD_DAYS[period];
@@ -231,7 +254,7 @@ export function filterSummary(s: Summary, period: Period): Summary {
  * period='all' は前期が定義できないため null、前期にデータが無い場合も null を返す。
  */
 export function filterPreviousPeriod(s: Summary, period: Period): Summary | null {
-  if (period === 'all') return null;
+  if (period === 'all' || isDateRange(period)) return null;
 
   const days = PERIOD_DAYS[period];
   // 前期: 現在期間(今日 - (days-1) 〜 今日)の直前 days 日分。
