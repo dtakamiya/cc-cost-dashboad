@@ -61,6 +61,14 @@ describe("period プロップによる初期ビュー制御", () => {
     expect(screen.getByRole("button", { name: "週次" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "日次" })).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("period が '90d' から '7d' に変わると日次ビューに切り替わる", () => {
+    const { rerender } = render(<DailyTrend s={minimalSummary} period="90d" />);
+    expect(screen.getByRole("button", { name: "週次" })).toHaveAttribute("aria-pressed", "true");
+    rerender(<DailyTrend s={minimalSummary} period="7d" />);
+    expect(screen.getByRole("button", { name: "日次" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "週次" })).toHaveAttribute("aria-pressed", "false");
+  });
 });
 
 describe("週次集約バナー", () => {
