@@ -6,8 +6,12 @@ function fmt(iso: string) {
   return new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+const INITIAL_COUNT = 5;
+const MAX_COUNT = 20;
+
 export function BillingBlocks({ s }: { s: Summary }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const blocks = s.blocks ?? [];
   if (!blocks.length) return null;
 
@@ -62,21 +66,37 @@ export function BillingBlocks({ s }: { s: Summary }) {
           <button
             className="history-toggle"
             aria-expanded={historyOpen}
-            onClick={() => setHistoryOpen((prev) => !prev)}
+            onClick={() => {
+              setHistoryOpen((prev) => {
+                if (prev) setShowAll(false);
+                return !prev;
+              });
+            }}
           >
             {historyOpen ? "▼" : "▶"} 履歴（{history.length}件）
           </button>
           {historyOpen && (
-            <div className="block-list">
-              {history.slice(0, 10).map((b, i) => (
-                <div key={i} className="block-row">
-                  <div className="block-row-time">{fmt(b.start)}</div>
-                  <div className="block-row-tokens">{compact(b.tokens)} tok</div>
-                  <div className="block-row-model">{b.topModel?.model ?? "-"}</div>
-                  <div className="block-row-dur">{b.durationMin} 分</div>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="block-list">
+                {history.slice(0, showAll ? MAX_COUNT : INITIAL_COUNT).map((b, i) => (
+                  <div key={i} className="block-row">
+                    <div className="block-row-time">{fmt(b.start)} 〜 {fmt(b.end)}</div>
+                    <div className="block-row-tokens">{compact(b.tokens)} tok</div>
+                    <div className="block-row-model">{b.topModel?.model ?? "-"}</div>
+                    <div className="block-row-dur">{b.durationMin} 分</div>
+                    <div className="block-row-cost">{usd(b.cost)}</div>
+                  </div>
+                ))}
+              </div>
+              {history.length > (showAll ? MAX_COUNT : INITIAL_COUNT) && (
+                <button
+                  className="history-show-more"
+                  onClick={() => setShowAll(true)}
+                >
+                  もっと見る（残り {history.length - INITIAL_COUNT} 件）
+                </button>
+              )}
+            </>
           )}
         </>
       )}
