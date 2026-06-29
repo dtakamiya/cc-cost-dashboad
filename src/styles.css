@@ -259,6 +259,23 @@ body {
 }
 .project-selector:hover { color: var(--text); border-color: var(--accent-border); }
 
+/* ---- custom date picker ---- */
+.custom-date-picker {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 8px;
+  background: var(--elevated); border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.custom-date-picker label {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+}
+.custom-date-picker input[type="date"] {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 3px 6px; font-size: 12px;
+}
+
 /* ---- compare toggle ---- */
 .compare-toggle {
   background: var(--elevated); color: var(--muted);

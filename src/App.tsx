@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, subscribeToUpdates, PERIOD_DAYS, type Period, type Summary, fetchHourly } from "./api";
+import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, subscribeToUpdates, PERIOD_DAYS, type Period, type FixedPeriod, type Summary, fetchHourly } from "./api";
 import { usd } from "./format";
 import { toHourly, type HourlyDisplay } from "./weekly";
 import { SummaryCards } from "./components/SummaryCards";
@@ -45,7 +45,7 @@ export default function App() {
   const sessionRef = useRef<HTMLDivElement>(null);
   const optimizationRef = useRef<HTMLDivElement>(null);
 
-  const canCompare = period !== 'all';
+  const canCompare = !isDateRange(period) && period !== 'all';
 
   const displayData = useMemo(
     () => (data ? filterSummaryByProject(filterSummary(data, period), selectedProject) : null),
@@ -59,9 +59,9 @@ export default function App() {
     return filterSummaryByProject(prev, selectedProject);
   }, [data, period, compareMode, selectedProject]);
 
-  // 全期間では前期が定義できないため比較モードを自動 OFF にする
+  // 全期間・カスタム範囲では前期が定義できないため比較モードを自動 OFF にする
   useEffect(() => {
-    if (period === 'all') setCompareMode(false);
+    if (period === 'all' || isDateRange(period)) setCompareMode(false);
   }, [period]);
 
   useEffect(() => {
@@ -245,7 +245,7 @@ export default function App() {
               <DailyTrend
                 s={displayData}
                 prev={prevDisplayData ?? undefined}
-                prevOffsetDays={canCompare ? PERIOD_DAYS[period as Exclude<Period, 'all'>] : undefined}
+                prevOffsetDays={canCompare && !isDateRange(period) ? PERIOD_DAYS[period as Exclude<FixedPeriod, 'all'>] : undefined}
                 period={period}
               />
             </div>

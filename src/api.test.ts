@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, fetchPricing, subscribeToUpdates, fetchHourly, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -296,6 +296,81 @@ describe("filterSummaryByProject", () => {
     const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0].cwd).toBe("/home/u/projA");
+  });
+});
+
+describe("isDateRange", () => {
+  it("DateRange オブジェクトを true と判定する", () => {
+    const range: DateRange = { from: "2025-06-01", to: "2025-06-14" };
+    expect(isDateRange(range)).toBe(true);
+  });
+
+  it("固定期間文字列を false と判定する", () => {
+    expect(isDateRange("7d")).toBe(false);
+    expect(isDateRange("30d")).toBe(false);
+    expect(isDateRange("90d")).toBe(false);
+    expect(isDateRange("all")).toBe(false);
+  });
+});
+
+describe("filterSummary カスタム日付範囲", () => {
+  const makeAbsoluteSummary = (): Summary => ({
+    generatedAt: "2025-06-15T00:00:00.000Z",
+    totals: { cost: 100, tokens: 100_000, sessions: 3, messages: 30, from: "2025-05-01", to: "2025-06-15" },
+    tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+    costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+    models: [{ model: "claude-opus-4-8", cost: 100, tokens: 100_000, isFallback: false }],
+    daily: [
+      day("2025-05-10", 20),
+      day("2025-06-01", 30),
+      day("2025-06-10", 50),
+    ],
+    projects: [],
+    drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+    sessionStats: { avgColdStartTokens: 1000, p90ColdStartTokens: 2000, coldStartCost: 10 },
+    overhead: {
+      claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [],
+      projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0,
+    },
+    warnings: { fallbackModels: [] },
+    blocks: [],
+    projection: null,
+    activity: { matrix: [], max: 0, total: 0, peak: null },
+    bySession: [
+      { ...sess("/proj", 30, 30_000), lastTs: "2025-06-01T00:00:00.000Z" },
+      { ...sess("/proj", 50, 50_000), lastTs: "2025-06-10T00:00:00.000Z" },
+      { ...sess("/proj", 20, 20_000), lastTs: "2025-05-10T00:00:00.000Z" },
+    ],
+  });
+
+  it("from-to 範囲の日付のみ daily に残す", () => {
+    const filtered = filterSummary(makeAbsoluteSummary(), { from: "2025-06-01", to: "2025-06-14" });
+    expect(filtered.daily).toHaveLength(2);
+    expect(filtered.daily[0].date).toBe("2025-06-01");
+    expect(filtered.daily[1].date).toBe("2025-06-10");
+  });
+
+  it("from-to 範囲外の daily を除外する", () => {
+    const filtered = filterSummary(makeAbsoluteSummary(), { from: "2025-06-01", to: "2025-06-14" });
+    expect(filtered.daily.map(d => d.date)).not.toContain("2025-05-10");
+  });
+
+  it("lastTs が範囲内のセッションのみ残す", () => {
+    const filtered = filterSummary(makeAbsoluteSummary(), { from: "2025-06-01", to: "2025-06-14" });
+    expect(filtered.bySession).toHaveLength(2);
+  });
+
+  it("空の filteredDaily でも totals.cost が 0 になる", () => {
+    const filtered = filterSummary(makeAbsoluteSummary(), { from: "2020-01-01", to: "2020-01-31" });
+    expect(filtered.totals.cost).toBe(0);
+    expect(filtered.daily).toHaveLength(0);
+  });
+});
+
+describe("filterPreviousPeriod カスタム日付範囲", () => {
+  it("DateRange を渡すと null を返す", () => {
+    const result = filterPreviousPeriod(summary(), { from: "2025-06-01", to: "2025-06-14" });
+    expect(result).toBeNull();
   });
 });
 
