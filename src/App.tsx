@@ -246,6 +246,7 @@ export default function App() {
                 s={displayData}
                 prev={prevDisplayData ?? undefined}
                 prevOffsetDays={canCompare ? PERIOD_DAYS[period as Exclude<Period, 'all'>] : undefined}
+                period={period}
               />
             </div>
           </section>
