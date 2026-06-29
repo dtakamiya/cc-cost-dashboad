@@ -167,5 +167,39 @@ describe("BillingBlocks", () => {
       await user.click(screen.getByRole("button", { name: /履歴/ }));
       expect(screen.getByText(/1\.23/)).toBeInTheDocument();
     });
+
+    it("昇順データでも最新5件が先頭に表示される", async () => {
+      const user = userEvent.setup();
+      // 古い順（昇順）で渡す: 6/01〜6/10
+      const blocks = Array.from({ length: 10 }, (_, i) =>
+        makeBlock({ start: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00Z` })
+      );
+      const s = { ...minimalSummary, blocks };
+      render(<BillingBlocks s={s} />);
+      await user.click(screen.getByRole("button", { name: /履歴/ }));
+      const rows = document.querySelectorAll(".block-row");
+      // 最新5件（6/06〜6/10）が表示されるはず
+      expect(rows).toHaveLength(5);
+      // 最初の行が最新（6/10）の時刻を含む
+      expect(rows[0].textContent).toContain("6/10");
+    });
+
+    it("「もっと見る」展開後に履歴を閉じて再度開くと5件に戻る", async () => {
+      const user = userEvent.setup();
+      const blocks = Array.from({ length: 10 }, (_, i) =>
+        makeBlock({ start: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00Z` })
+      );
+      const s = { ...minimalSummary, blocks };
+      render(<BillingBlocks s={s} />);
+      const toggle = screen.getByRole("button", { name: /履歴/ });
+      await user.click(toggle);
+      await user.click(screen.getByRole("button", { name: /もっと見る/ }));
+      expect(document.querySelectorAll(".block-row")).toHaveLength(10);
+      // 閉じる
+      await user.click(toggle);
+      // 再度開く
+      await user.click(toggle);
+      expect(document.querySelectorAll(".block-row")).toHaveLength(5);
+    });
   });
 });

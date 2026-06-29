@@ -16,7 +16,9 @@ export function BillingBlocks({ s }: { s: Summary }) {
   if (!blocks.length) return null;
 
   const active = blocks.find((b) => b.isActive);
-  const history = blocks.filter((b) => !b.isActive);
+  const history = blocks
+    .filter((b) => !b.isActive)
+    .sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
 
   return (
     <section className="panel">
