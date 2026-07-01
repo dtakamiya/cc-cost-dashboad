@@ -114,9 +114,10 @@ describe("costOf", () => {
   });
 
   it("claude-sonnet-5 が既知モデルとして計算される", () => {
-    const result = costOf("claude-sonnet-5", { input: 1_000_000, output: 0 });
+    const result = costOf("claude-sonnet-5", { input: 1_000_000, output: 1_000_000 });
     expect(result.isFallback).toBe(false);
     expect(result.input).toBeCloseTo(3, 6);
+    expect(result.output).toBeCloseTo(15, 6);
   });
 
   it("claude-3-5-sonnet-20241022 が claude-3-5-sonnet の価格で計算される", () => {
