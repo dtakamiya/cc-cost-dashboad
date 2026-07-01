@@ -445,3 +445,38 @@ describe("computeBlocks 基本動作", () => {
     expect(blocks).toHaveLength(20);
   });
 });
+
+// ─── 日別プロジェクト別コスト ────────────────────────────────────────────────
+
+describe("日別プロジェクト別コスト（projectCosts）", () => {
+  it("同日・単一プロジェクトのコスト合計が projectCosts に反映される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", cwd: "/home/u/proj", input: 1000 }),
+      rec({ ts: "2026-06-15T11:00:00.000Z", cwd: "/home/u/proj", input: 2000 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    const expectedCost = (1000 + 2000) * INPUT_USD;
+    expect(day.projectCosts["/home/u/proj"]).toBeCloseTo(expectedCost, 10);
+  });
+
+  it("同日・複数プロジェクトはそれぞれ独立して集計される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", cwd: "/home/u/proj-a", input: 1000 }),
+      rec({ ts: "2026-06-15T11:00:00.000Z", cwd: "/home/u/proj-b", input: 3000 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    expect(day.projectCosts["/home/u/proj-a"]).toBeCloseTo(1000 * INPUT_USD, 10);
+    expect(day.projectCosts["/home/u/proj-b"]).toBeCloseTo(3000 * INPUT_USD, 10);
+  });
+
+  it("複数日にまたがる同一プロジェクトは日ごとに別集計される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", cwd: "/home/u/proj", input: 1000 }),
+      rec({ ts: "2026-06-16T10:00:00.000Z", cwd: "/home/u/proj", input: 5000 }),
+    ]);
+    const day1 = daily.find((d) => d.date === "2026-06-15");
+    const day2 = daily.find((d) => d.date === "2026-06-16");
+    expect(day1.projectCosts["/home/u/proj"]).toBeCloseTo(1000 * INPUT_USD, 10);
+    expect(day2.projectCosts["/home/u/proj"]).toBeCloseTo(5000 * INPUT_USD, 10);
+  });
+});

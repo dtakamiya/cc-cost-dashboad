@@ -323,11 +323,14 @@ export function aggregate(records) {
     if (c.isFallback) fallbackModels.add(r.model);
 
     const day = dayOf(r.ts);
-    if (!byDay.has(day)) byDay.set(day, { costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map() });
+    if (!byDay.has(day)) {
+      byDay.set(day, { costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map(), projectCostMap: new Map() });
+    }
     const dd = byDay.get(day);
     dd.costMap.set(r.model, (dd.costMap.get(r.model) || 0) + c.total);
     dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
     dd.projectTokenMap.set(r.cwd, (dd.projectTokenMap.get(r.cwd) || 0) + tokens);
+    dd.projectCostMap.set(r.cwd, (dd.projectCostMap.get(r.cwd) || 0) + c.total);
 
     const prevProject = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
     byProject.set(r.cwd, { cost: prevProject.cost + c.total, tokens: prevProject.tokens + tokens });
@@ -352,13 +355,14 @@ export function aggregate(records) {
 
   // 日別（昇順）。各日 {date, models: {model: cost}, total, tokenModels: {model: tokens}, tokenTotal, projectTokens: {cwd: tokens}}
   const daily = [...byDay.entries()]
-    .map(([date, { costMap, tokenMap, projectTokenMap }]) => {
+    .map(([date, { costMap, tokenMap, projectTokenMap, projectCostMap }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
       const tokenModels = Object.fromEntries(tokenMap);
       const tokenTotal = [...tokenMap.values()].reduce((s, v) => s + v, 0);
       const projectTokens = Object.fromEntries(projectTokenMap);
-      return { date, models, total, tokenModels, tokenTotal, projectTokens };
+      const projectCosts = Object.fromEntries(projectCostMap);
+      return { date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts };
     })
     .filter((d) => d.date !== "(unknown)")
     .sort((a, b) => a.date.localeCompare(b.date));

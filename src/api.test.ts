@@ -13,13 +13,19 @@ function ymdAgo(daysAgo: number): string {
   ].join("-");
 }
 
-const day = (date: string, total: number, projectTokens?: Record<string, number>): DailyCost => ({
+const day = (
+  date: string,
+  total: number,
+  projectTokens?: Record<string, number>,
+  projectCosts?: Record<string, number>
+): DailyCost => ({
   date,
   models: { "claude-opus-4-8": total },
   total,
   tokenModels: { "claude-opus-4-8": total * 1000 },
   tokenTotal: total * 1000,
   projectTokens: projectTokens ?? { "/home/u/proj": total * 1000 },
+  projectCosts: projectCosts ?? { "/home/u/proj": total },
 });
 
 const sess = (cwd: string, cost: number, tokens: number): SessionCost => ({
@@ -46,8 +52,12 @@ const summaryWithProjects = (): Summary => ({
   costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
   models: [{ model: "claude-opus-4-8", cost: 150, tokens: 150_000, isFallback: false }],
   daily: [
-    day(ymdAgo(3), 60, { "/home/u/projA": 40_000, "/home/u/projB": 20_000 }),
-    day(ymdAgo(1), 90, { "/home/u/projA": 90_000 }),
+    day(
+      ymdAgo(3), 60,
+      { "/home/u/projA": 40_000, "/home/u/projB": 20_000 },
+      { "/home/u/projA": 40, "/home/u/projB": 20 }
+    ),
+    day(ymdAgo(1), 90, { "/home/u/projA": 90_000 }, { "/home/u/projA": 90 }),
   ],
   projects: [
     { cwd: "/home/u/projA", cost: 100, tokens: 130_000 },
@@ -230,6 +240,17 @@ describe("filterSummary cacheStats", () => {
     const filtered = filterSummary(summary(), "all");
     expect(filtered.cacheStats!.premium1h).toBe(7.5);
     expect(filtered.cacheStats!.roiNet).toBe(50);
+  });
+});
+
+describe("filterSummary projects コスト集計", () => {
+  it("projects の cost が日別 projectCosts の合計になる（0固定ではない）", () => {
+    const result = filterSummary(summaryWithProjects(), "7d");
+    const projA = result.projects.find(p => p.cwd === "/home/u/projA");
+    const projB = result.projects.find(p => p.cwd === "/home/u/projB");
+    // projA: day1 40 + day2 90 = 130、projB: day1 20
+    expect(projA?.cost).toBeCloseTo(130, 5);
+    expect(projB?.cost).toBeCloseTo(20, 5);
   });
 });
 
