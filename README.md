@@ -6,7 +6,25 @@
 
 ## スクリーンショット
 
-![ダッシュボード全体](docs/screenshot.png)
+### サマリ・最適化アドバイス
+
+![サマリ・最適化アドバイス](docs/screenshot-01-summary.jpg)
+
+### 使用量分析・24時間推移
+
+![使用量分析・24時間推移](docs/screenshot-02-analysis.jpg)
+
+### モデル別・プロジェクト別使用量
+
+![モデル別・プロジェクト別使用量](docs/screenshot-03-breakdowns.jpg)
+
+### セッション別コスト・時間帯別アクティビティ
+
+![セッション別コスト・時間帯別アクティビティ](docs/screenshot-04-sessions.jpg)
+
+### キャッシュ TTL・コンテキストオーバーヘッド
+
+![キャッシュ TTL・コンテキストオーバーヘッド](docs/screenshot-05-overhead.jpg)
 
 ---
 
