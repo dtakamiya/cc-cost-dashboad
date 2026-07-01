@@ -61,6 +61,10 @@ describe("PRICING table", () => {
     expect(PRICING["claude-opus-4-8"]).toEqual({ input: 5, output: 25 });
   });
 
+  it("claude-sonnet-5 の価格が input=3, output=15", () => {
+    expect(PRICING["claude-sonnet-5"]).toEqual({ input: 3, output: 15 });
+  });
+
   it("claude-sonnet-4-5 の価格が input=3, output=15", () => {
     expect(PRICING["claude-sonnet-4-5"]).toEqual({ input: 3, output: 15 });
   });
@@ -107,6 +111,13 @@ describe("costOf", () => {
     const withoutSuffix = costOf("claude-haiku-4-5", { input: 1_000_000, output: 0 });
     expect(withSuffix.total).toBeCloseTo(withoutSuffix.total, 10);
     expect(withSuffix.isFallback).toBe(false);
+  });
+
+  it("claude-sonnet-5 が既知モデルとして計算される", () => {
+    const result = costOf("claude-sonnet-5", { input: 1_000_000, output: 1_000_000 });
+    expect(result.isFallback).toBe(false);
+    expect(result.input).toBeCloseTo(3, 6);
+    expect(result.output).toBeCloseTo(15, 6);
   });
 
   it("claude-3-5-sonnet-20241022 が claude-3-5-sonnet の価格で計算される", () => {
