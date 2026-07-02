@@ -183,3 +183,197 @@ describe("loadRecords - CLAUDE_LOGS_DIR", () => {
     }
   });
 });
+
+describe("loadRecords - 差分読み込み（offsetState）", () => {
+  let originalEnv;
+  let tmpDir;
+  let projectDir;
+  let logFile;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-offset-test-"));
+    projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    logFile = path.join(projectDir, "session.jsonl");
+    process.env.CLAUDE_LOGS_DIR = tmpDir;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("空の offsetState を渡した場合、引数なし呼び出しと同じ挙動（フル読み込み）になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const noArgResult = await loadRecords();
+    const emptyMapResult = await loadRecords(new Map());
+
+    expect(emptyMapResult.records).toHaveLength(noArgResult.records.length);
+    expect(emptyMapResult.records).toHaveLength(1);
+    expect(emptyMapResult.fileCount).toBe(noArgResult.fileCount);
+    expect(emptyMapResult.parsedLines).toBe(noArgResult.parsedLines);
+  });
+
+  it("ファイルに変更がない場合、2回目の loadRecords 呼び出しは新規レコード0件を返す", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(0);
+  });
+
+  it("2回の loadRecords 呼び出しの間にファイルが追記された場合、新規追加分のみを返す", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(1);
+  });
+
+  it("読み込み後、offsetState に新しい offset と mtime が反映される", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+    const expectedSize = fs.statSync(logFile).size;
+
+    const offsetState = new Map();
+    await loadRecords(offsetState);
+
+    const entry = offsetState.get(logFile);
+    expect(entry).toBeDefined();
+    expect(entry.offset).toBe(expectedSize);
+    expect(entry.mtimeMs).toBe(fs.statSync(logFile).mtimeMs);
+  });
+
+  it("改行なしの途中書き込み行（末尾未完了行）は消費されず、次回読み込みで丸ごと拾われる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+
+    // 改行なしで部分行を追記（まだ書き込み中を想定）
+    fs.appendFileSync(logFile, VALID_LINE);
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(0); // 未完了行は消費しない
+
+    // 改行を追記して行を完成させる
+    fs.appendFileSync(logFile, "\n");
+
+    const third = await loadRecords(offsetState);
+    expect(third.records).toHaveLength(1); // 完成した行が丸ごと拾われる
+  });
+
+  it("ファイルサイズがキャッシュ済み offset より縮小した場合（切り詰め）、offset 0 から再読み込みする", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(2);
+
+    // ファイルを切り詰めて短くする
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(1); // 0 から再読み込みされ、切り詰め後の内容を返す
+  });
+
+  it("ファイルの mtime が後退した場合（ローテーション/置換）、offset 0 から再読み込みする", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+
+    const cachedEntry = offsetState.get(logFile);
+    // 新しい内容で置換しつつ、mtime を過去に後退させる
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const pastMtime = new Date(cachedEntry.mtimeMs - 60_000);
+    fs.utimesSync(logFile, pastMtime, pastMtime);
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(2); // 0 から再読み込みされる
+  });
+
+  it("offsetState に存在しない新規ファイルは offset 0 から読み込まれる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+
+    // 新規ファイルを追加
+    const newFile = path.join(projectDir, "session2.jsonl");
+    fs.writeFileSync(newFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(2); // 新規ファイルの全レコード
+    expect(offsetState.has(newFile)).toBe(true);
+  });
+
+  it("差分読み込みで壊れたJSON行を追記した場合、parseErrorsが加算され、その行の分だけoffsetが前進して次回に持ち越されない", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+    expect(first.parseErrors).toBe(0);
+
+    // 壊れたJSON行を追記
+    fs.appendFileSync(logFile, "{not valid json\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(0);
+    expect(second.parseErrors).toBe(1);
+
+    const entry = offsetState.get(logFile);
+    expect(entry.offset).toBe(fs.statSync(logFile).size); // 壊れた行の分もoffsetが進んでいる
+
+    // さらに正常な行を追記しても、壊れた行が再カウントされない
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.records).toHaveLength(1);
+    expect(third.parseErrors).toBe(0);
+  });
+
+  it("差分読み込みでファイルが読み取り不能になった場合、unreadableFilesが加算され、offsetStateは更新されず次回リトライされる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+    const entryBefore = offsetState.get(logFile);
+
+    // 2回目の読み込み中にファイルが削除される状況を再現する
+    const originalStatSync = fs.statSync;
+    const statSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    const second = await loadRecords(offsetState);
+    expect(second.unreadableFiles).toBe(1);
+    // offsetState は更新されない（stat 自体が失敗しているため、既存エントリのまま = 次回もこのファイルを対象にリトライされる）
+    expect(offsetState.get(logFile)).toEqual(entryBefore);
+
+    statSpy.mockRestore();
+
+    // リトライで正しく読み込めることを確認
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.records).toHaveLength(1);
+    expect(third.unreadableFiles).toBe(0);
+  });
+});

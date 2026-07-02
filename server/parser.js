@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import readline from "node:readline";
 
 const DEFAULT_PROJECTS_DIR = path.join(os.homedir(), ".claude", "projects");
 
@@ -61,11 +60,69 @@ function toRecord(obj) {
 }
 
 /**
- * ~/.claude/projects 配下の全 JSONL を読み込み、正規化レコード配列と解析品質メタデータを返す。
+ * 1ファイル分を指定バイトオフセットから読み込み、正規化レコードとメタデータを返す。
+ * 行の末尾に改行がない（書き込み途中の可能性がある）部分行は消費せず、offset を進めない。
+ * @param {string} file - 読み込み対象ファイルの絶対パス
+ * @param {number} startOffset - 読み込み開始バイトオフセット
+ * @returns {Promise<{ records: object[], parsedLines: number, parseErrors: number, newOffset: number, readFailed: boolean }>}
+ */
+async function readFileFromOffset(file, startOffset) {
+  const records = [];
+  let parsedLines = 0;
+  let parseErrors = 0;
+  let bytesConsumed = startOffset;
+  let readFailed = false;
+
+  const stream = fs.createReadStream(file, { start: startOffset, encoding: "utf8" });
+  let buffer = "";
+
+  const handleError = () => {
+    readFailed = true;
+    stream.destroy();
+  };
+  stream.on("error", handleError);
+
+  try {
+    for await (const chunk of stream) {
+      buffer += chunk;
+      let newlineIndex;
+      // eslint-disable-next-line no-cond-assign
+      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        const lineByteLength = Buffer.byteLength(line, "utf8") + 1; // +1 for "\n"
+        buffer = buffer.slice(newlineIndex + 1);
+        bytesConsumed += lineByteLength;
+
+        if (!line) continue;
+        let obj;
+        try {
+          obj = JSON.parse(line);
+          parsedLines++;
+        } catch {
+          parseErrors++;
+          continue; // 壊れた行はスキップ
+        }
+        const rec = toRecord(obj);
+        if (rec) records.push(rec);
+      }
+    }
+  } catch {
+    readFailed = true;
+  }
+  // buffer に残った内容（改行なしの末尾未完了行）は消費しない＝ offset を進めない
+
+  return { records, parsedLines, parseErrors, newOffset: bytesConsumed, readFailed };
+}
+
+/**
+ * ~/.claude/projects 配下の JSONL を読み込み、正規化レコード配列と解析品質メタデータを返す。
+ * offsetState を渡すと、前回読み込み済みのバイトオフセット以降のみを差分読み込みする。
+ * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
+ * @param {Map<string, {offset: number, mtimeMs: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
  * @returns {Promise<{ records: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
  */
-export async function loadRecords() {
+export async function loadRecords(offsetState = new Map()) {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
   const files = findJsonlFiles(projectsDir);
   const records = [];
@@ -74,36 +131,32 @@ export async function loadRecords() {
   let unreadableFiles = 0;
 
   for (const file of files) {
-    const stream = fs.createReadStream(file, { encoding: "utf8" });
-    let fileReadFailed = false;
-
-    const handleError = () => {
-      if (!fileReadFailed) {
-        fileReadFailed = true;
-        unreadableFiles++;
-        stream.destroy();
-      }
-    };
-
-    stream.on("error", handleError);
-
-    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-    rl.on("error", handleError);
-
-    for await (const line of rl) {
-      if (fileReadFailed) break;
-      if (!line) continue;
-      let obj;
-      try {
-        obj = JSON.parse(line);
-        parsedLines++;
-      } catch {
-        parseErrors++;
-        continue; // 壊れた行はスキップ
-      }
-      const rec = toRecord(obj);
-      if (rec) records.push(rec);
+    let stat;
+    try {
+      stat = fs.statSync(file);
+    } catch {
+      unreadableFiles++;
+      continue;
     }
+
+    const cached = offsetState.get(file);
+    let startOffset = 0;
+    if (cached && stat.size >= cached.offset && stat.mtimeMs >= cached.mtimeMs) {
+      startOffset = cached.offset;
+    }
+    // それ以外（新規ファイル／切り詰め／mtime 後退）は offset 0 から再読み込みする
+
+    const result = await readFileFromOffset(file, startOffset);
+    if (result.readFailed) {
+      unreadableFiles++;
+      continue;
+    }
+
+    records.push(...result.records);
+    parsedLines += result.parsedLines;
+    parseErrors += result.parseErrors;
+
+    offsetState.set(file, { offset: result.newOffset, mtimeMs: stat.mtimeMs });
   }
 
   const skippedLines = parsedLines - records.length;
