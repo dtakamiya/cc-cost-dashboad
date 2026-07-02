@@ -513,6 +513,58 @@ describe("aggregate: bySession の件数制限", () => {
   });
 });
 
+// ─── daily cacheReadRatio ────────────────────────────────────────────────
+// daily[].cacheReadRatio = cacheRead / (input + cacheRead)（日別。分母が異なる
+// drivers.cacheReadRatio = cacheRead / totalTokens とは別物なので混同しないこと）
+
+describe("daily cacheReadRatio", () => {
+  it("input と cacheRead がある日: cacheReadRatio = cacheRead/(input+cacheRead)", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", input: 100, cacheRead: 300 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    expect(day.cacheReadRatio).toBeCloseTo(0.75, 10);
+  });
+
+  it("cacheWriteのみでcacheRead=0の日: cacheReadRatio=0", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", cacheCreate: 500, cacheRead: 0 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    expect(day.cacheReadRatio).toBe(0);
+  });
+
+  it("inputもcacheReadも0の日: ゼロ除算せず0を返す", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", input: 0, cacheRead: 0, output: 100 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    expect(day.cacheReadRatio).toBe(0);
+  });
+
+  it("複数日にまたがる場合、日ごとに独立して計算される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", input: 100, cacheRead: 100 }), // 0.5
+      rec({ ts: "2026-06-16T10:00:00.000Z", input: 100, cacheRead: 900 }), // 0.9
+    ]);
+    const day1 = daily.find((d) => d.date === "2026-06-15");
+    const day2 = daily.find((d) => d.date === "2026-06-16");
+    expect(day1.cacheReadRatio).toBeCloseTo(0.5, 10);
+    expect(day2.cacheReadRatio).toBeCloseTo(0.9, 10);
+  });
+
+  it("inputTokens, cacheReadTokens が日別に累積される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", input: 100, cacheRead: 300 }),
+      rec({ ts: "2026-06-15T11:00:00.000Z", input: 50, cacheRead: 150 }),
+    ]);
+    const day = daily.find((d) => d.date === "2026-06-15");
+    expect(day.inputTokens).toBe(150);
+    expect(day.cacheReadTokens).toBe(450);
+    expect(day.cacheReadRatio).toBeCloseTo(0.75, 10);
+  });
+});
+
 // ─── filterRecordsByPeriod ───────────────────────────────────────────────
 
 describe("filterRecordsByPeriod", () => {

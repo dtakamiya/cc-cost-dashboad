@@ -27,6 +27,9 @@ const day = (date: string, total: number, tokenTotal: number): DailyCost => ({
   tokenModels: { "claude-opus-4-8": tokenTotal },
   tokenTotal,
   projectTokens: { "/home/u/proj": tokenTotal },
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheReadRatio: 0,
 });
 
 const baseSummary = (daily: DailyCost[]): Summary => ({

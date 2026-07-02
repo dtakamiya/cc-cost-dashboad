@@ -6,6 +6,11 @@ export interface WeeklyCost {
   total: number;
   tokenModels: Record<string, number>;
   tokenTotal: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  // 週内の生トークン数を合算してから算出した比率 = cacheReadTokens / (inputTokens + cacheReadTokens)。
+  // 日ごとの単純平均ではない（ボリューム差を無視しないため）。
+  cacheReadRatio: number;
 }
 
 export interface HourlyDisplay {
@@ -39,15 +44,26 @@ export function toWeekly(daily: DailyCost[]): WeeklyCost[] {
     const weekStart = weekStartOf(d.date);
     let w = byWeek.get(weekStart);
     if (!w) {
-      w = { weekStart, models: {}, total: 0, tokenModels: {}, tokenTotal: 0 };
+      w = {
+        weekStart, models: {}, total: 0, tokenModels: {}, tokenTotal: 0,
+        inputTokens: 0, cacheReadTokens: 0, cacheReadRatio: 0,
+      };
       byWeek.set(weekStart, w);
     }
     addInto(w.models, d.models);
     addInto(w.tokenModels, d.tokenModels ?? {});
     w.total += d.total;
     w.tokenTotal += d.tokenTotal ?? 0;
+    w.inputTokens += d.inputTokens ?? 0;
+    w.cacheReadTokens += d.cacheReadTokens ?? 0;
   }
-  return [...byWeek.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  const weeks = [...byWeek.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  return weeks.map((w) => ({
+    ...w,
+    cacheReadRatio: (w.inputTokens + w.cacheReadTokens) > 0
+      ? w.cacheReadTokens / (w.inputTokens + w.cacheReadTokens)
+      : 0,
+  }));
 }
 
 // HourlyData配列をUI表示用のHourlyDisplay形式に変換する。
