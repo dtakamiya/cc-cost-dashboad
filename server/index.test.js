@@ -34,6 +34,7 @@ vi.mock("./aggregate.js", () => ({
       models: [],
     })),
   }),
+  filterRecordsByPeriod: vi.fn((records) => records),
 }));
 
 vi.mock("./analyze.js", () => ({
@@ -88,6 +89,7 @@ beforeEach(async () => {
         models: [],
       })),
     }),
+    filterRecordsByPeriod: vi.fn((records) => records),
   }));
   vi.mock("./analyze.js", () => ({
     analyzeOverhead: vi.fn().mockReturnValue({
@@ -227,6 +229,131 @@ describe("GET /api/summary", () => {
     expect(res1.status).toBe(200);
     expect(res2.status).toBe(200);
     expect(res1.body).toEqual(res2.body);
+  });
+});
+
+describe("GET /api/summary - period クエリによるサーバーサイドフィルタリング", () => {
+  it("period クエリ無しのとき従来どおり全件の cache を返す（後方互換）", async () => {
+    const { aggregate } = await import("./aggregate.js");
+
+    // 初回リクエストで cache を構築
+    const res1 = await request(app).get("/api/summary");
+    expect(res1.status).toBe(200);
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(1);
+
+    // period 無しの2回目リクエストは追加の aggregate() 呼び出しをしない（cache をそのまま返す）
+    const res2 = await request(app).get("/api/summary");
+    expect(res2.status).toBe(200);
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(1);
+    expect(res2.body).toEqual(res1.body);
+  });
+
+  it("period=7d を指定すると filterRecordsByPeriod と aggregate が絞り込み用に呼ばれる", async () => {
+    const { aggregate, filterRecordsByPeriod } = await import("./aggregate.js");
+
+    const res = await request(app).get("/api/summary?period=7d");
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(filterRecordsByPeriod)).toHaveBeenCalledWith(
+      expect.any(Array),
+      { days: 7 }
+    );
+    // 期間フィルタ用に aggregate がもう一度呼ばれる（キャッシュ生成 + 期間集計）
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(2);
+  });
+
+  it("period=30d を指定すると 30 日分でフィルタする", async () => {
+    const { filterRecordsByPeriod } = await import("./aggregate.js");
+    const res = await request(app).get("/api/summary?period=30d");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(filterRecordsByPeriod)).toHaveBeenCalledWith(
+      expect.any(Array),
+      { days: 30 }
+    );
+  });
+
+  it("period=all を指定すると全件相当のフィルタが呼ばれる", async () => {
+    const { filterRecordsByPeriod } = await import("./aggregate.js");
+    const res = await request(app).get("/api/summary?period=all");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(filterRecordsByPeriod)).toHaveBeenCalledWith(
+      expect.any(Array),
+      "all"
+    );
+  });
+
+  it("from/to のカスタム日付範囲を指定できる", async () => {
+    const { filterRecordsByPeriod } = await import("./aggregate.js");
+    const res = await request(app).get("/api/summary?from=2026-06-01&to=2026-06-10");
+    expect(res.status).toBe(200);
+    expect(vi.mocked(filterRecordsByPeriod)).toHaveBeenCalledWith(
+      expect.any(Array),
+      { from: "2026-06-01", to: "2026-06-10" }
+    );
+  });
+
+  it("blocks/projection/activity は期間フィルタ後の集計結果でも常にキャッシュ（全期間）の値を使う", async () => {
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(aggregate).mockReturnValueOnce({
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      totals: { cost: 0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [{ start: "full-cache-block" }],
+      projection: { monthStr: "full-cache" },
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+      hourly: [],
+    });
+
+    // 最初の呼び出しでキャッシュを構築（全期間の blocks/projection を含む）
+    await request(app).get("/api/summary");
+
+    // period フィルタ用の2回目の aggregate() 呼び出しは blocks が空でも、レスポンスはキャッシュ値を使う
+    vi.mocked(aggregate).mockReturnValueOnce({
+      generatedAt: "2026-01-02T00:00:00.000Z",
+      totals: { cost: 0, tokens: 0, sessions: 0, messages: 0, from: null, to: null },
+      tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      costSplit: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },
+      models: [], daily: [], projects: [],
+      drivers: { topModel: null, topDay: null, topDayModel: null, cacheReadRatio: 0, outputCostRatio: 0 },
+      sessionStats: { avgColdStartTokens: 0, p90ColdStartTokens: 0, coldStartCost: 0 },
+      overhead: { claudeMd: null, atRefs: [], globalPlugins: [], personalSkills: [], projectPlugins: [], mcpServers: [], totalAlwaysTokens: 0, totalInvokeTokens: 0, totalEstimatedTokens: 0 },
+      warnings: { fallbackModels: [] },
+      blocks: [],
+      projection: null,
+      activity: { matrix: [], max: 0, total: 0, peak: null },
+      bySession: [],
+      hourly: [],
+    });
+
+    const res = await request(app).get("/api/summary?period=7d");
+    expect(res.status).toBe(200);
+    expect(res.body.blocks).toEqual([{ start: "full-cache-block" }]);
+    expect(res.body.projection).toEqual({ monthStr: "full-cache" });
+  });
+
+  it("不正な period 値は 400 を返す", async () => {
+    const res = await request(app).get("/api/summary?period=invalid");
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("from > to の場合は 400 を返す", async () => {
+    const res = await request(app).get("/api/summary?from=2026-06-20&to=2026-06-01");
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
+  });
+
+  it("from のみ指定（to 無し）は 400 を返す", async () => {
+    const res = await request(app).get("/api/summary?from=2026-06-01");
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty("error");
   });
 });
 

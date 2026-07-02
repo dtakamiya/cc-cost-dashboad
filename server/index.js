@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { loadRecords } from "./parser.js";
-import { aggregate } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod } from "./aggregate.js";
 import { analyzeOverhead } from "./analyze.js";
 import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER, costOf } from "./pricing.js";
 
@@ -73,10 +73,61 @@ async function rebuild() {
   }
 }
 
-app.get("/api/summary", async (_req, res) => {
+const FIXED_PERIOD_DAYS = { "7d": 7, "30d": 30, "90d": 90 };
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * クエリパラメータから期間指定を解析する。
+ * @param {{ period?: string, from?: string, to?: string }} query - Express req.query
+ * @returns {{ ok: true, period: object | 'all' | undefined } | { ok: false, error: string }}
+ */
+function parsePeriodQuery(query) {
+  const { period, from, to } = query;
+
+  if (from !== undefined || to !== undefined) {
+    if (!from || !to) {
+      return { ok: false, error: "from と to は両方指定してください" };
+    }
+    if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+      return { ok: false, error: "from/to は YYYY-MM-DD 形式で指定してください" };
+    }
+    if (from > to) {
+      return { ok: false, error: "from は to 以前の日付を指定してください" };
+    }
+    return { ok: true, period: { from, to } };
+  }
+
+  if (period === undefined) return { ok: true, period: undefined };
+  if (period === "all") return { ok: true, period: "all" };
+  if (Object.prototype.hasOwnProperty.call(FIXED_PERIOD_DAYS, period)) {
+    return { ok: true, period: { days: FIXED_PERIOD_DAYS[period] } };
+  }
+  return { ok: false, error: `不正な period 値です: ${period}` };
+}
+
+app.get("/api/summary", async (req, res) => {
   try {
     if (!cache) await rebuild();
-    res.json(cache);
+
+    const parsed = parsePeriodQuery(req.query);
+    if (!parsed.ok) {
+      return res.status(400).json({ error: parsed.error });
+    }
+
+    // period 省略時は後方互換のため cache（全期間）をそのまま返す
+    if (parsed.period === undefined) {
+      return res.json(cache);
+    }
+
+    const filteredRecords = filterRecordsByPeriod(recordsCache, parsed.period);
+    const periodSummary = aggregate(filteredRecords);
+    // blocks/projection/activity は全期間依存コンポーネント用のため、常に cache（全期間集計）の値を使う
+    periodSummary.blocks = cache.blocks;
+    periodSummary.projection = cache.projection;
+    periodSummary.activity = cache.activity;
+    periodSummary.source = cache.source;
+    periodSummary.overhead = cache.overhead;
+    res.json(periodSummary);
   } catch (e) {
     res.status(500).json({ error: "Internal server error" });
   }

@@ -573,10 +573,19 @@ export function subscribeToUpdates(onUpdate: UpdateCallback): () => void {
   return () => es.close();
 }
 
-export async function fetchSummary(reload = false): Promise<Summary> {
+// fetchSummary の period クエリ文字列を組み立てる。
+function buildSummaryQuery(period?: Period): string {
+  if (period === undefined) return "/api/summary";
+  if (isDateRange(period)) {
+    return `/api/summary?from=${period.from}&to=${period.to}`;
+  }
+  return `/api/summary?period=${period}`;
+}
+
+export async function fetchSummary(reload = false, period?: Period): Promise<Summary> {
   const res = reload
     ? await fetch("/api/reload", { method: "POST" })
-    : await fetch("/api/summary");
+    : await fetch(buildSummaryQuery(period));
   if (!res.ok) throw new Error(reload ? "reload failed" : "fetch failed");
   return res.json();
 }
