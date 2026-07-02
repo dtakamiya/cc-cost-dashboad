@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod } from "./aggregate.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
 const rec = (over = {}) => ({
@@ -478,5 +478,95 @@ describe("日別プロジェクト別コスト（projectCosts）", () => {
     const day2 = daily.find((d) => d.date === "2026-06-16");
     expect(day1.projectCosts["/home/u/proj"]).toBeCloseTo(1000 * INPUT_USD, 10);
     expect(day2.projectCosts["/home/u/proj"]).toBeCloseTo(5000 * INPUT_USD, 10);
+  });
+});
+
+// ─── aggregate: bySession の件数制限（sessionLimit） ───────────────────────
+
+describe("aggregate: bySession の件数制限", () => {
+  it("sessionLimit を指定すると上位N件（コスト降順）にスライスする", () => {
+    const records = [
+      rec({ sessionId: "cheap", input: 100 }),
+      rec({ sessionId: "expensive", input: 1_000_000 }),
+      rec({ sessionId: "mid", input: 50_000 }),
+    ];
+    const { bySession } = aggregate(records, { sessionLimit: 2 });
+    expect(bySession).toHaveLength(2);
+    expect(bySession[0].sessionId).toBe("expensive");
+    expect(bySession[1].sessionId).toBe("mid");
+  });
+
+  it("sessionLimit 省略時はデフォルトで30件に制限する", () => {
+    const records = Array.from({ length: 35 }, (_, i) =>
+      rec({ sessionId: `s${i}`, input: i + 1 })
+    );
+    const { bySession } = aggregate(records);
+    expect(bySession).toHaveLength(30);
+  });
+
+  it("sessionLimit を明示的に大きくすると上限を変更できる", () => {
+    const records = Array.from({ length: 35 }, (_, i) =>
+      rec({ sessionId: `s${i}`, input: i + 1 })
+    );
+    const { bySession } = aggregate(records, { sessionLimit: 35 });
+    expect(bySession).toHaveLength(35);
+  });
+});
+
+// ─── filterRecordsByPeriod ───────────────────────────────────────────────
+
+describe("filterRecordsByPeriod", () => {
+  it("days 指定で直近N日のレコードのみ返す（今日を含む）", () => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const fiveDaysAgo = new Date(now.getTime() - 5 * 86400000).toISOString().slice(0, 10);
+    const tenDaysAgo = new Date(now.getTime() - 10 * 86400000).toISOString().slice(0, 10);
+
+    const records = [
+      rec({ sessionId: "recent", ts: `${today}T10:00:00.000Z` }),
+      rec({ sessionId: "mid", ts: `${fiveDaysAgo}T10:00:00.000Z` }),
+      rec({ sessionId: "old", ts: `${tenDaysAgo}T10:00:00.000Z` }),
+    ];
+
+    const filtered = filterRecordsByPeriod(records, { days: 7 });
+    const ids = filtered.map((r) => r.sessionId);
+    expect(ids).toContain("recent");
+    expect(ids).toContain("mid");
+    expect(ids).not.toContain("old");
+  });
+
+  it("from/to 指定で日付範囲のレコードのみ返す", () => {
+    const records = [
+      rec({ sessionId: "before", ts: "2026-06-01T10:00:00.000Z" }),
+      rec({ sessionId: "inside", ts: "2026-06-15T10:00:00.000Z" }),
+      rec({ sessionId: "after", ts: "2026-06-30T10:00:00.000Z" }),
+    ];
+    const filtered = filterRecordsByPeriod(records, { from: "2026-06-10", to: "2026-06-20" });
+    expect(filtered.map((r) => r.sessionId)).toEqual(["inside"]);
+  });
+
+  it("period='all' のときは全件返す", () => {
+    const records = [
+      rec({ sessionId: "a", ts: "2026-06-01T10:00:00.000Z" }),
+      rec({ sessionId: "b", ts: "2026-06-15T10:00:00.000Z" }),
+    ];
+    expect(filterRecordsByPeriod(records, "all")).toHaveLength(2);
+  });
+
+  it("period 未指定のときは全件返す", () => {
+    const records = [
+      rec({ sessionId: "a", ts: "2026-06-01T10:00:00.000Z" }),
+      rec({ sessionId: "b", ts: "2026-06-15T10:00:00.000Z" }),
+    ];
+    expect(filterRecordsByPeriod(records)).toHaveLength(2);
+  });
+
+  it("ts が無いレコードは期間指定時に除外される", () => {
+    const records = [
+      rec({ sessionId: "no-ts", ts: null }),
+      rec({ sessionId: "has-ts", ts: "2026-06-15T10:00:00.000Z" }),
+    ];
+    const filtered = filterRecordsByPeriod(records, { days: 365 * 10 });
+    expect(filtered.map((r) => r.sessionId)).toEqual(["has-ts"]);
   });
 });

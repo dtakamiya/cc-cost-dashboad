@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -408,6 +408,62 @@ describe("HourlyData type", () => {
     expect(data.cost).toBe(5.0);
     expect(data.models).toHaveLength(1);
     expect(data.models[0].tokens).toBe(1000);
+  });
+});
+
+describe("fetchSummary の period クエリ", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const dummySummaryResponse = { generatedAt: "2026-01-01T00:00:00.000Z" };
+
+  it("period 未指定のとき /api/summary をクエリ無しで呼ぶ", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(dummySummaryResponse),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await fetchSummary();
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/summary");
+  });
+
+  it("period='7d' を渡すと /api/summary?period=7d を呼ぶ", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(dummySummaryResponse),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await fetchSummary(false, "7d");
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/summary?period=7d");
+  });
+
+  it("period に DateRange を渡すと from/to をクエリ文字列に含める", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(dummySummaryResponse),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await fetchSummary(false, { from: "2026-06-01", to: "2026-06-10" });
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/summary?from=2026-06-01&to=2026-06-10");
+  });
+
+  it("reload=true のときは period を無視して POST /api/reload を呼ぶ", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(dummySummaryResponse),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await fetchSummary(true, "30d");
+
+    expect(mockFetch).toHaveBeenCalledWith("/api/reload", { method: "POST" });
   });
 });
 

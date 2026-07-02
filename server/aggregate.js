@@ -160,13 +160,13 @@ function computeProjection(records) {
 }
 
 /**
- * レコード配列からセッション別サマリを生成する（コスト降順, 全件）。
+ * レコード配列からセッション別サマリを生成する（コスト降順）。
  * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
- * 上位 N 件への制限はクライアント側（期間フィルタ後）で行う。
  * @param {object[]} records - 正規化レコード配列
+ * @param {{ limit?: number }} [options] - limit 指定時は上位N件（コスト降順）にスライスする。省略時は全件返す。
  * @returns {object[]} セッション別サマリ（コスト降順）
  */
-function computeSessions(records) {
+function computeSessions(records, { limit } = {}) {
   const map = new Map(); // sessionId -> 集計
 
   for (const r of records) {
@@ -210,7 +210,7 @@ function computeSessions(records) {
     }
   }
 
-  return [...map.values()]
+  const sorted = [...map.values()]
     .map((s) => {
       const topEntry = Object.entries(s.models).sort((a, z) => z[1] - a[1])[0];
       const { models, ...rest } = s;
@@ -221,6 +221,8 @@ function computeSessions(records) {
       };
     })
     .sort((a, b) => b.cost - a.cost);
+
+  return limit === undefined ? sorted : sorted.slice(0, limit);
 }
 
 /**
@@ -257,12 +259,42 @@ function computeActivity(records) {
   return { matrix, max, total, peak };
 }
 
+const DEFAULT_SESSION_LIMIT = 30;
+
+/**
+ * レコード配列を指定期間で絞り込む。
+ * @param {object[]} records - 正規化レコード配列
+ * @param {{days: number} | {from: string, to: string} | 'all' | undefined} [period] - 期間指定。
+ *   `{ days }` は今日を含む直近N日、`{ from, to }` は YYYY-MM-DD の日付範囲（両端含む）、
+ *   `'all'` または未指定は全件を返す。
+ * @returns {object[]} 絞り込み後のレコード配列
+ */
+export function filterRecordsByPeriod(records, period) {
+  if (period === undefined || period === "all") return records;
+
+  if ("days" in period) {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (period.days - 1));
+    const cutoffMs = cutoff.getTime();
+    return records.filter((r) => r.ts && new Date(r.ts).getTime() >= cutoffMs);
+  }
+
+  const { from, to } = period;
+  return records.filter((r) => {
+    if (!r.ts) return false;
+    const day = dayOf(r.ts);
+    return day >= from && day <= to;
+  });
+}
+
 /**
  * 正規化レコード配列からダッシュボード用サマリを生成する。
  * @param {object[]} records - 正規化レコード配列
+ * @param {{ sessionLimit?: number }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
-export function aggregate(records) {
+export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -436,7 +468,7 @@ export function aggregate(records) {
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
-    bySession: computeSessions(records),
+    bySession: computeSessions(records, { limit: sessionLimit }),
     hourly: computeHourly(records),
   };
 }
