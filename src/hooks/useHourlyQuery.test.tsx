@@ -1,8 +1,7 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ReactNode } from "react";
 import { useHourlyQuery } from "./useHourlyQuery";
+import { createQueryClientWrapper } from "../testUtils/queryClientWrapper";
 import * as api from "../api";
 
 vi.mock("../api", async (importOriginal) => {
@@ -24,18 +23,6 @@ const hourlyFixture: api.HourlyData[] = [
   },
 ];
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
-    },
-  });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-  return { wrapper, queryClient };
-}
-
 describe("useHourlyQuery", () => {
   beforeEach(() => {
     mockFetchHourly.mockReset();
@@ -43,7 +30,7 @@ describe("useHourlyQuery", () => {
 
   it("成功時に toHourly() で変換されたデータが data に入る", async () => {
     mockFetchHourly.mockResolvedValue(hourlyFixture);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useHourlyQuery(), { wrapper });
 
@@ -61,7 +48,7 @@ describe("useHourlyQuery", () => {
 
   it("失敗時は isError が true になり、呼び出し側で空配列にフォールバックできる", async () => {
     mockFetchHourly.mockRejectedValue(new Error("hourly fetch failed"));
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useHourlyQuery(), { wrapper });
 

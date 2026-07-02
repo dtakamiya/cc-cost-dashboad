@@ -1,21 +1,17 @@
 import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
+import { createQueryClientWrapper } from "./testUtils/queryClientWrapper";
 import * as api from "./api";
 
 // 各テストで独立した QueryClient を使い、キャッシュがテスト間で漏れないようにする。
 function renderApp() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
-    },
-  });
+  const { wrapper: Wrapper } = createQueryClientWrapper();
   return render(
-    <QueryClientProvider client={queryClient}>
+    <Wrapper>
       <App />
-    </QueryClientProvider>
+    </Wrapper>
   );
 }
 

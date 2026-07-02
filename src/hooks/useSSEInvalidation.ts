@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { subscribeToUpdates } from "../api";
+import { SUMMARY_QUERY_KEY_PREFIX } from "./useSummaryQuery";
+import { hourlyQueryKey } from "./useHourlyQuery";
 
 /**
  * SSE (/api/events) の update 通知を受信したら summary/hourly クエリを invalidate する。
@@ -12,8 +14,8 @@ export function useSSEInvalidation(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return;
     const unsubscribe = subscribeToUpdates(() => {
-      queryClient.invalidateQueries({ queryKey: ["summary"] });
-      queryClient.invalidateQueries({ queryKey: ["hourly"] });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_QUERY_KEY_PREFIX, exact: false });
+      queryClient.invalidateQueries({ queryKey: hourlyQueryKey });
     });
     return unsubscribe;
   }, [enabled, queryClient]);
