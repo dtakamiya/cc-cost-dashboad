@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, fetchSummary, filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, subscribeToUpdates, PERIOD_DAYS, type Period, type FixedPeriod, type Summary, fetchHourly } from "./api";
+import { activeBurnWarning, filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, PERIOD_DAYS, type Period, type FixedPeriod } from "./api";
 import { usd } from "./format";
-import { toHourly, type HourlyDisplay } from "./weekly";
+import { useSummaryQuery } from "./hooks/useSummaryQuery";
+import { useHourlyQuery } from "./hooks/useHourlyQuery";
+import { useSSEInvalidation } from "./hooks/useSSEInvalidation";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
 import { CostDrivers } from "./components/CostDrivers";
@@ -20,24 +22,17 @@ import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
 
 export default function App() {
-  const [data, setData] = useState<Summary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<Period>('7d');
   const [selectedProject, setSelectedProject] = useState("");
   const [compareMode, setCompareMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
-  const [autoRefreshError, setAutoRefreshError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
-  const [hourlyData, setHourlyData] = useState<HourlyDisplay[]>([]);
   const [hourlyMetric, setHourlyMetric] = useState<"cost" | "tokens">("cost");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") return saved;
     return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   });
-  const inFlight = useRef(false);
 
   const summaryRef = useRef<HTMLDivElement>(null);
   const driversRef = useRef<HTMLDivElement>(null);
@@ -46,6 +41,22 @@ export default function App() {
   const optimizationRef = useRef<HTMLDivElement>(null);
 
   const canCompare = !isDateRange(period) && period !== 'all';
+
+  const {
+    data,
+    isError: isSummaryError,
+    error: summaryError,
+    reload,
+    isReloading,
+  } = useSummaryQuery(period);
+  const { data: hourlyDataRaw } = useHourlyQuery();
+  const hourlyData = hourlyDataRaw ?? [];
+  useSSEInvalidation(autoRefresh);
+
+  const error = isSummaryError ? String(summaryError) : null;
+  const loading = isReloading;
+  const autoRefreshError = isSummaryError && data ? String(summaryError) : null;
+  const lastUpdated = data ? Date.parse(data.generatedAt) : null;
 
   const displayData = useMemo(
     () => (data ? filterSummaryByProject(filterSummary(data, period), selectedProject) : null),
@@ -85,56 +96,6 @@ export default function App() {
       setActiveSection(id);
     }
   };
-
-  // reload=true で再集計。silent=true のときは全画面ローディングを出さず data だけ差し替える（オートリフレッシュ用）。
-  async function load(reload = false, silent = false) {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    if (!silent) setLoading(true);
-    try {
-      const summary = await fetchSummary(reload);
-      setData(summary);
-
-      try {
-        const hourlyList = await fetchHourly();
-        setHourlyData(toHourly(hourlyList));
-      } catch {
-        setHourlyData([]);
-      }
-      setLastUpdated(Date.now());
-      setError(null);
-      setAutoRefreshError(null);
-    } catch (e) {
-      if (silent) {
-        setAutoRefreshError(String(e));
-      } else {
-        setError(String(e));
-      }
-    } finally {
-      if (!silent) setLoading(false);
-      inFlight.current = false;
-    }
-  }
-
-  useEffect(() => {
-    load(false);
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const id = setInterval(() => load(true, true), 30_000);
-    return () => clearInterval(id);
-  }, [autoRefresh]);
-
-  // SSE でファイル変更を受信したら自動リロード
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const unsubscribe = subscribeToUpdates(() => {
-      load(false, true);
-    });
-    return unsubscribe;
-  }, [autoRefresh]);
-
 
   return (
     <div className="app">
@@ -190,14 +151,14 @@ export default function App() {
               onCompareChange={setCompareMode}
               canCompare={canCompare}
             />
-            <button className="reload" onClick={() => load(true)} disabled={loading}>
+            <button className="reload" onClick={() => reload()} disabled={loading}>
               {loading ? "集計中…" : "再読込"}
             </button>
           </div>
         </div>
       </header>
 
-      {error && <div className="error">読み込み失敗: {error}</div>}
+      {error && !data && <div className="error">読み込み失敗: {error}</div>}
       {!data && !error && <div className="loading">集計中…</div>}
 
       {burn && (

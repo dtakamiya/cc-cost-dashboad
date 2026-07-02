@@ -1,8 +1,23 @@
 import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import * as api from "./api";
+
+// 各テストで独立した QueryClient を使い、キャッシュがテスト間で漏れないようにする。
+function renderApp() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+    },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
+  );
+}
 
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof api>();
@@ -66,13 +81,13 @@ describe("App - 自動更新エラー表示", () => {
   });
 
   it("初回ロード成功後に autoRefreshError は表示されない", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
     expect(screen.queryByText(/自動更新失敗/)).toBeNull();
   });
 
   it("silent reload 失敗時に自動更新失敗メッセージが表示される", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     mockFetchSummary.mockRejectedValueOnce(new Error("network error"));
@@ -87,7 +102,7 @@ describe("App - 自動更新エラー表示", () => {
   });
 
   it("silent reload 失敗時に通常の全画面エラーは表示されない", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     mockFetchSummary.mockRejectedValueOnce(new Error("network error"));
@@ -103,7 +118,7 @@ describe("App - 自動更新エラー表示", () => {
   });
 
   it("silent reload 成功後に autoRefreshError がクリアされる", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     mockFetchSummary.mockRejectedValueOnce(new Error("network error"));
@@ -121,7 +136,7 @@ describe("App - 自動更新エラー表示", () => {
   });
 
   it("手動再読込成功後に autoRefreshError がクリアされる", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     mockFetchSummary.mockRejectedValueOnce(new Error("network error"));
@@ -152,7 +167,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("トップバーに topbar-row-1 要素が存在する", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const row1 = container.querySelector(".topbar-row-1");
@@ -160,7 +175,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("トップバーに topbar-row-2 要素が存在する", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const row2 = container.querySelector(".topbar-row-2");
@@ -168,7 +183,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-row-1 に topbar-title が含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const row1 = container.querySelector(".topbar-row-1");
@@ -177,7 +192,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-row-1 に last-updated が含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const row1 = container.querySelector(".topbar-row-1");
@@ -186,7 +201,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-row-2 に topbar-controls が含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const row2 = container.querySelector(".topbar-row-2");
@@ -195,7 +210,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-controls にライブ更新ボタンが含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const controls = container.querySelector(".topbar-controls");
@@ -204,7 +219,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-controls に期間選択ボタンが含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const controls = container.querySelector(".topbar-controls");
@@ -213,7 +228,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("topbar-controls に再読込ボタンが含まれている", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const controls = container.querySelector(".topbar-controls");
@@ -222,7 +237,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("ライブ更新ボタンのクリックが機能する", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const liveToggle = screen.getByRole("button", { name: /ライブ更新/ });
@@ -235,7 +250,7 @@ describe("App - トップバーモバイル2段構成", () => {
   });
 
   it("再読込ボタンのクリックが機能する", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const reloadBtn = screen.getByRole("button", { name: /再読込/ });
@@ -265,7 +280,7 @@ describe("App - テーマ切り替え", () => {
 
   it("初期テーマがlocalStorageのthemeキーから復元される", async () => {
     localStorage.setItem("theme", "light");
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
     expect(document.documentElement.dataset.theme).toBe("light");
   });
@@ -277,19 +292,19 @@ describe("App - テーマ切り替え", () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }));
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
   it("テーマトグルボタンが存在する", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
     expect(container.querySelector(".theme-toggle")).toBeInTheDocument();
   });
 
   it("テーマトグルボタンのクリックでライトモードに切り替わる", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
@@ -300,7 +315,7 @@ describe("App - テーマ切り替え", () => {
 
   it("ライトモード時にトグルボタンを押すとダークモードに戻る", async () => {
     localStorage.setItem("theme", "light");
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
@@ -310,7 +325,7 @@ describe("App - テーマ切り替え", () => {
   });
 
   it("テーマ切り替え後にlocalStorageが更新される", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const toggle = screen.getByRole("button", { name: /ライト.*ダーク|ダーク.*ライト|テーマ/i });
@@ -332,7 +347,7 @@ describe("App - セクションナビゲーション", () => {
   });
 
   it("データロード後にセクションナビゲーションが表示される", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const nav = screen.getByRole("navigation", { name: /ダッシュボードセクション/ });
@@ -340,7 +355,7 @@ describe("App - セクションナビゲーション", () => {
   });
 
   it("セクションナビゲーションが5つのボタンを表示する", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const buttons = screen.getAllByRole("button");
@@ -351,7 +366,7 @@ describe("App - セクションナビゲーション", () => {
   });
 
   it("各セクションが ID 属性を持つ", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     expect(container.querySelector('[id="section-summary"]')).toBeInTheDocument();
@@ -362,7 +377,7 @@ describe("App - セクションナビゲーション", () => {
   });
 
   it("トップバー操作と SectionNav が共存する", async () => {
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     const topbar = screen.getByRole("banner");
@@ -376,7 +391,7 @@ describe("App - セクションナビゲーション", () => {
     const scrollIntoViewMock = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoViewMock;
 
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText("プロジェクト"));
@@ -387,7 +402,7 @@ describe("App - セクションナビゲーション", () => {
   it("セクションボタンクリック後、該当ボタンの aria-current が page になる", async () => {
     Element.prototype.scrollIntoView = vi.fn();
 
-    render(<App />);
+    renderApp();
     await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByText("プロジェクト"));
