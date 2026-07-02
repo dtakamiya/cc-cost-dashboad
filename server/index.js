@@ -38,21 +38,33 @@ function notifyClients() {
   }
 }
 
+let rebuildInFlight = null; // 実行中の rebuild() を共有し、offsetState/recordsCache への同時書き込みを防ぐ
+
 async function rebuild() {
-  const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords(offsetState);
-  recordsCache = recordsCache ? recordsCache.concat(records) : records;
+  if (rebuildInFlight) return rebuildInFlight;
 
-  cumulativeSource.fileCount = fileCount; // fileCount は累積ではなく現在の総ファイル数のスナップショット
-  cumulativeSource.parsedLines += parsedLines;
-  cumulativeSource.parseErrors += parseErrors;
-  cumulativeSource.skippedLines += skippedLines;
-  cumulativeSource.unreadableFiles += unreadableFiles;
+  rebuildInFlight = (async () => {
+    const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords(offsetState);
+    recordsCache = recordsCache ? recordsCache.concat(records) : records;
 
-  const summary = aggregate(recordsCache);
-  summary.source = { ...cumulativeSource };
-  summary.overhead = analyzeOverhead();
-  cache = summary;
-  return summary;
+    cumulativeSource.fileCount = fileCount; // fileCount は累積ではなく現在の総ファイル数のスナップショット
+    cumulativeSource.parsedLines += parsedLines;
+    cumulativeSource.parseErrors += parseErrors;
+    cumulativeSource.skippedLines += skippedLines;
+    cumulativeSource.unreadableFiles += unreadableFiles;
+
+    const summary = aggregate(recordsCache);
+    summary.source = { ...cumulativeSource };
+    summary.overhead = analyzeOverhead();
+    cache = summary;
+    return summary;
+  })();
+
+  try {
+    return await rebuildInFlight;
+  } finally {
+    rebuildInFlight = null;
+  }
 }
 
 app.get("/api/summary", async (_req, res) => {
@@ -139,7 +151,7 @@ if (fs.existsSync(DIST)) {
   app.get("*", (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 }
 
-export { app, notifyClients };
+export { app, notifyClients, rebuild };
 
 // テスト時はサーバーを起動しない
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

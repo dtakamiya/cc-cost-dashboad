@@ -712,6 +712,47 @@ describe("差分読み込み（インクリメンタルリロード）", () => {
 
     dateNowSpy.mockRestore();
   });
+
+  it("rebuild() を同時に複数回呼び出しても loadRecords は1回しか実行されない（single-flight）", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { rebuild } = await import("./index.js");
+
+    let resolveLoad;
+    const pendingLoad = new Promise((resolve) => {
+      resolveLoad = resolve;
+    });
+    vi.mocked(loadRecords).mockImplementationOnce(() => pendingLoad);
+
+    // loadRecords がまだ解決していない状態で rebuild() を並行して2回呼び出す
+    const rebuildPromise1 = rebuild();
+    const rebuildPromise2 = rebuild();
+
+    resolveLoad({
+      records: [
+        {
+          ts: "2026-06-27T01:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-race",
+          input: 1000,
+          output: 500,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+
+    await Promise.all([rebuildPromise1, rebuildPromise2]);
+
+    expect(vi.mocked(loadRecords)).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("GET /api/events (SSE)", () => {
