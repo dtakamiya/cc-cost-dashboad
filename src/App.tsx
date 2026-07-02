@@ -44,18 +44,25 @@ export default function App() {
 
   const {
     data,
+    isLoading: isSummaryLoading,
     isError: isSummaryError,
     error: summaryError,
     reload,
     isReloading,
+    isReloadError,
+    reloadError,
   } = useSummaryQuery(period);
   const { data: hourlyDataRaw } = useHourlyQuery();
   const hourlyData = hourlyDataRaw ?? [];
   useSSEInvalidation(autoRefresh);
 
   const error = isSummaryError ? String(summaryError) : null;
-  const loading = isReloading;
-  const autoRefreshError = isSummaryError && data ? String(summaryError) : null;
+  const loading = isReloading || isSummaryLoading;
+  const autoRefreshError = isSummaryError && data
+    ? String(summaryError)
+    : isReloadError
+      ? String(reloadError)
+      : null;
   const lastUpdated = data ? Date.parse(data.generatedAt) : null;
 
   const displayData = useMemo(

@@ -1,8 +1,7 @@
 import { renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ReactNode } from "react";
 import { useSSEInvalidation } from "./useSSEInvalidation";
+import { createQueryClientWrapper } from "../testUtils/queryClientWrapper";
 import * as api from "../api";
 
 vi.mock("../api", async (importOriginal) => {
@@ -14,18 +13,6 @@ vi.mock("../api", async (importOriginal) => {
 });
 
 const mockSubscribeToUpdates = vi.mocked(api.subscribeToUpdates);
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
-    },
-  });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-  return { wrapper, queryClient };
-}
 
 describe("useSSEInvalidation", () => {
   beforeEach(() => {
@@ -39,7 +26,7 @@ describe("useSSEInvalidation", () => {
       capturedCallback = cb;
       return unsubscribe;
     });
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryClientWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     renderHook(() => useSSEInvalidation(true), { wrapper });
@@ -53,7 +40,7 @@ describe("useSSEInvalidation", () => {
   it("unmount 時に unsubscribe が呼ばれる", () => {
     const unsubscribe = vi.fn();
     mockSubscribeToUpdates.mockReturnValue(unsubscribe);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { unmount } = renderHook(() => useSSEInvalidation(true), { wrapper });
 
@@ -63,7 +50,7 @@ describe("useSSEInvalidation", () => {
   });
 
   it("enabled が false のときは subscribeToUpdates が呼ばれない", () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     renderHook(() => useSSEInvalidation(false), { wrapper });
 

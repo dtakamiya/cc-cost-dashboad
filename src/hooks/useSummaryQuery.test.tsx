@@ -1,8 +1,7 @@
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { ReactNode } from "react";
 import { useSummaryQuery } from "./useSummaryQuery";
+import { createQueryClientWrapper } from "../testUtils/queryClientWrapper";
 import * as api from "../api";
 
 vi.mock("../api", async (importOriginal) => {
@@ -49,18 +48,6 @@ const minimalSummary: api.Summary = {
   bySession: [],
 };
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, gcTime: Infinity },
-    },
-  });
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-  return { wrapper, queryClient };
-}
-
 describe("useSummaryQuery", () => {
   beforeEach(() => {
     mockFetchSummary.mockReset();
@@ -72,7 +59,7 @@ describe("useSummaryQuery", () => {
 
   it("初回フェッチに成功すると data に Summary が入る", async () => {
     mockFetchSummary.mockResolvedValue(minimalSummary);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
 
@@ -82,7 +69,7 @@ describe("useSummaryQuery", () => {
 
   it("period が変わると再フェッチされる", async () => {
     mockFetchSummary.mockResolvedValue(minimalSummary);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result, rerender } = renderHook(
       ({ period }: { period: api.Period }) => useSummaryQuery(period),
@@ -99,7 +86,7 @@ describe("useSummaryQuery", () => {
 
   it("フェッチ失敗時に isError が true になる", async () => {
     mockFetchSummary.mockRejectedValue(new Error("network error"));
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
 
@@ -109,7 +96,7 @@ describe("useSummaryQuery", () => {
   it("30秒ごとにポーリングされる", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockFetchSummary.mockResolvedValue(minimalSummary);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
 
@@ -125,7 +112,7 @@ describe("useSummaryQuery", () => {
 
   it("手動リロード実行時に fetchSummary(true) が呼ばれる", async () => {
     mockFetchSummary.mockResolvedValue(minimalSummary);
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryClientWrapper();
 
     const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
 
@@ -136,5 +123,41 @@ describe("useSummaryQuery", () => {
     });
 
     expect(mockFetchSummary).toHaveBeenCalledWith(true);
+  });
+
+  it("手動リロード成功時は追加の GET を発行せず reload レスポンスをそのままキャッシュに反映する", async () => {
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+    const { wrapper } = createQueryClientWrapper();
+
+    const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
+
+    await waitFor(() => expect(result.current.data).toEqual(minimalSummary));
+    expect(mockFetchSummary).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    // reload(true) の呼び出し1回のみで、fetchSummary(false, "7d") による再フェッチは発生しない
+    expect(mockFetchSummary).toHaveBeenCalledTimes(2);
+    expect(mockFetchSummary).toHaveBeenNthCalledWith(2, true);
+  });
+
+  it("手動リロード失敗時は reload() が例外を投げず isReloadError が true になる", async () => {
+    mockFetchSummary.mockResolvedValueOnce(minimalSummary);
+    const { wrapper } = createQueryClientWrapper();
+
+    const { result } = renderHook(() => useSummaryQuery("7d"), { wrapper });
+
+    await waitFor(() => expect(result.current.data).toEqual(minimalSummary));
+
+    mockFetchSummary.mockRejectedValueOnce(new Error("reload failed"));
+
+    await act(async () => {
+      await result.current.reload();
+    });
+
+    await waitFor(() => expect(result.current.isReloadError).toBe(true));
+    expect(String(result.current.reloadError)).toContain("reload failed");
   });
 });
