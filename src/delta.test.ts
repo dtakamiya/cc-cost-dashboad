@@ -9,6 +9,9 @@ const day = (date: string, total: number, tokenTotal: number, sessions: number):
   tokenTotal,
   projectTokens: {},
   sessions,
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheReadRatio: 0,
 });
 
 describe("computePreviousPeriod", () => {

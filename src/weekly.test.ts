@@ -9,6 +9,9 @@ const day = (date: string, models: Record<string, number>, tokenModels: Record<s
   tokenModels,
   tokenTotal: Object.values(tokenModels).reduce((s, v) => s + v, 0),
   projectTokens: {},
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheReadRatio: 0,
 });
 
 describe("weekStartOf", () => {
@@ -68,6 +71,54 @@ describe("toWeekly", () => {
     expect(w.map((x) => x.weekStart)).toEqual(["2026-06-22", "2026-06-29"]);
     expect(w[0].total).toBe(1);
     expect(w[1].total).toBe(9);
+  });
+});
+
+// ─── toWeekly: cacheReadRatio（生トークン数を合算してから比率を再計算） ───────
+
+describe("toWeekly cacheReadRatio", () => {
+  const dayWithCache = (
+    date: string,
+    inputTokens: number,
+    cacheReadTokens: number
+  ): DailyCost => ({
+    date,
+    models: {},
+    total: 0,
+    tokenModels: {},
+    tokenTotal: 0,
+    projectTokens: {},
+    inputTokens,
+    cacheReadTokens,
+    cacheReadRatio: (inputTokens + cacheReadTokens) > 0 ? cacheReadTokens / (inputTokens + cacheReadTokens) : 0,
+  });
+
+  it("週内の生トークン数を合算してから比率を再計算する（単純平均ではない）", () => {
+    const daily = [
+      dayWithCache("2026-06-22", 100, 900), // 0.9、ボリューム大
+      dayWithCache("2026-06-23", 100, 0),   // 0、ボリューム小
+    ];
+    const w = toWeekly(daily);
+    // 単純平均なら (0.9+0)/2=0.45 だが、生トークン合算では 900/(200+900) ≈ 0.818
+    expect(w[0].inputTokens).toBe(200);
+    expect(w[0].cacheReadTokens).toBe(900);
+    expect(w[0].cacheReadRatio).toBeCloseTo(900 / 1100, 10);
+  });
+
+  it("週内の input・cacheRead が両方0の場合はゼロ除算せず0を返す", () => {
+    const daily = [dayWithCache("2026-06-22", 0, 0)];
+    const w = toWeekly(daily);
+    expect(w[0].cacheReadRatio).toBe(0);
+  });
+
+  it("別週は独立して比率を計算する", () => {
+    const daily = [
+      dayWithCache("2026-06-22", 100, 100), // 週1: 0.5
+      dayWithCache("2026-06-29", 100, 900), // 週2: 0.9
+    ];
+    const w = toWeekly(daily);
+    expect(w[0].cacheReadRatio).toBeCloseTo(0.5, 10);
+    expect(w[1].cacheReadRatio).toBeCloseTo(0.9, 10);
   });
 });
 

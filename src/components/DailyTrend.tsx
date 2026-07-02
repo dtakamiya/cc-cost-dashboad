@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Legend,
+  ReferenceLine,
 } from "recharts";
 import type { Summary, Period } from "../api";
 import { shiftDailyDates } from "../api";
@@ -62,8 +63,8 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
 
   const rows =
     view === "weekly"
-      ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels, costModels: w.models }))
-      : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels, costModels: d.models }));
+      ? toWeekly(s.daily).map((w) => ({ key: w.weekStart, tokenModels: w.tokenModels, costModels: w.models, cacheReadRatio: w.cacheReadRatio }))
+      : s.daily.map((d) => ({ key: d.date, tokenModels: d.tokenModels, costModels: d.models, cacheReadRatio: d.cacheReadRatio }));
 
   const showPrev = view === "daily" && prev && prevOffsetDays != null;
   const prevTotalByDate = new Map<string, number>();
@@ -88,6 +89,7 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
     }
     row._allTokens = allTokens;
     row._allCosts = allCosts;
+    row.cacheReadRatio = (r.cacheReadRatio ?? 0) * 100;
     if (showPrev && prevTotalByDate.has(r.key)) row[PREV_KEY] = mode === "cost" ? prevTotalByDate.get(r.key)! : prevTokenTotalByDate.get(r.key)!;
     return row;
   });
@@ -132,7 +134,15 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
           </defs>
           <CartesianGrid vertical={false} stroke="var(--grid)" />
           <XAxis dataKey={xKey} stroke="var(--axis)" tick={{ fontSize: 11 }} tickMargin={8} />
-          <YAxis tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
+          <YAxis yAxisId="left" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} width={56} />
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            domain={[0, 100]}
+            tickFormatter={(v) => `${v}%`}
+            stroke="var(--axis)"
+            tick={{ fontSize: 11 }}
+          />
           <Tooltip
             content={<DailyTrendTooltip />}
             cursor={{ stroke: "var(--axis)", strokeDasharray: "3 3" }}
@@ -141,6 +151,7 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
           {models.map((m, i) => (
             <Area
               key={m}
+              yAxisId="left"
               type="monotone"
               dataKey={m}
               stackId="1"
@@ -151,6 +162,7 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
           ))}
           {showPrev && (
             <Line
+              yAxisId="left"
               type="monotone"
               dataKey={PREV_KEY}
               name="前の期間（合計）"
@@ -161,6 +173,29 @@ export function DailyTrend({ s, prev, prevOffsetDays, period }: { s: Summary; pr
               connectNulls
             />
           )}
+          <Line
+            yAxisId="right"
+            type="monotone"
+            dataKey="cacheReadRatio"
+            name="キャッシュ活用率"
+            stroke="#f59e0b"
+            strokeWidth={1.5}
+            dot={false}
+          />
+          <ReferenceLine
+            yAxisId="right"
+            y={60}
+            stroke="var(--muted)"
+            strokeDasharray="4 4"
+            label={{ value: "60%", position: "insideTopRight", fontSize: 10 }}
+          />
+          <ReferenceLine
+            yAxisId="right"
+            y={80}
+            stroke="var(--muted)"
+            strokeDasharray="4 4"
+            label={{ value: "80%", position: "insideTopRight", fontSize: 10 }}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </section>

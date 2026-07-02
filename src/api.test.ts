@@ -26,6 +26,9 @@ const day = (
   tokenTotal: total * 1000,
   projectTokens: projectTokens ?? { "/home/u/proj": total * 1000 },
   projectCosts: projectCosts ?? { "/home/u/proj": total },
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheReadRatio: 0,
 });
 
 const sess = (cwd: string, cost: number, tokens: number): SessionCost => ({

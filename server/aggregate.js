@@ -356,13 +356,18 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
 
     const day = dayOf(r.ts);
     if (!byDay.has(day)) {
-      byDay.set(day, { costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map(), projectCostMap: new Map() });
+      byDay.set(day, {
+        costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map(), projectCostMap: new Map(),
+        inputTokens: 0, cacheReadTokens: 0,
+      });
     }
     const dd = byDay.get(day);
     dd.costMap.set(r.model, (dd.costMap.get(r.model) || 0) + c.total);
     dd.tokenMap.set(r.model, (dd.tokenMap.get(r.model) || 0) + tokens);
     dd.projectTokenMap.set(r.cwd, (dd.projectTokenMap.get(r.cwd) || 0) + tokens);
     dd.projectCostMap.set(r.cwd, (dd.projectCostMap.get(r.cwd) || 0) + c.total);
+    dd.inputTokens += r.input;
+    dd.cacheReadTokens += r.cacheRead;
 
     const prevProject = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
     byProject.set(r.cwd, { cost: prevProject.cost + c.total, tokens: prevProject.tokens + tokens });
@@ -386,15 +391,23 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
     .sort((a, b) => b.cost - a.cost);
 
   // 日別（昇順）。各日 {date, models: {model: cost}, total, tokenModels: {model: tokens}, tokenTotal, projectTokens: {cwd: tokens}}
+  // cacheReadRatio は日別のキャッシュ活用率 = cacheRead / (input + cacheRead)。
+  // 全体集計の drivers.cacheReadRatio（分母 = totalTokens）とは計算式が異なるため混同しないこと。
   const daily = [...byDay.entries()]
-    .map(([date, { costMap, tokenMap, projectTokenMap, projectCostMap }]) => {
+    .map(([date, { costMap, tokenMap, projectTokenMap, projectCostMap, inputTokens, cacheReadTokens }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
       const tokenModels = Object.fromEntries(tokenMap);
       const tokenTotal = [...tokenMap.values()].reduce((s, v) => s + v, 0);
       const projectTokens = Object.fromEntries(projectTokenMap);
       const projectCosts = Object.fromEntries(projectCostMap);
-      return { date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts };
+      const cacheReadRatio = (inputTokens + cacheReadTokens) > 0
+        ? cacheReadTokens / (inputTokens + cacheReadTokens)
+        : 0;
+      return {
+        date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts,
+        inputTokens, cacheReadTokens, cacheReadRatio,
+      };
     })
     .filter((d) => d.date !== "(unknown)")
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -421,6 +434,8 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
   const topDayModel = topDay
     ? Object.entries(topDay.models).sort((a, b) => b[1] - a[1])[0]
     : null;
+  // 全体集計用のキャッシュ読込比率。分母 = totalTokens（input+output+cacheCreate+cacheRead）。
+  // 日別の daily[].cacheReadRatio（分母 = input + cacheRead）とは計算式が異なるので混同しないこと。
   const cacheReadRatio = totalTokens
     ? tokenSplit.cacheRead / totalTokens
     : 0;

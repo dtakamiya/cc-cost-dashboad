@@ -31,6 +31,11 @@ export interface DailyCost {
   projectTokens: Record<string, number>;
   projectCosts?: Record<string, number>;
   sessions?: number;
+  inputTokens: number;
+  cacheReadTokens: number;
+  // 日別のキャッシュ活用率 = cacheReadTokens / (inputTokens + cacheReadTokens)。
+  // Summary.drivers.cacheReadRatio（全体集計、分母 = totalTokens）とは計算式が異なるため混同しないこと。
+  cacheReadRatio: number;
 }
 
 export interface SessionCost {
