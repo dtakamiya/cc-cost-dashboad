@@ -29,6 +29,7 @@ export interface DailyCost {
   tokenModels: Record<string, number>;
   tokenTotal: number;
   projectTokens: Record<string, number>;
+  projectCosts?: Record<string, number>;
   sessions?: number;
 }
 
@@ -288,6 +289,7 @@ function buildPeriodSummary(
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
   const tokenByProject = new Map<string, number>();
+  const costByProject = new Map<string, number>();
   for (const day of filteredDaily) {
     for (const [m, c] of Object.entries(day.models)) {
       costByModel.set(m, (costByModel.get(m) ?? 0) + c);
@@ -298,9 +300,12 @@ function buildPeriodSummary(
     for (const [cwd, t] of Object.entries(day.projectTokens ?? {})) {
       tokenByProject.set(cwd, (tokenByProject.get(cwd) ?? 0) + t);
     }
+    for (const [cwd, c] of Object.entries(day.projectCosts ?? {})) {
+      costByProject.set(cwd, (costByProject.get(cwd) ?? 0) + c);
+    }
   }
   const filteredProjects = [...tokenByProject.entries()]
-    .map(([cwd, tokens]) => ({ cwd, tokens, cost: 0 }))
+    .map(([cwd, tokens]) => ({ cwd, tokens, cost: costByProject.get(cwd) ?? 0 }))
     .sort((a, b) => b.tokens - a.tokens)
     .slice(0, 10);
   const filteredModels = s.models
