@@ -575,6 +575,145 @@ describe("セキュリティ強化", () => {
   });
 });
 
+describe("差分読み込み（インクリメンタルリロード）", () => {
+  it("新しい行が追記された後の2回目の POST /api/reload は、既存レコードを重複させずに更新済みの合計を反映する", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+
+    // レート制限クールダウン（30秒）を回避するため Date.now をスパイする
+    const dateNowSpy = vi.spyOn(Date, "now");
+    dateNowSpy.mockReturnValue(1_000_000);
+
+    // 1回目のリロード: 1件の新規レコード
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        {
+          ts: "2026-06-27T01:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-1",
+          input: 1000,
+          output: 500,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await request(app).post("/api/reload");
+
+    // クールダウン経過後を模擬
+    dateNowSpy.mockReturnValue(1_000_000 + 31_000);
+
+    // 2回目のリロード: ファイルに追記された1件の新規レコードのみを返す（差分読み込み）
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        {
+          ts: "2026-06-27T02:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-1",
+          input: 2000,
+          output: 1000,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await request(app).post("/api/reload");
+
+    // aggregate は累積済みの全レコード（1回目 + 2回目 = 2件）で呼ばれているはず（重複なし）
+    expect(vi.mocked(aggregate)).toHaveBeenCalledTimes(2);
+    const lastCallRecords = vi.mocked(aggregate).mock.calls[1][0];
+    expect(lastCallRecords).toHaveLength(2);
+    expect(lastCallRecords.map((r) => r.sessionId + r.ts)).toEqual([
+      "sess-12026-06-27T01:00:00.000Z",
+      "sess-12026-06-27T02:00:00.000Z",
+    ]);
+
+    dateNowSpy.mockRestore();
+  });
+
+  it("GET /api/sessions/:id/turns は初回ロードと差分リロードの両方のレコードを含む", async () => {
+    const { loadRecords } = await import("./parser.js");
+
+    const dateNowSpy = vi.spyOn(Date, "now");
+    dateNowSpy.mockReturnValue(2_000_000);
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        {
+          ts: "2026-06-27T01:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-abc",
+          input: 1000,
+          output: 500,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await request(app).post("/api/reload");
+
+    // クールダウン経過後を模擬
+    dateNowSpy.mockReturnValue(2_000_000 + 31_000);
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [
+        {
+          ts: "2026-06-27T02:00:00.000Z",
+          model: "claude-sonnet-4-6",
+          cwd: "/home/u/proj",
+          sessionId: "sess-abc",
+          input: 2000,
+          output: 1000,
+          cacheCreate: 0,
+          cacheCreate1h: 0,
+          cacheRead: 0,
+          cache1h: false,
+        },
+      ],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await request(app).post("/api/reload");
+
+    const res = await request(app).get("/api/sessions/sess-abc/turns");
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body.map((t) => t.ts)).toEqual([
+      "2026-06-27T01:00:00.000Z",
+      "2026-06-27T02:00:00.000Z",
+    ]);
+
+    dateNowSpy.mockRestore();
+  });
+});
+
 describe("GET /api/events (SSE)", () => {
   it("Content-Type: text/event-stream を返す", async () => {
     const res = await request(app)

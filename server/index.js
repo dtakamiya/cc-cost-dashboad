@@ -17,7 +17,17 @@ const RELOAD_COOLDOWN_MS = 30 * 1000;
 let lastReloadTime = 0;
 
 let cache = null; // 直近の集計結果をメモリ保持
-let recordsCache = null; // ターン詳細取得用の生レコードキャッシュ
+let recordsCache = null; // ターン詳細取得用の生レコードキャッシュ（累積）
+let offsetState = new Map(); // ファイルパス毎の読み込み済みバイトオフセット（差分読み込み用）
+
+// summary.source の累積カウンタ（差分読み込みでも UI 上「壊れて見えない」よう、リロード毎の値ではなく総計を保持する）
+const cumulativeSource = {
+  fileCount: 0,
+  parsedLines: 0,
+  parseErrors: 0,
+  skippedLines: 0,
+  unreadableFiles: 0,
+};
 
 // SSE クライアント管理
 const clients = new Set();
@@ -29,10 +39,17 @@ function notifyClients() {
 }
 
 async function rebuild() {
-  const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords();
-  recordsCache = records;
-  const summary = aggregate(records);
-  summary.source = { fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles };
+  const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords(offsetState);
+  recordsCache = recordsCache ? recordsCache.concat(records) : records;
+
+  cumulativeSource.fileCount = fileCount; // fileCount は累積ではなく現在の総ファイル数のスナップショット
+  cumulativeSource.parsedLines += parsedLines;
+  cumulativeSource.parseErrors += parseErrors;
+  cumulativeSource.skippedLines += skippedLines;
+  cumulativeSource.unreadableFiles += unreadableFiles;
+
+  const summary = aggregate(recordsCache);
+  summary.source = { ...cumulativeSource };
   summary.overhead = analyzeOverhead();
   cache = summary;
   return summary;
