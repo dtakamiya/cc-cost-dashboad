@@ -320,4 +320,60 @@ describe("loadRecords - 差分読み込み（offsetState）", () => {
     expect(second.records).toHaveLength(2); // 新規ファイルの全レコード
     expect(offsetState.has(newFile)).toBe(true);
   });
+
+  it("差分読み込みで壊れたJSON行を追記した場合、parseErrorsが加算され、その行の分だけoffsetが前進して次回に持ち越されない", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+    expect(first.parseErrors).toBe(0);
+
+    // 壊れたJSON行を追記
+    fs.appendFileSync(logFile, "{not valid json\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.records).toHaveLength(0);
+    expect(second.parseErrors).toBe(1);
+
+    const entry = offsetState.get(logFile);
+    expect(entry.offset).toBe(fs.statSync(logFile).size); // 壊れた行の分もoffsetが進んでいる
+
+    // さらに正常な行を追記しても、壊れた行が再カウントされない
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.records).toHaveLength(1);
+    expect(third.parseErrors).toBe(0);
+  });
+
+  it("差分読み込みでファイルが読み取り不能になった場合、unreadableFilesが加算され、offsetStateは更新されず次回リトライされる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.records).toHaveLength(1);
+    const entryBefore = offsetState.get(logFile);
+
+    // 2回目の読み込み中にファイルが削除される状況を再現する
+    const originalStatSync = fs.statSync;
+    const statSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    const second = await loadRecords(offsetState);
+    expect(second.unreadableFiles).toBe(1);
+    // offsetState は更新されない（stat 自体が失敗しているため、既存エントリのまま = 次回もこのファイルを対象にリトライされる）
+    expect(offsetState.get(logFile)).toEqual(entryBefore);
+
+    statSpy.mockRestore();
+
+    // リトライで正しく読み込めることを確認
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.records).toHaveLength(1);
+    expect(third.unreadableFiles).toBe(0);
+  });
 });

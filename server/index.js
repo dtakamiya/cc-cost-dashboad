@@ -45,7 +45,13 @@ async function rebuild() {
 
   rebuildInFlight = (async () => {
     const { records, fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords(offsetState);
-    recordsCache = recordsCache ? recordsCache.concat(records) : records;
+    if (recordsCache) {
+      // concat は毎回 recordsCache 全件をコピーし直すため、差分読み込みの効果を打ち消してしまう。
+      // recordsCache は外部に参照を渡さない内部専用の蓄積キャッシュなので、破壊的な追記で対応する。
+      for (const r of records) recordsCache.push(r);
+    } else {
+      recordsCache = records;
+    }
 
     cumulativeSource.fileCount = fileCount; // fileCount は累積ではなく現在の総ファイル数のスナップショット
     cumulativeSource.parsedLines += parsedLines;
