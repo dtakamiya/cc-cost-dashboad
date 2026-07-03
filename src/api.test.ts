@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -50,6 +50,7 @@ const sess = (cwd: string, cost: number, tokens: number): SessionCost => ({
   lastTs: "2026-06-27T01:00:00.000Z",
   avgContextPerMsg: 100,
   topModel: { model: "claude-opus-4-8", cost },
+  compactionCount: 0,
 });
 
 // プロジェクトフィルタテスト用 Summary
@@ -606,6 +607,29 @@ describe("sessionEfficiencyColor", () => {
 
   it("score=70 のとき success 色を返す", () => {
     expect(sessionEfficiencyColor(70)).toBe("var(--success)");
+  });
+});
+
+describe("isFrequentlyCompactedSession", () => {
+  it("compactionCount がデフォルト閾値(3)以上なら true", () => {
+    const s = { ...sess("/proj", 10, 1000), compactionCount: 3 };
+    expect(isFrequentlyCompactedSession(s)).toBe(true);
+  });
+
+  it("compactionCount が閾値未満なら false", () => {
+    const s = { ...sess("/proj", 10, 1000), compactionCount: 2 };
+    expect(isFrequentlyCompactedSession(s)).toBe(false);
+  });
+
+  it("compactionCount=0 なら false", () => {
+    const s = { ...sess("/proj", 10, 1000), compactionCount: 0 };
+    expect(isFrequentlyCompactedSession(s)).toBe(false);
+  });
+
+  it("カスタム閾値を尊重する", () => {
+    const s = { ...sess("/proj", 10, 1000), compactionCount: 5 };
+    expect(isFrequentlyCompactedSession(s, 5)).toBe(true);
+    expect(isFrequentlyCompactedSession(s, 6)).toBe(false);
   });
 });
 

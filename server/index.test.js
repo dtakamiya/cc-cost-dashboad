@@ -165,6 +165,80 @@ describe("rebuild() - 解析品質メタデータ", () => {
   });
 });
 
+describe("rebuild() - compactions の累積とaggregateへの伝播", () => {
+  it("loadRecords が返す compactions が aggregate の options.compactions に渡される", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      compactions: [{ sessionId: "s1" }, { sessionId: "s1" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+
+    await request(app).post("/api/reload");
+
+    expect(vi.mocked(aggregate)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ compactions: [{ sessionId: "s1" }, { sessionId: "s1" }] })
+    );
+  });
+
+  it("複数回のrebuildでcompactionsが累積される", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      compactions: [{ sessionId: "s1" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await request(app).post("/api/reload");
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      compactions: [{ sessionId: "s2" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    // reload クールダウンを回避するためタイマーを進める代わりに直接 rebuild 相当のPOSTを叩けないので、
+    // ここでは GET /api/summary の初回rebuildパスとの二重呼び出しを避け、モジュール内 rebuild() を直接検証する。
+    const mod = await import("./index.js");
+    await mod.rebuild();
+
+    const lastCall = vi.mocked(aggregate).mock.calls.at(-1);
+    expect(lastCall[1].compactions).toEqual(
+      expect.arrayContaining([{ sessionId: "s1" }, { sessionId: "s2" }])
+    );
+    expect(lastCall[1].compactions).toHaveLength(2);
+  });
+
+  it("compactions が未指定（undefined）でも rebuild がエラーにならない", async () => {
+    const { loadRecords } = await import("./parser.js");
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+
+    const res = await request(app).post("/api/reload");
+    expect(res.status).toBe(200);
+  });
+});
+
 describe("GET /api/summary", () => {
   it("200 と JSON を返す", async () => {
     const res = await request(app).get("/api/summary");

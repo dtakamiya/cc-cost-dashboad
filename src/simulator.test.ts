@@ -24,6 +24,7 @@ const session = (over: Partial<SessionCost>): SessionCost => ({
   lastTs: "2026-06-01T01:00:00.000Z",
   avgContextPerMsg: 0,
   topModel: null,
+  compactionCount: 0,
   ...over,
 });
 

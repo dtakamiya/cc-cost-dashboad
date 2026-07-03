@@ -191,6 +191,134 @@ describe("loadRecords - 解析品質メタデータ", () => {
   });
 });
 
+describe("loadRecords - compaction markers", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+  });
+
+  it("isCompactSummary: true の行から compactions にセッションIDが集積される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-compaction-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const compactionLine = JSON.stringify({
+      type: "user",
+      message: { role: "user", content: "compacted" },
+      isCompactSummary: true,
+      uuid: "u1",
+      timestamp: "2026-06-27T12:00:46.676Z",
+      sessionId: "session-a",
+      cwd: "/tmp",
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), compactionLine + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toHaveLength(1);
+      expect(compactions[0].sessionId).toBe("session-a");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("type: summary の行も compactions として集積される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-compaction-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const summaryLine = JSON.stringify({
+      type: "summary",
+      sessionId: "session-b",
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), summaryLine + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toHaveLength(1);
+      expect(compactions[0].sessionId).toBe("session-b");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("同一セッションで複数回圧縮された場合、複数件のcompactionsが積まれる（カウントはaggregate側の責務）", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-compaction-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line1 = JSON.stringify({ type: "user", isCompactSummary: true, sessionId: "session-c" });
+    const line2 = JSON.stringify({ type: "user", isCompactSummary: true, sessionId: "session-c" });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line1 + "\n" + line2 + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toHaveLength(2);
+      expect(compactions.every((c) => c.sessionId === "session-c")).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("圧縮マーカーが存在しないログでは compactions が空配列になる", async () => {
+    const tmpDir = makeTmpLogDir();
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("isCompactSummary: true でも sessionId が無い行は compactions に含まれない", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-compaction-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({ type: "user", isCompactSummary: true });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("差分読み込みでも複数ファイルにまたがって compactions が蓄積される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-compaction-test-"));
+    const project1 = path.join(tmpDir, "project1");
+    const project2 = path.join(tmpDir, "project2");
+    fs.mkdirSync(project1, { recursive: true });
+    fs.mkdirSync(project2, { recursive: true });
+    fs.writeFileSync(
+      path.join(project1, "session.jsonl"),
+      JSON.stringify({ type: "user", isCompactSummary: true, sessionId: "s1" }) + "\n"
+    );
+    fs.writeFileSync(
+      path.join(project2, "session.jsonl"),
+      JSON.stringify({ type: "summary", sessionId: "s2" }) + "\n"
+    );
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { compactions } = await loadRecords();
+      expect(compactions).toHaveLength(2);
+      expect(compactions.map((c) => c.sessionId).sort()).toEqual(["s1", "s2"]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("loadRecords - CLAUDE_LOGS_DIR", () => {
   let originalEnv;
 

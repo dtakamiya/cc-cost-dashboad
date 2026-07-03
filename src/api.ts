@@ -56,6 +56,7 @@ export interface SessionCost {
   lastTs: string | null;
   avgContextPerMsg: number; // Σ(cacheRead + input) / messages = 1ターンの実コンテキストサイズ proxy
   topModel: { model: string; cost: number } | null;
+  compactionCount: number; // 自動コンテキスト圧縮（compaction）の発生回数
 }
 
 export interface OverheadFile {
@@ -204,6 +205,17 @@ export function isBloatedSession(
   minMessages = BLOAT_MIN_MESSAGES
 ): boolean {
   return s.messages >= minMessages && s.avgContextPerMsg > contextThreshold;
+}
+
+// セッション内でコンテキスト圧縮（compaction）がこの回数以上発生していれば「多発」とみなす。
+export const COMPACTION_COUNT_THRESHOLD = 3;
+
+/** セッションが頻繁にコンテキスト圧縮を起こしているか（先回り /compact 推奨）どうかを返す。 */
+export function isFrequentlyCompactedSession(
+  s: SessionCost,
+  threshold = COMPACTION_COUNT_THRESHOLD
+): boolean {
+  return s.compactionCount >= threshold;
 }
 
 /** セッションのキャッシュ活用率スコア（0-100の整数）。cacheRead=0の場合はnull（計算をスキップ）。 */
