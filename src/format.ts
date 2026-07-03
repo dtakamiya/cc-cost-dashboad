@@ -6,6 +6,10 @@ export const compact = (n: number) =>
 
 export const pct = (n: number) => (n * 100).toFixed(1) + "%";
 
+// トークン単価（USD/MTok）。ゼロ除算防止のため tokens<=0 は 0 を返す。
+export const calcEffectiveRate = (cost: number, tokens: number): number =>
+  tokens > 0 ? (cost / tokens) * 1_000_000 : 0;
+
 // モデル名→安定した色。既知モデルはプレフィックス一致で固有色を返す。
 const PALETTE = ["#818cf8", "#34d399", "#fbbf24", "#fb7185", "#c084fc", "#22d3ee", "#f472b6", "#a3e635"];
 

@@ -11,7 +11,8 @@ import {
   LabelList,
 } from "recharts";
 import type { Summary } from "../api";
-import { compact, usd, modelColor } from "../format";
+import { compact, usd, modelColor, calcEffectiveRate } from "../format";
+import { resolveCheapestHaikuRate, calcHaikuMigrationSaving, HAIKU_MIGRATION_SHIFT_RATE } from "../simulator";
 
 const TOOLTIP_STYLE = {
   background: "var(--tooltip-bg)",
@@ -55,6 +56,7 @@ export function ModelBreakdown({ s }: { s: Summary }) {
 
   const dataKey = mode === "cost" ? "cost" : "tokens";
   const fmt = mode === "cost" ? usd : compact;
+  const haikuRate = resolveCheapestHaikuRate(s.models);
 
   return (
     <section className="panel">
@@ -97,20 +99,27 @@ export function ModelBreakdown({ s }: { s: Summary }) {
             <th>モデル</th>
             <th>{mode === "cost" ? "コスト" : "トークン"}</th>
             {mode === "cost" && <th>トークン</th>}
+            <th>実績単価</th>
+            <th>Haiku移行30%節約試算</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((d) => (
-            <tr key={d.model}>
-              <td>
-                <span className="dot" style={{ background: modelColor(d.model) }} />
-                {d.model}
-                {d.isFallback && <span className="badge">価格未登録</span>}
-              </td>
-              <td>{mode === "cost" ? usd(d.cost) : compact(d.tokens)}</td>
-              {mode === "cost" && <td>{compact(d.tokens)}</td>}
-            </tr>
-          ))}
+          {data.map((d) => {
+            const saving = calcHaikuMigrationSaving(d, haikuRate, HAIKU_MIGRATION_SHIFT_RATE, s);
+            return (
+              <tr key={d.model}>
+                <td>
+                  <span className="dot" style={{ background: modelColor(d.model) }} />
+                  {d.model}
+                  {d.isFallback && <span className="badge">価格未登録</span>}
+                </td>
+                <td>{mode === "cost" ? usd(d.cost) : compact(d.tokens)}</td>
+                {mode === "cost" && <td>{compact(d.tokens)}</td>}
+                <td>{d.tokens > 0 ? usd(calcEffectiveRate(d.cost, d.tokens)) + "/MTok" : "—"}</td>
+                <td>{saving !== null ? "-" + usd(saving) + "/月" : "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>

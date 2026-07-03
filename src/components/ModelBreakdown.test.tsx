@@ -61,4 +61,63 @@ describe("ModelBreakdown", () => {
     expect(costBtn).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "トークン" })).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("テーブルヘッダーに実績単価とHaiku移行30%節約試算が表示される", () => {
+    render(<ModelBreakdown s={minimalSummary} />);
+    expect(screen.getByText("実績単価")).toBeInTheDocument();
+    expect(screen.getByText("Haiku移行30%節約試算")).toBeInTheDocument();
+  });
+
+  it("Sonnet系モデル行にHaiku実績データがある場合は節約額が表示される", () => {
+    render(<ModelBreakdown s={minimalSummary} />);
+    // sonnetRate = 1.23/100000*1e6 = 12.3, haikuRate = 0.05/50000*1e6 = 1
+    // saving = (12.3-1)*100000*0.3/1e6 * monthlyFactor(from/to=null→1日→30倍)
+    const rows = screen.getAllByRole("row");
+    const sonnetRow = rows.find((r) => r.textContent?.includes("claude-sonnet-4-5"));
+    expect(sonnetRow?.textContent).not.toContain("—");
+  });
+
+  it("Haikuモデル自身の行では節約額欄が—になる", () => {
+    render(<ModelBreakdown s={minimalSummary} />);
+    const rows = screen.getAllByRole("row");
+    const haikuRow = rows.find((r) => r.textContent?.includes("claude-haiku-4-5"));
+    expect(haikuRow?.textContent).toContain("—");
+  });
+
+  it("Haiku実績データが1件も無い場合は全行の節約額が—になる", () => {
+    const noHaikuSummary: Summary = {
+      ...minimalSummary,
+      models: [
+        { model: "claude-sonnet-4-5", cost: 1.23, tokens: 100000, isFallback: false },
+        { model: "claude-opus-4-8", cost: 5, tokens: 200000, isFallback: false },
+      ],
+    };
+    render(<ModelBreakdown s={noHaikuSummary} />);
+    const rows = screen.getAllByRole("row").filter((r) => r.querySelector("td"));
+    for (const row of rows) {
+      expect(row.textContent).toContain("—");
+    }
+  });
+
+  it("tokens=0のモデル行はNaN・Infinityが表示されずクラッシュしない", () => {
+    const zeroTokenSummary: Summary = {
+      ...minimalSummary,
+      models: [
+        { model: "claude-sonnet-4-5", cost: 0, tokens: 0, isFallback: false },
+        { model: "claude-haiku-4-5", cost: 0.05, tokens: 50000, isFallback: false },
+      ],
+    };
+    render(<ModelBreakdown s={zeroTokenSummary} />);
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Infinity/)).not.toBeInTheDocument();
+  });
+
+  it("既存のトークン/コスト列表示が壊れていないこと（回帰）", async () => {
+    const user = userEvent.setup();
+    render(<ModelBreakdown s={minimalSummary} />);
+    expect(screen.getByText("100K")).toBeInTheDocument();
+    const costBtn = screen.getByRole("button", { name: "コスト" });
+    await user.click(costBtn);
+    expect(screen.getByText("$1.23")).toBeInTheDocument();
+  });
 });

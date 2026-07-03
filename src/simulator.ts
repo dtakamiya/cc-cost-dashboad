@@ -1,4 +1,5 @@
-import { isBloatedSession, type Summary } from "./api";
+import { isBloatedSession, type Summary, type ModelCost } from "./api";
+import { calcEffectiveRate } from "./format";
 
 // 節約ポテンシャルシミュレーター: キャッシュヒット率目標・Haiku移行率・/clear実施率の
 // 3つのスライダー値から、現在のデータを基に月額の推定節約額を試算する純粋関数群。
@@ -29,7 +30,7 @@ function periodDaysOf(from: string | null, to: string | null): number {
 /** コスト/トークン比率を安全に計算する（トークン 0 の場合は 0 を返す）。 */
 const safeRate = (cost: number, tokens: number): number => (tokens > 0 ? cost / tokens : 0);
 
-function monthlyFactorOf(s: Summary): number {
+export function monthlyFactorOf(s: Summary): number {
   return 30 / periodDaysOf(s.totals.from, s.totals.to);
 }
 
@@ -81,6 +82,37 @@ export function simulateClearSavings(s: Summary, clearRate: number): number {
   const reSentTokens = bloated.reduce((sum, sess) => sum + sess.cacheRead, 0);
   const cacheReadRate = safeRate(s.costSplit.cacheRead, s.tokenSplit.cacheRead);
   return reSentTokens * clearRate * cacheReadRate * monthlyFactorOf(s);
+}
+
+// ModelBreakdown の「Haikuへ移行した場合」試算に使う固定移行率。
+export const HAIKU_MIGRATION_SHIFT_RATE = 0.3;
+
+/** モデル一覧からHaiku系モデル（tokens>0）の中で最安の実績単価（USD/MTok）を返す。該当なしはnull。 */
+export function resolveCheapestHaikuRate(models: ModelCost[]): number | null {
+  const haikuRates = models
+    .filter((m) => /haiku/i.test(m.model) && m.tokens > 0)
+    .map((m) => calcEffectiveRate(m.cost, m.tokens));
+  return haikuRates.length > 0 ? Math.min(...haikuRates) : null;
+}
+
+/**
+ * 対象モデルをHaikuへ shiftRate 分移行した場合の月額節約額を返す。
+ * 対象がHaiku自身、tokens<=0、haikuRateがnull、または既にHaiku以下の単価の場合はnull。
+ */
+export function calcHaikuMigrationSaving(
+  model: Pick<ModelCost, "model" | "cost" | "tokens">,
+  haikuRate: number | null,
+  shiftRate: number,
+  s: Summary
+): number | null {
+  if (/haiku/i.test(model.model)) return null;
+  if (model.tokens <= 0) return null;
+  if (haikuRate === null) return null;
+
+  const modelRate = calcEffectiveRate(model.cost, model.tokens);
+  if (modelRate <= haikuRate) return null;
+
+  return ((modelRate - haikuRate) * model.tokens * shiftRate) / 1_000_000 * monthlyFactorOf(s);
 }
 
 /** 3つのスライダー入力から節約額の内訳と合計を試算する。 */

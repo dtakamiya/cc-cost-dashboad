@@ -5,8 +5,10 @@ import {
   simulateHaikuShiftSavings,
   simulateClearSavings,
   simulateSavings,
+  resolveCheapestHaikuRate,
+  calcHaikuMigrationSaving,
 } from "./simulator";
-import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
+import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost, type ModelCost } from "./api";
 
 const session = (over: Partial<SessionCost>): SessionCost => ({
   sessionId: "s1",
@@ -265,5 +267,87 @@ describe("simulateSavings", () => {
     const input = defaultSimulatorInput(s);
     const result = simulateSavings(s, input);
     expect(result.totalMonthlySavings).toBeCloseTo(0, 6);
+  });
+});
+
+describe("resolveCheapestHaikuRate", () => {
+  it("Haikuモデルが無ければnullを返す", () => {
+    const models: ModelCost[] = [
+      { model: "claude-opus-4-8", cost: 100, tokens: 1_000_000, isFallback: false },
+    ];
+    expect(resolveCheapestHaikuRate(models)).toBeNull();
+  });
+
+  it("複数のHaiku変種がある場合は最安単価を返す", () => {
+    const models: ModelCost[] = [
+      // 単価: 2/100_000*1e6 = 20
+      { model: "claude-haiku-4-0", cost: 2, tokens: 100_000, isFallback: false },
+      // 単価: 1/100_000*1e6 = 10（最安）
+      { model: "claude-haiku-4-5", cost: 1, tokens: 100_000, isFallback: false },
+    ];
+    expect(resolveCheapestHaikuRate(models)).toBeCloseTo(10, 6);
+  });
+
+  it("tokens=0のHaikuは候補から除外される", () => {
+    const models: ModelCost[] = [
+      { model: "claude-haiku-4-0", cost: 5, tokens: 0, isFallback: false },
+      { model: "claude-haiku-4-5", cost: 1, tokens: 100_000, isFallback: false },
+    ];
+    expect(resolveCheapestHaikuRate(models)).toBeCloseTo(10, 6);
+  });
+});
+
+describe("calcHaikuMigrationSaving", () => {
+  const s = baseSummary();
+  const HAIKU_RATE = 10; // USD/MTok
+
+  it("Sonnet行で正しい節約額を返す（月次換算込み）", () => {
+    // sonnetRate = 100/1_000_000 * 1e6 = 100 USD/MTok
+    const model: Pick<ModelCost, "model" | "cost" | "tokens"> = {
+      model: "claude-sonnet-4-5",
+      cost: 100,
+      tokens: 1_000_000,
+    };
+    const shiftRate = 0.3;
+    const expected = ((100 - HAIKU_RATE) * 1_000_000 * shiftRate) / 1_000_000; // period = 30日なのでmonthlyFactor=1
+    const saving = calcHaikuMigrationSaving(model, HAIKU_RATE, shiftRate, s);
+    expect(saving).toBeCloseTo(expected, 6);
+  });
+
+  it("対象自身がHaikuの場合はnullを返す", () => {
+    const model: Pick<ModelCost, "model" | "cost" | "tokens"> = {
+      model: "claude-haiku-4-5",
+      cost: 1,
+      tokens: 100_000,
+    };
+    expect(calcHaikuMigrationSaving(model, HAIKU_RATE, 0.3, s)).toBeNull();
+  });
+
+  it("tokens=0の場合はnullを返す", () => {
+    const model: Pick<ModelCost, "model" | "cost" | "tokens"> = {
+      model: "claude-sonnet-4-5",
+      cost: 0,
+      tokens: 0,
+    };
+    expect(calcHaikuMigrationSaving(model, HAIKU_RATE, 0.3, s)).toBeNull();
+  });
+
+  it("haikuRateがnullの場合はnullを返す", () => {
+    const model: Pick<ModelCost, "model" | "cost" | "tokens"> = {
+      model: "claude-sonnet-4-5",
+      cost: 100,
+      tokens: 1_000_000,
+    };
+    expect(calcHaikuMigrationSaving(model, null, 0.3, s)).toBeNull();
+  });
+
+  it("モデル単価がHaiku単価以下の場合はnullを返す", () => {
+    // 単価 = 5/1_000_000 * 1e6 = 5 <= HAIKU_RATE(10)
+    const model: Pick<ModelCost, "model" | "cost" | "tokens"> = {
+      model: "claude-sonnet-4-5",
+      cost: 5,
+      tokens: 1_000_000,
+    };
+    expect(calcHaikuMigrationSaving(model, HAIKU_RATE, 0.3, s)).toBeNull();
   });
 });

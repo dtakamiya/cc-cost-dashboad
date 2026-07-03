@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { modelColor } from "./format";
+import { modelColor, calcEffectiveRate } from "./format";
 
 describe("modelColor", () => {
   it("claude-3-opus の日付サフィックス付きモデルに固有色を返す", () => {
@@ -75,5 +75,19 @@ describe("modelColor", () => {
 
     const unknownColor = modelColor("unknown-model-xyz");
     expect(["#fb7185", "#c084fc", "#22d3ee", "#a3e635"]).not.toContain(unknownColor);
+  });
+});
+
+describe("calcEffectiveRate", () => {
+  it("cost=3.6, tokens=1_200_000 のとき $3.00/MTok 相当の値を返す", () => {
+    expect(calcEffectiveRate(3.6, 1_200_000)).toBeCloseTo(3.0, 6);
+  });
+
+  it("tokens=0 のときゼロ除算を防止し0を返す", () => {
+    expect(calcEffectiveRate(3.6, 0)).toBe(0);
+  });
+
+  it("cost=0, tokens>0 のとき0を返す", () => {
+    expect(calcEffectiveRate(0, 1_000_000)).toBe(0);
   });
 });

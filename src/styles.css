@@ -220,7 +220,7 @@ body {
 }
 .tbl tbody tr { transition: background 0.12s; }
 .tbl tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
-.tbl td:nth-child(2), .tbl td:nth-child(3) { text-align: right; }
+.tbl td:not(:first-child) { text-align: right; }
 .tbl tfoot td { border-bottom: 0; padding-top: 10px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: var(--sp-2); vertical-align: middle; }
 .badge {
