@@ -224,6 +224,17 @@ export function SessionBreakdown({ s }: { s: Summary }) {
             <th>平均コンテキスト</th>
             <th
               onClick={handleEfficiencySort}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleEfficiencySort();
+                }
+              }}
+              role="columnheader"
+              tabIndex={0}
+              aria-sort={
+                efficiencySort === "asc" ? "ascending" : efficiencySort === "desc" ? "descending" : "none"
+              }
               style={{ cursor: "pointer", userSelect: "none" }}
               title="クリックでソート"
             >
