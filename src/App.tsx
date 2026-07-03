@@ -6,6 +6,7 @@ import { useHourlyQuery } from "./hooks/useHourlyQuery";
 import { useSSEInvalidation } from "./hooks/useSSEInvalidation";
 import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
+import { SavingsSimulator } from "./components/SavingsSimulator";
 import { CostDrivers } from "./components/CostDrivers";
 import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
@@ -228,6 +229,7 @@ export default function App() {
           <section id="section-optimization" ref={optimizationRef}>
             <CacheEfficiency s={displayData} />
             <OverheadAnalysis s={displayData} />
+            <SavingsSimulator s={displayData} />
           </section>
           <footer className="foot">
             集計時刻 {new Date(displayData.generatedAt).toLocaleString("ja-JP")} ／ コストは価格表に基づく推定値
