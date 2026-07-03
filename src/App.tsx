@@ -22,6 +22,7 @@ import { ProjectBreakdown } from "./components/ProjectBreakdown";
 import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
+import { ContextBudget } from "./components/ContextBudget";
 
 export default function App() {
   const [period, setPeriod] = useState<Period>('7d');
@@ -45,6 +46,7 @@ export default function App() {
   const driversRef = useRef<HTMLDivElement>(null);
   const projectRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<HTMLDivElement>(null);
+  const contextBudgetRef = useRef<HTMLDivElement>(null);
   const optimizationRef = useRef<HTMLDivElement>(null);
 
   const canCompare = !isDateRange(period) && period !== 'all';
@@ -106,6 +108,7 @@ export default function App() {
       drivers: driversRef,
       project: projectRef,
       session: sessionRef,
+      contextBudget: contextBudgetRef,
       optimization: optimizationRef,
     };
     const ref = refs[id];
@@ -209,6 +212,7 @@ export default function App() {
               { id: 'drivers', label: 'コストドライバー' },
               { id: 'project', label: 'プロジェクト' },
               { id: 'session', label: 'セッション' },
+              { id: 'contextBudget', label: 'コンテキスト予算' },
               { id: 'optimization', label: '最適化' },
             ]}
             activeSection={activeSection}
@@ -245,6 +249,9 @@ export default function App() {
           <section id="section-session" ref={sessionRef}>
             <SessionBreakdown s={displayData} />
             <ActivityHeatmap s={data!} />
+          </section>
+          <section id="section-contextBudget" ref={contextBudgetRef}>
+            <ContextBudget s={displayData} />
           </section>
           <section id="section-optimization" ref={optimizationRef}>
             <CacheEfficiency s={displayData} />
