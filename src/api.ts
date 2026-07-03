@@ -36,6 +36,10 @@ export interface DailyCost {
   // 日別のキャッシュ活用率 = cacheReadTokens / (inputTokens + cacheReadTokens)。
   // Summary.drivers.cacheReadRatio（全体集計、分母 = totalTokens）とは計算式が異なるため混同しないこと。
   cacheReadRatio: number;
+  mainTokens?: number;
+  mainCost?: number;
+  subagentTokens?: number;
+  subagentCost?: number;
 }
 
 export interface SessionCost {
@@ -72,6 +76,15 @@ export interface CacheStats {
   readSavings: number;    // キャッシュ読み込みによる節約額（USD）
   writeCost: number;      // キャッシュ書き込みコスト合計（USD）
   roiNet: number;         // readSavings − writeCost（負なら書き込み未回収）
+}
+
+// サブエージェント（isSidechain）委譲のトークン/コスト内訳。デリゲーションROI判断用。
+export interface SubagentStats {
+  mainTokens: number;
+  mainCost: number;
+  subagentTokens: number;
+  subagentCost: number;
+  subagentRatio: number; // subagentTokens / (mainTokens + subagentTokens)。0-1件でも0除算しない。
 }
 
 export interface Summary {
@@ -121,6 +134,7 @@ export interface Summary {
   };
   warnings: { fallbackModels: string[] };
   cacheStats?: CacheStats;
+  subagentStats?: SubagentStats;
   source?: {
     fileCount: number;
     parsedLines?: number;
@@ -298,6 +312,19 @@ export function filterPreviousPeriod(s: Summary, period: Period): Summary | null
 }
 
 /**
+ * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
+ * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
+ */
+function sumSubagentStats(filteredDaily: DailyCost[]): SubagentStats {
+  const mainTokens = filteredDaily.reduce((sum, d) => sum + (d.mainTokens ?? 0), 0);
+  const mainCost = filteredDaily.reduce((sum, d) => sum + (d.mainCost ?? 0), 0);
+  const subagentTokens = filteredDaily.reduce((sum, d) => sum + (d.subagentTokens ?? 0), 0);
+  const subagentCost = filteredDaily.reduce((sum, d) => sum + (d.subagentCost ?? 0), 0);
+  const total = mainTokens + subagentTokens;
+  return { mainTokens, mainCost, subagentTokens, subagentCost, subagentRatio: total > 0 ? subagentTokens / total : 0 };
+}
+
+/**
  * 期間で絞り込んだ daily / sessions から Summary を再集計する共通ヘルパー。
  * filterSummary（現在期間）と filterPreviousPeriod（前期）が日付境界の計算だけを変えて共有する。
  */
@@ -385,6 +412,7 @@ function buildPeriodSummary(
       writeCost: s.cacheStats.writeCost * costRatio,
       roiNet: s.cacheStats.roiNet * costRatio,
     },
+    subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
   };
 }
 
@@ -513,6 +541,10 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
         models: Object.fromEntries(Object.entries(d.models).map(([m, c]) => [m, c * ratio])),
         tokenModels: Object.fromEntries(Object.entries(d.tokenModels ?? {}).map(([m, t]) => [m, t * ratio])),
         projectTokens: { [cwdFilter]: projTokens },
+        mainTokens: (d.mainTokens ?? 0) * ratio,
+        mainCost: (d.mainCost ?? 0) * ratio,
+        subagentTokens: (d.subagentTokens ?? 0) * ratio,
+        subagentCost: (d.subagentCost ?? 0) * ratio,
       };
     });
 
@@ -572,6 +604,7 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
       writeCost: s.cacheStats.writeCost * costRatio,
       roiNet: s.cacheStats.roiNet * costRatio,
     },
+    subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
   };
 }
 

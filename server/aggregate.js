@@ -313,6 +313,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
   let minTs = null;
   let maxTs = null;
   let fallbackModels = new Set();
+  let mainTokens = 0, mainCost = 0, subagentTokens = 0, subagentCost = 0;
 
   for (const r of records) {
     const c = costOf(r.model, r);
@@ -359,6 +360,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
       byDay.set(day, {
         costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map(), projectCostMap: new Map(),
         inputTokens: 0, cacheReadTokens: 0,
+        mainTokens: 0, mainCost: 0, subagentTokens: 0, subagentCost: 0,
       });
     }
     const dd = byDay.get(day);
@@ -368,6 +370,18 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
     dd.projectCostMap.set(r.cwd, (dd.projectCostMap.get(r.cwd) || 0) + c.total);
     dd.inputTokens += r.input;
     dd.cacheReadTokens += r.cacheRead;
+
+    if (r.isSidechain) {
+      dd.subagentTokens += tokens;
+      dd.subagentCost += c.total;
+      subagentTokens += tokens;
+      subagentCost += c.total;
+    } else {
+      dd.mainTokens += tokens;
+      dd.mainCost += c.total;
+      mainTokens += tokens;
+      mainCost += c.total;
+    }
 
     const prevProject = byProject.get(r.cwd) || { cost: 0, tokens: 0 };
     byProject.set(r.cwd, { cost: prevProject.cost + c.total, tokens: prevProject.tokens + tokens });
@@ -394,7 +408,10 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
   // cacheReadRatio は日別のキャッシュ活用率 = cacheRead / (input + cacheRead)。
   // 全体集計の drivers.cacheReadRatio（分母 = totalTokens）とは計算式が異なるため混同しないこと。
   const daily = [...byDay.entries()]
-    .map(([date, { costMap, tokenMap, projectTokenMap, projectCostMap, inputTokens, cacheReadTokens }]) => {
+    .map(([date, {
+      costMap, tokenMap, projectTokenMap, projectCostMap, inputTokens, cacheReadTokens,
+      mainTokens, mainCost, subagentTokens, subagentCost,
+    }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
       const tokenModels = Object.fromEntries(tokenMap);
@@ -407,6 +424,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
       return {
         date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts,
         inputTokens, cacheReadTokens, cacheReadRatio,
+        mainTokens, mainCost, subagentTokens, subagentCost,
       };
     })
     .filter((d) => d.date !== "(unknown)")
@@ -480,6 +498,10 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
       fallbackModels: [...fallbackModels],
     },
     cacheStats,
+    subagentStats: {
+      mainTokens, mainCost, subagentTokens, subagentCost,
+      subagentRatio: (mainTokens + subagentTokens) > 0 ? subagentTokens / (mainTokens + subagentTokens) : 0,
+    },
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
