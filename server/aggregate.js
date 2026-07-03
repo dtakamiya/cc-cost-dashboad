@@ -319,6 +319,34 @@ function computeActivity(records) {
   return { matrix, max, total, peak };
 }
 
+/**
+ * Agent/Skill の tool_use レコード配列から呼び出し件数を集計する。
+ * @param {object[]} toolUseRecords - parser.js の toToolUseRecords() が返す正規化レコード配列
+ * @returns {{ agentCount: number, skillCount: number, bySubagentType: Record<string, number>, bySkill: Record<string, number> }}
+ */
+function computeToolStats(toolUseRecords) {
+  let agentCount = 0;
+  let skillCount = 0;
+  const bySubagentType = {};
+  const bySkill = {};
+
+  for (const r of toolUseRecords) {
+    if (r.toolName === "Agent") {
+      agentCount++;
+      if (r.subagentType) {
+        bySubagentType[r.subagentType] = (bySubagentType[r.subagentType] || 0) + 1;
+      }
+    } else if (r.toolName === "Skill") {
+      skillCount++;
+      if (r.skill) {
+        bySkill[r.skill] = (bySkill[r.skill] || 0) + 1;
+      }
+    }
+  }
+
+  return { agentCount, skillCount, bySubagentType, bySkill };
+}
+
 const DEFAULT_SESSION_LIMIT = 30;
 
 /**
@@ -351,11 +379,11 @@ export function filterRecordsByPeriod(records, period) {
 /**
  * 正規化レコード配列からダッシュボード用サマリを生成する。
  * @param {object[]} records - 正規化レコード配列
- * @param {{ sessionLimit?: number, compactions?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
- *   compactions 省略時はセッションの compactionCount が全て 0 になる。
+ * @param {{ sessionLimit?: number, compactions?: object[], toolUseRecords?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
+ *   compactions 省略時はセッションの compactionCount が全て 0 になる。toolUseRecords 省略時は toolStats が0埋めになる。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
-export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [] } = {}) {
+export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [], toolUseRecords = [] } = {}) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -569,5 +597,6 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     bySession: computeSessions(records, compactions, { limit: sessionLimit }),
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
+    toolStats: computeToolStats(toolUseRecords),
   };
 }

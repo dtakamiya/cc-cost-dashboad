@@ -23,6 +23,7 @@ import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
 import { ContextBudget } from "./components/ContextBudget";
+import { ToolBreakdown } from "./components/ToolBreakdown";
 
 export default function App() {
   const [period, setPeriod] = useState<Period>('7d');
@@ -47,6 +48,7 @@ export default function App() {
   const projectRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<HTMLDivElement>(null);
   const contextBudgetRef = useRef<HTMLDivElement>(null);
+  const toolRef = useRef<HTMLDivElement>(null);
   const optimizationRef = useRef<HTMLDivElement>(null);
 
   const canCompare = !isDateRange(period) && period !== 'all';
@@ -109,6 +111,7 @@ export default function App() {
       project: projectRef,
       session: sessionRef,
       contextBudget: contextBudgetRef,
+      tool: toolRef,
       optimization: optimizationRef,
     };
     const ref = refs[id];
@@ -213,6 +216,7 @@ export default function App() {
               { id: 'project', label: 'プロジェクト' },
               { id: 'session', label: 'セッション' },
               { id: 'contextBudget', label: 'コンテキスト予算' },
+              { id: 'tool', label: 'ツール' },
               { id: 'optimization', label: '最適化' },
             ]}
             activeSection={activeSection}
@@ -252,6 +256,9 @@ export default function App() {
           </section>
           <section id="section-contextBudget" ref={contextBudgetRef}>
             <ContextBudget s={displayData} />
+          </section>
+          <section id="section-tool" ref={toolRef}>
+            <ToolBreakdown s={displayData} />
           </section>
           <section id="section-optimization" ref={optimizationRef}>
             <CacheEfficiency s={displayData} />

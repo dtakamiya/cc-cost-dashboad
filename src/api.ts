@@ -96,6 +96,14 @@ export interface SubagentStats {
   subagentRatio: number; // subagentTokens / (mainTokens + subagentTokens)。0-1件でも0除算しない。
 }
 
+// Agent/Skill（サブエージェント・スキル）呼び出しの件数集計。コスト紐付けは行わない（別issue）。
+export interface ToolStats {
+  agentCount: number;
+  skillCount: number;
+  bySubagentType: Record<string, number>;
+  bySkill: Record<string, number>;
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -145,6 +153,7 @@ export interface Summary {
   cacheStats?: CacheStats;
   cacheGapStats?: CacheGapStats;
   subagentStats?: SubagentStats;
+  toolStats?: ToolStats;
   source?: {
     fileCount: number;
     parsedLines?: number;

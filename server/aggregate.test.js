@@ -85,6 +85,91 @@ describe("aggregate cacheStats", () => {
   });
 });
 
+describe("aggregate toolStats (Agent/Skill 呼び出し集計)", () => {
+  const toolRec = (over = {}) => ({
+    toolName: "Agent",
+    ts: "2026-06-15T10:00:00.000Z",
+    sessionId: "s1",
+    cwd: "/home/u/proj",
+    subagentType: null,
+    description: null,
+    skill: null,
+    ...over,
+  });
+
+  it("toolUseRecords 未指定時は0埋めの toolStats を返す", () => {
+    const { toolStats } = aggregate([rec()]);
+    expect(toolStats).toEqual({
+      agentCount: 0,
+      skillCount: 0,
+      bySubagentType: {},
+      bySkill: {},
+    });
+  });
+
+  it("toolUseRecords が空配列でも0埋めの toolStats を返す", () => {
+    const { toolStats } = aggregate([rec()], { toolUseRecords: [] });
+    expect(toolStats).toEqual({
+      agentCount: 0,
+      skillCount: 0,
+      bySubagentType: {},
+      bySkill: {},
+    });
+  });
+
+  it("Agent呼び出しの件数と subagentType 別件数を集計する", () => {
+    const { toolStats } = aggregate([rec()], {
+      toolUseRecords: [
+        toolRec({ toolName: "Agent", subagentType: "code-reviewer" }),
+        toolRec({ toolName: "Agent", subagentType: "code-reviewer" }),
+        toolRec({ toolName: "Agent", subagentType: "planner" }),
+      ],
+    });
+    expect(toolStats.agentCount).toBe(3);
+    expect(toolStats.skillCount).toBe(0);
+    expect(toolStats.bySubagentType).toEqual({ "code-reviewer": 2, planner: 1 });
+  });
+
+  it("Skill呼び出しの件数と skill 別件数を集計する", () => {
+    const { toolStats } = aggregate([rec()], {
+      toolUseRecords: [
+        toolRec({ toolName: "Skill", skill: "tdd-workflow" }),
+        toolRec({ toolName: "Skill", skill: "tdd-workflow" }),
+        toolRec({ toolName: "Skill", skill: "code-review" }),
+      ],
+    });
+    expect(toolStats.skillCount).toBe(3);
+    expect(toolStats.agentCount).toBe(0);
+    expect(toolStats.bySkill).toEqual({ "tdd-workflow": 2, "code-review": 1 });
+  });
+
+  it("Agent/Skill が混在する場合も正しく分離集計される", () => {
+    const { toolStats } = aggregate([rec()], {
+      toolUseRecords: [
+        toolRec({ toolName: "Agent", subagentType: "planner" }),
+        toolRec({ toolName: "Skill", skill: "tdd-workflow" }),
+      ],
+    });
+    expect(toolStats.agentCount).toBe(1);
+    expect(toolStats.skillCount).toBe(1);
+    expect(toolStats.bySubagentType).toEqual({ planner: 1 });
+    expect(toolStats.bySkill).toEqual({ "tdd-workflow": 1 });
+  });
+
+  it("subagentType/skill が null の場合はカウントするが内訳キーには含めない", () => {
+    const { toolStats } = aggregate([rec()], {
+      toolUseRecords: [
+        toolRec({ toolName: "Agent", subagentType: null }),
+        toolRec({ toolName: "Skill", skill: null }),
+      ],
+    });
+    expect(toolStats.agentCount).toBe(1);
+    expect(toolStats.skillCount).toBe(1);
+    expect(toolStats.bySubagentType).toEqual({});
+    expect(toolStats.bySkill).toEqual({});
+  });
+});
+
 describe("aggregate subagentStats (isSidechain 分離集計)", () => {
   it("main/subagent が混在する場合、トークンが正しく分離される", () => {
     const { subagentStats } = aggregate([

@@ -1,4 +1,4 @@
-export type SectionId = 'summary' | 'drivers' | 'project' | 'session' | 'contextBudget' | 'optimization'
+export type SectionId = 'summary' | 'drivers' | 'project' | 'session' | 'contextBudget' | 'tool' | 'optimization'
 
 export interface SectionLabel {
   id: SectionId
