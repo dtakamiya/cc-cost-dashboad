@@ -37,6 +37,58 @@ const SKIP_LINE = JSON.stringify({
   message: { content: "hello" },
 });
 
+describe("loadRecords - isSidechain", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+  });
+
+  it("isSidechain: true を含む行は records に isSidechain: true として伝播する", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-sidechain-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const sidechainLine = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      isSidechain: true,
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), sidechainLine + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { records } = await loadRecords();
+      expect(records).toHaveLength(1);
+      expect(records[0].isSidechain).toBe(true);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("isSidechain フィールドが欠損している行は isSidechain: false になる", async () => {
+    const tmpDir = makeTmpLogDir();
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { records } = await loadRecords();
+      expect(records).toHaveLength(1);
+      expect(records[0].isSidechain).toBe(false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("loadRecords - 解析品質メタデータ", () => {
   let originalEnv;
 

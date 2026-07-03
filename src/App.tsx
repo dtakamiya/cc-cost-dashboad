@@ -13,6 +13,7 @@ import { DailyTrend } from "./components/DailyTrend";
 import { HourlyTrend } from "./components/HourlyTrend";
 import { OverheadAnalysis } from "./components/OverheadAnalysis";
 import { CacheEfficiency } from "./components/CacheEfficiency";
+import { SubagentBreakdown } from "./components/SubagentBreakdown";
 import { PeriodSelector } from "./components/PeriodSelector";
 import { ProjectSelector } from "./components/ProjectSelector";
 import { BillingBlocks } from "./components/BillingBlocks";
@@ -247,6 +248,7 @@ export default function App() {
           </section>
           <section id="section-optimization" ref={optimizationRef}>
             <CacheEfficiency s={displayData} />
+            <SubagentBreakdown s={displayData} />
             <OverheadAnalysis s={displayData} />
             <SavingsSimulator s={displayData} />
           </section>

@@ -17,7 +17,8 @@ const day = (
   date: string,
   total: number,
   projectTokens?: Record<string, number>,
-  projectCosts?: Record<string, number>
+  projectCosts?: Record<string, number>,
+  subagent?: { mainTokens: number; mainCost: number; subagentTokens: number; subagentCost: number }
 ): DailyCost => ({
   date,
   models: { "claude-opus-4-8": total },
@@ -29,6 +30,10 @@ const day = (
   inputTokens: 0,
   cacheReadTokens: 0,
   cacheReadRatio: 0,
+  mainTokens: subagent?.mainTokens ?? total * 1000,
+  mainCost: subagent?.mainCost ?? total,
+  subagentTokens: subagent?.subagentTokens ?? 0,
+  subagentCost: subagent?.subagentCost ?? 0,
 });
 
 const sess = (cwd: string, cost: number, tokens: number): SessionCost => ({
@@ -58,9 +63,15 @@ const summaryWithProjects = (): Summary => ({
     day(
       ymdAgo(3), 60,
       { "/home/u/projA": 40_000, "/home/u/projB": 20_000 },
-      { "/home/u/projA": 40, "/home/u/projB": 20 }
+      { "/home/u/projA": 40, "/home/u/projB": 20 },
+      { mainTokens: 45_000, mainCost: 45, subagentTokens: 15_000, subagentCost: 15 }
     ),
-    day(ymdAgo(1), 90, { "/home/u/projA": 90_000 }, { "/home/u/projA": 90 }),
+    day(
+      ymdAgo(1), 90,
+      { "/home/u/projA": 90_000 },
+      { "/home/u/projA": 90 },
+      { mainTokens: 72_000, mainCost: 72, subagentTokens: 18_000, subagentCost: 18 }
+    ),
   ],
   projects: [
     { cwd: "/home/u/projA", cost: 100, tokens: 130_000 },
@@ -93,6 +104,13 @@ const summaryWithProjects = (): Summary => ({
     sess("/home/u/projA", 100, 130_000),
     sess("/home/u/projB", 50, 20_000),
   ],
+  subagentStats: {
+    mainTokens: 117_000,
+    mainCost: 117,
+    subagentTokens: 33_000,
+    subagentCost: 33,
+    subagentRatio: 33_000 / 150_000,
+  },
 });
 
 // 全期間 cost=100、cacheStats は全期間値。7d で一部のみ残す。
@@ -102,7 +120,11 @@ const summary = (): Summary => ({
   tokenSplit: { input: 0, output: 0, cacheCreate: 100_000, cacheRead: 700_000 },
   costSplit: { input: 0, output: 0, cacheWrite: 40, cacheRead: 10 },
   models: [{ model: "claude-opus-4-8", cost: 100, tokens: 100_000, isFallback: false }],
-  daily: [day(ymdAgo(40), 80), day(ymdAgo(1), 20)], // 7d には 20 のみ入る
+  daily: [
+    // 意図的に costRatio(0.2)とは異なる sidechain 分布にする（旧40, 旧80/新20 の内訳を持つ）。
+    day(ymdAgo(40), 80, undefined, undefined, { mainTokens: 60_000, mainCost: 60, subagentTokens: 20_000, subagentCost: 20 }),
+    day(ymdAgo(1), 20, undefined, undefined, { mainTokens: 5_000, mainCost: 5, subagentTokens: 15_000, subagentCost: 15 }),
+  ], // 7d には ymdAgo(1) のみ入る
   projects: [],
   drivers: {
     topModel: { model: "claude-opus-4-8", cost: 100, tokens: 100_000, isFallback: false },
@@ -133,6 +155,13 @@ const summary = (): Summary => ({
     readSavings: 90,
     writeCost: 40,
     roiNet: 50,
+  },
+  subagentStats: {
+    mainTokens: 65_000,
+    mainCost: 65,
+    subagentTokens: 35_000,
+    subagentCost: 35,
+    subagentRatio: 35_000 / 100_000,
   },
   blocks: [],
   projection: null,
@@ -246,6 +275,48 @@ describe("filterSummary cacheStats", () => {
   });
 });
 
+describe("filterSummary subagentStats", () => {
+  it("7d は daily から正確に再合算する（costRatio 近似ではない）", () => {
+    const filtered = filterSummary(summary(), "7d");
+    // 7d に残るのは ymdAgo(1) のみ: mainTokens=5_000, subagentTokens=15_000
+    // costRatio(0.2)で全体(65_000/35_000)をスケールすると 13_000/7_000 になり、これとは異なる値になるはず
+    expect(filtered.subagentStats!.mainTokens).toBe(5_000);
+    expect(filtered.subagentStats!.subagentTokens).toBe(15_000);
+    expect(filtered.subagentStats!.mainCost).toBeCloseTo(5, 6);
+    expect(filtered.subagentStats!.subagentCost).toBeCloseTo(15, 6);
+  });
+
+  it("7d の subagentRatio はスケール後の絶対量から再計算される", () => {
+    const filtered = filterSummary(summary(), "7d");
+    // 15_000 / (5_000 + 15_000) = 0.75 （全体比 0.35 とは異なる）
+    expect(filtered.subagentStats!.subagentRatio).toBeCloseTo(0.75, 10);
+  });
+
+  it("all は subagentStats をそのまま保持する", () => {
+    const filtered = filterSummary(summary(), "all");
+    expect(filtered.subagentStats!.mainTokens).toBe(65_000);
+    expect(filtered.subagentStats!.subagentTokens).toBe(35_000);
+    expect(filtered.subagentStats!.subagentRatio).toBeCloseTo(0.35, 10);
+  });
+
+  it("subagentStats が undefined の場合、フィルタ後も undefined のままになる", () => {
+    const s = { ...summary(), subagentStats: undefined };
+    const filtered = filterSummary(s, "7d");
+    expect(filtered.subagentStats).toBeUndefined();
+  });
+
+  it("sidechain レコードが0件（main/subagentともに0）でも0除算せずsubagentRatio=0になる", () => {
+    const s: Summary = {
+      ...summary(),
+      daily: [day(ymdAgo(1), 10, undefined, undefined, { mainTokens: 0, mainCost: 0, subagentTokens: 0, subagentCost: 0 })],
+    };
+    const filtered = filterSummary(s, "7d");
+    expect(filtered.subagentStats!.mainTokens).toBe(0);
+    expect(filtered.subagentStats!.subagentTokens).toBe(0);
+    expect(filtered.subagentStats!.subagentRatio).toBe(0);
+  });
+});
+
 describe("filterSummary projects コスト集計", () => {
   it("projects の cost が日別 projectCosts の合計になる（0固定ではない）", () => {
     const result = filterSummary(summaryWithProjects(), "7d");
@@ -320,6 +391,25 @@ describe("filterSummaryByProject", () => {
     const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
     expect(result.projects).toHaveLength(1);
     expect(result.projects[0].cwd).toBe("/home/u/projA");
+  });
+
+  it("subagentStats がプロジェクト比率でスケールされた上で正確に合算される", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    // day0: ratio=40_000/60_000=2/3 → main 45_000*2/3=30_000, subagent 15_000*2/3=10_000
+    // day1: ratio=90_000/90_000=1   → main 72_000,          subagent 18_000
+    // 合計: main=102_000, subagent=28_000
+    expect(result.subagentStats!.mainTokens).toBeCloseTo(102_000, 5);
+    expect(result.subagentStats!.subagentTokens).toBeCloseTo(28_000, 5);
+    expect(result.subagentStats!.mainCost).toBeCloseTo(102, 5);
+    expect(result.subagentStats!.subagentCost).toBeCloseTo(28, 5);
+    // subagentRatio = 28_000 / (102_000 + 28_000)
+    expect(result.subagentStats!.subagentRatio).toBeCloseTo(28_000 / 130_000, 10);
+  });
+
+  it("subagentStats が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {
+    const s = { ...summaryWithProjects(), subagentStats: undefined };
+    const result = filterSummaryByProject(s, "/home/u/projA");
+    expect(result.subagentStats).toBeUndefined();
   });
 });
 

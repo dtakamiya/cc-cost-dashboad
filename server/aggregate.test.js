@@ -13,6 +13,7 @@ const rec = (over = {}) => ({
   cacheCreate1h: 0,
   cacheRead: 0,
   cache1h: false,
+  isSidechain: false,
   ...over,
 });
 
@@ -80,6 +81,67 @@ describe("aggregate cacheStats", () => {
       s.cacheStats.readSavings - s.cacheStats.writeCost,
       10
     );
+  });
+});
+
+describe("aggregate subagentStats (isSidechain 分離集計)", () => {
+  it("main/subagent が混在する場合、トークンが正しく分離される", () => {
+    const { subagentStats } = aggregate([
+      rec({ sessionId: "a", isSidechain: false, input: 1000 }),
+      rec({ sessionId: "a", isSidechain: true, input: 300 }),
+      rec({ sessionId: "a", isSidechain: true, input: 200 }),
+    ]);
+    expect(subagentStats.mainTokens).toBe(1000);
+    expect(subagentStats.subagentTokens).toBe(500);
+  });
+
+  it("全レコードが非sidechain（デフォルト）の場合、subagentTokens=0 かつ subagentRatio=0（NaNにならない）", () => {
+    const { subagentStats } = aggregate([
+      rec({ input: 1000 }),
+      rec({ input: 500 }),
+    ]);
+    expect(subagentStats.subagentTokens).toBe(0);
+    expect(subagentStats.subagentRatio).toBe(0);
+    expect(Number.isNaN(subagentStats.subagentRatio)).toBe(false);
+  });
+
+  it("レコードが0件でも subagentRatio が0（ゼロ除算にならない）", () => {
+    const { subagentStats } = aggregate([]);
+    expect(subagentStats.mainTokens).toBe(0);
+    expect(subagentStats.subagentTokens).toBe(0);
+    expect(subagentStats.subagentRatio).toBe(0);
+  });
+
+  it("コスト（mainCost/subagentCost）がモデル価格ベースで正しく分離される", () => {
+    const { subagentStats } = aggregate([
+      rec({ isSidechain: false, model: "claude-opus-4-8", input: 1000 }), // 1000 * 5/1e6 = 0.005
+      rec({ isSidechain: true, model: "claude-haiku-4-5", input: 2000 }), // 2000 * 1/1e6 = 0.002
+    ]);
+    expect(subagentStats.mainCost).toBeCloseTo(0.005, 10);
+    expect(subagentStats.subagentCost).toBeCloseTo(0.002, 10);
+  });
+
+  it("subagentRatio = subagentTokens / (mainTokens + subagentTokens)", () => {
+    const { subagentStats } = aggregate([
+      rec({ isSidechain: false, input: 700 }),
+      rec({ isSidechain: true, input: 300 }),
+    ]);
+    expect(subagentStats.subagentRatio).toBeCloseTo(0.3, 10);
+  });
+
+  it("daily[].mainTokens / daily[].subagentTokens が日別に正しく分離される", () => {
+    const { daily } = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", isSidechain: false, input: 400 }),
+      rec({ ts: "2026-06-15T11:00:00.000Z", isSidechain: true, input: 100 }),
+      rec({ ts: "2026-06-16T10:00:00.000Z", isSidechain: false, input: 900 }),
+      rec({ ts: "2026-06-16T11:00:00.000Z", isSidechain: true, input: 50 }),
+    ]);
+    const day1 = daily.find((d) => d.date === "2026-06-15");
+    const day2 = daily.find((d) => d.date === "2026-06-16");
+    expect(day1.mainTokens).toBe(400);
+    expect(day1.subagentTokens).toBe(100);
+    expect(day2.mainTokens).toBe(900);
+    expect(day2.subagentTokens).toBe(50);
   });
 });
 

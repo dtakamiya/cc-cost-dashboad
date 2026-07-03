@@ -56,6 +56,7 @@ function toRecord(obj) {
     cacheCreate1h,
     cacheRead: usage.cache_read_input_tokens || 0,
     cache1h,
+    isSidechain: obj.isSidechain === true,
   };
 }
 
