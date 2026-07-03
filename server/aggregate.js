@@ -163,6 +163,50 @@ function computeProjection(records) {
 }
 
 /**
+ * tool_use レコード配列をツール名ごとに集計する（calls 降順）。
+ * Agent は subagentType で、Skill は skill で分離集計。
+ * @param {object[]} toolUseRecords - tool_use レコード配列
+ * @returns {object[]} ツール別サマリ（calls 降順）
+ */
+export function computeToolUsage(toolUseRecords = []) {
+  if (!toolUseRecords.length) return [];
+
+  const map = new Map(); // key (e.g. "Agent:Explore") -> { toolName, key, name, calls, sessions: Set }
+  const sessionSets = new Map(); // key -> Set of sessionIds
+
+  for (const r of toolUseRecords) {
+    let key, name;
+
+    if (r.toolName === "Agent") {
+      key = `Agent:${r.subagentType || "(unknown)"}`;
+      name = r.subagentType || "(unknown)";
+    } else if (r.toolName === "Skill") {
+      key = `Skill:${r.skill || "(unknown)"}`;
+      name = r.skill || "(unknown)";
+    } else {
+      continue;
+    }
+
+    if (!map.has(key)) {
+      map.set(key, {
+        toolName: r.toolName,
+        key,
+        name,
+        calls: 0,
+      });
+      sessionSets.set(key, new Set());
+    }
+
+    map.get(key).calls += 1;
+    sessionSets.get(key).add(r.sessionId);
+  }
+
+  return [...map.values()]
+    .map((entry) => ({ ...entry, sessions: sessionSets.get(entry.key).size }))
+    .sort((a, b) => b.calls - a.calls);
+}
+
+/**
  * レコード配列からセッション別サマリを生成する（コスト降順）。
  * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
  * @param {object[]} records - 正規化レコード配列
@@ -351,11 +395,12 @@ export function filterRecordsByPeriod(records, period) {
 /**
  * 正規化レコード配列からダッシュボード用サマリを生成する。
  * @param {object[]} records - 正規化レコード配列
- * @param {{ sessionLimit?: number, compactions?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
+ * @param {{ sessionLimit?: number, compactions?: object[], toolUseRecords?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
  *   compactions 省略時はセッションの compactionCount が全て 0 になる。
+ *   toolUseRecords 省略時は byTool が [] になる。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
-export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [] } = {}) {
+export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [], toolUseRecords = [] } = {}) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -569,5 +614,6 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     bySession: computeSessions(records, compactions, { limit: sessionLimit }),
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
+    byTool: computeToolUsage(toolUseRecords),
   };
 }
