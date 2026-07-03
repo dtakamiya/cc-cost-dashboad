@@ -1,6 +1,12 @@
 import { useState, useRef } from "react";
 import type { Summary, SessionCost, SessionTurn } from "../api";
-import { isBloatedSession, fetchSessionTurns, filterSessions } from "../api";
+import {
+  isBloatedSession,
+  fetchSessionTurns,
+  filterSessions,
+  sessionEfficiencyScore,
+  sessionEfficiencyColor,
+} from "../api";
 import { usd, compact } from "../format";
 import { buildClearCommand } from "../clearCommand";
 
@@ -116,13 +122,25 @@ export function SessionBreakdown({ s }: { s: Summary }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [turnsData, setTurnsData] = useState<SessionTurn[] | null>(null);
   const [turnsLoading, setTurnsLoading] = useState(false);
+  const [efficiencySort, setEfficiencySort] = useState<"asc" | "desc" | null>(null);
   // ref でインフライトリクエストのsessionIdを追跡し、古いレスポンスを破棄する
   const requestedIdRef = useRef<string | null>(null);
 
   if (!s.bySession || s.bySession.length === 0) return null;
 
   const filtered = filterSessions(s.bySession, cwdFilter, modelFilter);
-  const rows = filtered.slice(0, 15);
+  const sorted = efficiencySort
+    ? [...filtered].sort((a, b) => {
+        const scoreA = sessionEfficiencyScore(a) ?? -1;
+        const scoreB = sessionEfficiencyScore(b) ?? -1;
+        return efficiencySort === "asc" ? scoreA - scoreB : scoreB - scoreA;
+      })
+    : filtered;
+  const rows = sorted.slice(0, 15);
+
+  const handleEfficiencySort = () => {
+    setEfficiencySort((prev) => (prev === "desc" ? "asc" : "desc"));
+  };
   const bloatedCount = s.bySession.filter((sess) => isBloatedSession(sess)).length;
 
   const handleToggle = async (sessionId: string) => {
@@ -204,6 +222,26 @@ export function SessionBreakdown({ s }: { s: Summary }) {
             <th>コスト</th>
             <th>メッセージ</th>
             <th>平均コンテキスト</th>
+            <th
+              onClick={handleEfficiencySort}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleEfficiencySort();
+                }
+              }}
+              role="columnheader"
+              tabIndex={0}
+              aria-sort={
+                efficiencySort === "asc" ? "ascending" : efficiencySort === "desc" ? "descending" : "none"
+              }
+              style={{ cursor: "pointer", userSelect: "none" }}
+              title="クリックでソート"
+            >
+              キャッシュ活用率
+              {efficiencySort === "asc" && " ▲"}
+              {efficiencySort === "desc" && " ▼"}
+            </th>
             <th>期間</th>
           </tr>
         </thead>
@@ -211,6 +249,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
           {rows.map((sess) => {
             const bloated = isBloatedSession(sess);
             const isExpanded = expandedId === sess.sessionId;
+            const efficiencyScore = sessionEfficiencyScore(sess);
             return (
               <>
                 <tr
@@ -249,12 +288,15 @@ export function SessionBreakdown({ s }: { s: Summary }) {
                   <td>{usd(sess.cost)}</td>
                   <td>{sess.messages.toLocaleString("en-US")}</td>
                   <td>{compact(Math.round(sess.avgContextPerMsg))}</td>
+                  <td style={{ color: sessionEfficiencyColor(efficiencyScore) }}>
+                    {efficiencyScore === null ? "-" : `${efficiencyScore}%`}
+                  </td>
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{periodLabel(sess)}</td>
                 </tr>
                 {isExpanded && (
                   <tr key={`${sess.sessionId}-turns`}>
                     <td
-                      colSpan={5}
+                      colSpan={6}
                       style={{
                         padding: 0,
                         background: "var(--surface, #f9fafb)",
