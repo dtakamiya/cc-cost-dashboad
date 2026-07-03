@@ -157,6 +157,42 @@ describe("SessionBreakdown", () => {
     expect(detailCell).toHaveAttribute("colspan", "7");
   });
 
+  it("16件以上のセッションがある場合「さらに表示」ボタンが表示される", () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      makeSession({ sessionId: `session-${i}`, cwd: `/home/u/proj-${i}` })
+    );
+    const s = makeSummary(sessions);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByRole("button", { name: /さらに表示/ })).toBeInTheDocument();
+    expect(screen.getByText(/全20件/)).toBeInTheDocument();
+  });
+
+  it("15件以下の場合はボタンが表示されない", () => {
+    const sessions = Array.from({ length: 15 }, (_, i) =>
+      makeSession({ sessionId: `session-${i}`, cwd: `/home/u/proj-${i}` })
+    );
+    const s = makeSummary(sessions);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.queryByRole("button", { name: /さらに表示/ })).not.toBeInTheDocument();
+  });
+
+  it("「さらに表示」クリックで全件表示される", () => {
+    const sessions = Array.from({ length: 20 }, (_, i) =>
+      makeSession({ sessionId: `session-${i}`, cwd: `/home/u/proj-${i}` })
+    );
+    const s = makeSummary(sessions);
+    render(<SessionBreakdown s={s} />);
+
+    // 初期表示は15件
+    expect(screen.getByText("proj-14")).toBeInTheDocument();
+    expect(screen.queryByText("proj-19")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /さらに表示/ }));
+
+    expect(screen.getByText("proj-19")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /さらに表示/ })).not.toBeInTheDocument();
+  });
+
   it("clear コピーボタンをクリックするとコピー済みアイコン(Icon コンポーネント)が表示される", async () => {
     // navigator.clipboard.writeText をモック
     Object.assign(navigator, {
