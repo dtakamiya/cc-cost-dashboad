@@ -295,6 +295,23 @@ describe("resolveCheapestHaikuRate", () => {
     ];
     expect(resolveCheapestHaikuRate(models)).toBeCloseTo(10, 6);
   });
+
+  it("価格未登録（isFallback）のHaikuは候補から除外される", () => {
+    const models: ModelCost[] = [
+      // 単価: 0.1/100_000*1e6 = 1（フォールバック価格による見かけ上の最安値、除外されるべき）
+      { model: "claude-haiku-unknown", cost: 0.1, tokens: 100_000, isFallback: true },
+      // 単価: 1/100_000*1e6 = 10（実価格）
+      { model: "claude-haiku-4-5", cost: 1, tokens: 100_000, isFallback: false },
+    ];
+    expect(resolveCheapestHaikuRate(models)).toBeCloseTo(10, 6);
+  });
+
+  it("Haiku候補が全てisFallbackの場合nullを返す", () => {
+    const models: ModelCost[] = [
+      { model: "claude-haiku-unknown", cost: 0.1, tokens: 100_000, isFallback: true },
+    ];
+    expect(resolveCheapestHaikuRate(models)).toBeNull();
+  });
 });
 
 describe("calcHaikuMigrationSaving", () => {

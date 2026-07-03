@@ -87,10 +87,10 @@ export function simulateClearSavings(s: Summary, clearRate: number): number {
 // ModelBreakdown の「Haikuへ移行した場合」試算に使う固定移行率。
 export const HAIKU_MIGRATION_SHIFT_RATE = 0.3;
 
-/** モデル一覧からHaiku系モデル（tokens>0）の中で最安の実績単価（USD/MTok）を返す。該当なしはnull。 */
+/** モデル一覧からHaiku系モデル（tokens>0、価格未登録のフォールバック行は除外）の中で最安の実績単価（USD/MTok）を返す。該当なしはnull。 */
 export function resolveCheapestHaikuRate(models: ModelCost[]): number | null {
   const haikuRates = models
-    .filter((m) => /haiku/i.test(m.model) && m.tokens > 0)
+    .filter((m) => /haiku/i.test(m.model) && m.tokens > 0 && !m.isFallback)
     .map((m) => calcEffectiveRate(m.cost, m.tokens));
   return haikuRates.length > 0 ? Math.min(...haikuRates) : null;
 }
