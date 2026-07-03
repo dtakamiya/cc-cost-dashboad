@@ -117,6 +117,8 @@ function TurnsDetail({ turns, loading }: { turns: SessionTurn[] | null; loading:
   );
 }
 
+const VISIBLE_SESSION_LIMIT = 15;
+
 export function SessionBreakdown({ s }: { s: Summary }) {
   const [cwdFilter, setCwdFilter] = useState("");
   const [modelFilter, setModelFilter] = useState("");
@@ -124,6 +126,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
   const [turnsData, setTurnsData] = useState<SessionTurn[] | null>(null);
   const [turnsLoading, setTurnsLoading] = useState(false);
   const [efficiencySort, setEfficiencySort] = useState<"asc" | "desc" | null>(null);
+  const [showAll, setShowAll] = useState(false);
   // ref でインフライトリクエストのsessionIdを追跡し、古いレスポンスを破棄する
   const requestedIdRef = useRef<string | null>(null);
 
@@ -137,7 +140,8 @@ export function SessionBreakdown({ s }: { s: Summary }) {
         return efficiencySort === "asc" ? scoreA - scoreB : scoreB - scoreA;
       })
     : filtered;
-  const rows = sorted.slice(0, 15);
+  const rows = showAll ? sorted : sorted.slice(0, VISIBLE_SESSION_LIMIT);
+  const hasMore = sorted.length > VISIBLE_SESSION_LIMIT;
 
   const handleEfficiencySort = () => {
     setEfficiencySort((prev) => (prev === "desc" ? "asc" : "desc"));
@@ -329,6 +333,24 @@ export function SessionBreakdown({ s }: { s: Summary }) {
           })}
         </tbody>
       </table>
+      {hasMore && (
+        <div style={{ textAlign: "center", marginTop: 10 }}>
+          <button
+            onClick={() => setShowAll(true)}
+            style={{
+              padding: "6px 16px",
+              fontSize: 13,
+              cursor: "pointer",
+              background: "var(--elevated, #f0f0f6)",
+              color: "var(--text)",
+              border: "1px solid var(--border, #e5e7eb)",
+              borderRadius: 6,
+            }}
+          >
+            さらに表示（全{sorted.length}件）
+          </button>
+        </div>
+      )}
     </section>
   );
 }

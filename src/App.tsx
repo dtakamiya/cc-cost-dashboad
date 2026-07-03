@@ -24,6 +24,7 @@ import { ToolBreakdown } from "./components/ToolBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
 import { ContextBudget } from "./components/ContextBudget";
+import { ScrollToTopButton } from "./components/ScrollToTopButton";
 
 export default function App() {
   const [period, setPeriod] = useState<Period>('7d');
@@ -49,6 +50,19 @@ export default function App() {
   const sessionRef = useRef<HTMLDivElement>(null);
   const contextBudgetRef = useRef<HTMLDivElement>(null);
   const optimizationRef = useRef<HTMLDivElement>(null);
+  const topbarRef = useRef<HTMLElement>(null);
+
+  const sectionRefs = useMemo<Record<SectionId, React.RefObject<HTMLDivElement>>>(
+    () => ({
+      summary: summaryRef,
+      drivers: driversRef,
+      project: projectRef,
+      session: sessionRef,
+      contextBudget: contextBudgetRef,
+      optimization: optimizationRef,
+    }),
+    []
+  );
 
   const canCompare = !isDateRange(period) && period !== 'all';
 
@@ -104,24 +118,54 @@ export default function App() {
   const burn = data ? activeBurnWarning(data.blocks) : null;
 
   const handleSectionClick = (id: SectionId) => {
-    const refs: Record<SectionId, React.RefObject<HTMLDivElement>> = {
-      summary: summaryRef,
-      drivers: driversRef,
-      project: projectRef,
-      session: sessionRef,
-      contextBudget: contextBudgetRef,
-      optimization: optimizationRef,
-    };
-    const ref = refs[id];
+    const ref = sectionRefs[id];
     if (ref?.current) {
       ref.current.scrollIntoView({ behavior: 'smooth' });
       setActiveSection(id);
     }
   };
 
+  // スクロールスパイ: ビューポート内に入ったセクションを自動でハイライトする
+  useEffect(() => {
+    if (!displayData) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (!visible) return;
+        const id = visible.target.id.replace(/^section-/, "") as SectionId;
+        setActiveSection(id);
+      },
+      { rootMargin: "-120px 0px -60% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+    );
+
+    Object.values(sectionRefs).forEach((ref) => {
+      if (ref.current) observer.observe(ref.current);
+    });
+
+    return () => observer.disconnect();
+  }, [displayData, sectionRefs]);
+
+  // topbar の実測高さを section-nav の sticky オフセットへ反映する（折り返しで高さが変わっても追従させる）
+  useEffect(() => {
+    const el = topbarRef.current;
+    if (!el) return;
+
+    const updateHeight = () => {
+      document.documentElement.style.setProperty("--topbar-height", `${el.offsetHeight}px`);
+    };
+    updateHeight();
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="app">
-      <header className="topbar">
+      <header className="topbar" ref={topbarRef}>
         <div className="topbar-row-1">
           <div className="topbar-title">
             <h1>Claude Code コストダッシュボード</h1>
@@ -266,6 +310,7 @@ export default function App() {
           </footer>
         </>
       )}
+      <ScrollToTopButton />
     </div>
   );
 }

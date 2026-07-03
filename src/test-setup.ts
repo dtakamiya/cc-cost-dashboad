@@ -22,6 +22,19 @@ globalThis.ResizeObserver = class ResizeObserver {
   disconnect() {}
 };
 
+// jsdom は IntersectionObserver 未実装のため、スクロールスパイ等のテストで落ちないようスタブを用意する
+globalThis.IntersectionObserver = class IntersectionObserver {
+  root = null;
+  rootMargin = "";
+  thresholds: ReadonlyArray<number> = [];
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+} as unknown as typeof IntersectionObserver;
+
 Object.defineProperty(globalThis, "matchMedia", {
   value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
