@@ -6,6 +6,7 @@ import {
   OVERHEAD_TOKEN_THRESHOLD,
   OVERHEAD_TARGET_TOKENS,
   OUTPUT_COST_RATIO_THRESHOLD,
+  IDLE_REWRITE_COST_THRESHOLD,
 } from "./advisor";
 import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
 
@@ -310,6 +311,61 @@ describe("buildRecommendations - frequent-compaction", () => {
 
   it("該当セッションが無ければ frequent-compaction は発火しない", () => {
     const item = buildRecommendations(baseSummary()).items.find((i) => i.id === "frequent-compaction");
+    expect(item).toBeUndefined();
+  });
+});
+
+describe("buildRecommendations - idle-cache-expiry", () => {
+  it("cacheGapStats が未提供のとき idle-cache-expiry は生成されない", () => {
+    const s = baseSummary({ cacheGapStats: undefined });
+    const item = buildRecommendations(s).items.find((i) => i.id === "idle-cache-expiry");
+    expect(item).toBeUndefined();
+  });
+
+  it("reWriteCost が閾値以下のとき idle-cache-expiry は生成されない", () => {
+    const s = baseSummary({
+      cacheGapStats: {
+        expiredGapCount: 1,
+        reWriteTokens: 10,
+        reWriteCost: IDLE_REWRITE_COST_THRESHOLD,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "idle-cache-expiry");
+    expect(item).toBeUndefined();
+  });
+
+  it("reWriteCost が閾値超のとき idle-cache-expiry が medium priority で生成され、estMonthlySavings が月換算される", () => {
+    const s = baseSummary({
+      totals: { cost: 100, tokens: 1_000_000, sessions: 5, messages: 50, from: "2026-06-24", to: "2026-06-30" },
+      cacheGapStats: {
+        expiredGapCount: 5,
+        reWriteTokens: 50_000,
+        reWriteCost: IDLE_REWRITE_COST_THRESHOLD + 1,
+        affectedSessions: ["s1", "s2"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "idle-cache-expiry");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+    const periodDays = 7;
+    const monthlyFactor = 30 / periodDays;
+    expect(item!.estMonthlySavings).toBeCloseTo(
+      (IDLE_REWRITE_COST_THRESHOLD + 1) * monthlyFactor,
+      6
+    );
+  });
+
+  it("billingMode='subscription' のとき idle-cache-expiry は除外される", () => {
+    const s = baseSummary({
+      cacheGapStats: {
+        expiredGapCount: 5,
+        reWriteTokens: 50_000,
+        reWriteCost: IDLE_REWRITE_COST_THRESHOLD + 1,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "idle-cache-expiry");
     expect(item).toBeUndefined();
   });
 });

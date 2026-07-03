@@ -11,6 +11,7 @@ export function CacheEfficiency({ s }: { s: Summary }) {
   const cs = s.cacheStats;
   // 古い API レスポンス（cacheStats 未提供）でもダッシュボード全体を巻き込まないよう描画をスキップ。
   if (!cs) return null;
+  const gs = s.cacheGapStats;
   const roiPositive = cs.roiNet >= 0;
   const roiColor = roiPositive ? "var(--green, #22c55e)" : "var(--red, #ef4444)";
   const totalCreate = cs.create1hTokens + cs.create5mTokens;
@@ -88,6 +89,38 @@ export function CacheEfficiency({ s }: { s: Summary }) {
             </tfoot>
           </table>
         </div>
+
+        {gs && gs.expiredGapCount > 0 && (
+          <div className="driver">
+            <div className="driver-title">アイドル失効による再書き込み</div>
+            <div className="driver-body" style={{ color: "var(--yellow, #eab308)" }}>
+              {gs.expiredGapCount} 回
+            </div>
+            <div className="driver-hint">
+              セッション内で5分キャッシュTTLを超える中断があると、次のメッセージでキャッシュが失効し、
+              cache read で済むはずの文脈が cache creation として再課金される。
+              作業を連続化するか、重要なコンテキストは1h TTLで保護する。
+            </div>
+            <table className="tbl" style={{ marginTop: 10 }}>
+              <tbody>
+                <tr>
+                  <td>失効ギャップ発生回数</td>
+                  <td style={{ textAlign: "right" }}>{gs.expiredGapCount} 回</td>
+                </tr>
+                <tr>
+                  <td>再書き込みトークン</td>
+                  <td style={{ textAlign: "right" }}>{tok(gs.reWriteTokens)}</td>
+                </tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>推定超過コスト</td>
+                  <td style={{ textAlign: "right", color: "var(--red, #ef4444)" }}>
+                    −{usd(gs.reWriteCost)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </section>
   );

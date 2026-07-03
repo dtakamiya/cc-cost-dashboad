@@ -79,6 +79,14 @@ export interface CacheStats {
   roiNet: number;         // readSavings − writeCost（負なら書き込み未回収）
 }
 
+// セッション内アイドルギャップによる5分キャッシュ失効（無駄な再書き込み）の集計。
+export interface CacheGapStats {
+  expiredGapCount: number;  // 失効ギャップ（5分TTL超の中断）の発生回数
+  reWriteTokens: number;    // 失効直後に再書き込みされたトークン数
+  reWriteCost: number;      // 再書き込みによる超過コスト（USD）
+  affectedSessions: string[]; // 失効ギャップを持つセッションIDの重複なし配列
+}
+
 // サブエージェント（isSidechain）委譲のトークン/コスト内訳。デリゲーションROI判断用。
 export interface SubagentStats {
   mainTokens: number;
@@ -135,6 +143,7 @@ export interface Summary {
   };
   warnings: { fallbackModels: string[] };
   cacheStats?: CacheStats;
+  cacheGapStats?: CacheGapStats;
   subagentStats?: SubagentStats;
   source?: {
     fileCount: number;

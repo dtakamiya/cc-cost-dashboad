@@ -6,6 +6,8 @@ const BLOCK_DURATION_MS = 5 * 60 * 60 * 1000; // 5時間
 const BURN_WINDOW_MS = 15 * 60 * 1000; // スライディングウィンドウ: 15分
 const BURN_WINDOW_MIN = 15;
 
+export const CACHE_5M_TTL_MS = 300_000; // 既定キャッシュTTL（5分）。これを超える中断でキャッシュが失効する。
+
 /**
  * レコード配列から 5 時間課金ブロック配列を生成する（新しい順、最大 20 件）。
  * @param {object[]} records - 正規化レコード配列
@@ -230,6 +232,55 @@ function computeSessions(records, compactions = [], { limit } = {}) {
     .sort((a, b) => b.cost - a.cost);
 
   return limit === undefined ? sorted : sorted.slice(0, limit);
+}
+
+/**
+ * セッション内アイドルギャップによる5分キャッシュ失効（無駄な再書き込み）を検出・定量化する。
+ * 同一セッション内で連続レコード間のギャップが CACHE_5M_TTL_MS を超えると、
+ * 次のメッセージでプロンプトキャッシュが失効し、cache read で済むはずの文脈が
+ * cache creation として再課金される。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ expiredGapCount: number, reWriteTokens: number, reWriteCost: number, affectedSessions: string[] }}
+ */
+export function computeCacheGapStats(records) {
+  const bySession = new Map(); // sessionId -> レコード配列
+
+  for (const r of records) {
+    if (r.sessionId === "(unknown)" || !r.ts) continue;
+    if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
+    bySession.get(r.sessionId).push(r);
+  }
+
+  let expiredGapCount = 0;
+  let reWriteTokens = 0;
+  let reWriteCost = 0;
+  const affectedSessions = new Set();
+
+  for (const [sessionId, recs] of bySession) {
+    const sorted = [...recs].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      const gapMs = new Date(cur.ts) - new Date(prev.ts);
+      if (gapMs <= CACHE_5M_TTL_MS) continue;
+
+      expiredGapCount++;
+      affectedSessions.add(sessionId);
+
+      if (cur.cacheCreate > 0 && cur.cacheCreate >= cur.cacheRead) {
+        reWriteTokens += cur.cacheCreate;
+        reWriteCost += costOf(cur.model, cur).cacheWrite;
+      }
+    }
+  }
+
+  return {
+    expiredGapCount,
+    reWriteTokens,
+    reWriteCost,
+    affectedSessions: [...affectedSessions],
+  };
 }
 
 /**
@@ -515,5 +566,6 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     activity: computeActivity(records),
     bySession: computeSessions(records, compactions, { limit: sessionLimit }),
     hourly: computeHourly(records),
+    cacheGapStats: computeCacheGapStats(records),
   };
 }
