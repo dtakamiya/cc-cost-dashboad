@@ -54,6 +54,7 @@ function makeSession(overrides: Partial<SessionCost> = {}): SessionCost {
     lastTs: "2026-06-15T12:00:00.000Z",
     avgContextPerMsg: 1_700,
     topModel: { model: "claude-opus-4-8", cost: 1.5 },
+    compactionCount: 0,
     ...overrides,
   };
 }
@@ -116,6 +117,43 @@ describe("SessionBreakdown", () => {
     await waitFor(() => {
       expect(screen.getByText(/2 ターン/)).toBeInTheDocument();
     });
+  });
+
+  it("compactionCount がセルに表示される", () => {
+    const s = makeSummary([makeSession({ compactionCount: 2 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("2")).toBeInTheDocument();
+  });
+
+  it("compactionCount が閾値(3)以上のとき「多発」バッジが表示される", () => {
+    const s = makeSummary([makeSession({ compactionCount: 3 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("多発")).toBeInTheDocument();
+  });
+
+  it("compactionCount が閾値未満のとき「多発」バッジは表示されない", () => {
+    const s = makeSummary([makeSession({ compactionCount: 2 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.queryByText("多発")).not.toBeInTheDocument();
+  });
+
+  it("圧縮マーカーが無い（compactionCount: 0）セッションでもエラーなく0として表示される", () => {
+    const s = makeSummary([makeSession({ compactionCount: 0 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("展開行の colSpan が圧縮列追加後も正しく全列を覆う", async () => {
+    vi.mocked(fetchSessionTurns).mockResolvedValue([]);
+    const s = makeSummary([makeSession()]);
+    render(<SessionBreakdown s={s} />);
+    const expandBtn = screen.getByRole("button", { name: "詳細を展開" });
+    fireEvent.click(expandBtn);
+    await waitFor(() => {
+      expect(screen.getByText(/ターンデータなし/)).toBeInTheDocument();
+    });
+    const detailCell = screen.getByText(/ターンデータなし/).closest("td");
+    expect(detailCell).toHaveAttribute("colspan", "7");
   });
 
   it("複数セッションがコスト降順で表示される", () => {

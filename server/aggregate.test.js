@@ -627,6 +627,51 @@ describe("daily cacheReadRatio", () => {
   });
 });
 
+// ─── computeSessions: compactionCount ────────────────────────────────────
+
+describe("aggregate: compactionCount", () => {
+  it("compactions 未指定時、compactionCount は 0", () => {
+    const { bySession } = aggregate([rec({ sessionId: "s1", input: 100 })]);
+    expect(bySession[0].compactionCount).toBe(0);
+  });
+
+  it("compactions が空配列でも compactionCount は 0", () => {
+    const { bySession } = aggregate([rec({ sessionId: "s1", input: 100 })], { compactions: [] });
+    expect(bySession[0].compactionCount).toBe(0);
+  });
+
+  it("該当セッションの圧縮マーカー件数が compactionCount に反映される", () => {
+    const { bySession } = aggregate(
+      [rec({ sessionId: "s1", input: 100 })],
+      { compactions: [{ sessionId: "s1" }, { sessionId: "s1" }, { sessionId: "s1" }] }
+    );
+    expect(bySession[0].compactionCount).toBe(3);
+  });
+
+  it("複数セッションの圧縮マーカーがセッションごとに正しく振り分けられる", () => {
+    const { bySession } = aggregate(
+      [
+        rec({ sessionId: "a", input: 1_000_000 }),
+        rec({ sessionId: "b", input: 100 }),
+      ],
+      { compactions: [{ sessionId: "a" }, { sessionId: "b" }, { sessionId: "b" }] }
+    );
+    const a = bySession.find((s) => s.sessionId === "a");
+    const b = bySession.find((s) => s.sessionId === "b");
+    expect(a.compactionCount).toBe(1);
+    expect(b.compactionCount).toBe(2);
+  });
+
+  it("records に無いセッションの圧縮マーカーは無視される（該当セッションが bySession に存在しないため）", () => {
+    const { bySession } = aggregate(
+      [rec({ sessionId: "s1", input: 100 })],
+      { compactions: [{ sessionId: "unknown-session" }] }
+    );
+    expect(bySession).toHaveLength(1);
+    expect(bySession[0].compactionCount).toBe(0);
+  });
+});
+
 // ─── filterRecordsByPeriod ───────────────────────────────────────────────
 
 describe("filterRecordsByPeriod", () => {

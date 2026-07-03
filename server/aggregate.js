@@ -163,10 +163,16 @@ function computeProjection(records) {
  * レコード配列からセッション別サマリを生成する（コスト降順）。
  * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
  * @param {object[]} records - 正規化レコード配列
+ * @param {object[]} [compactions] - 圧縮マーカー配列（{ sessionId }）。usage行とは別経路で集計する。
  * @param {{ limit?: number }} [options] - limit 指定時は上位N件（コスト降順）にスライスする。省略時は全件返す。
  * @returns {object[]} セッション別サマリ（コスト降順）
  */
-function computeSessions(records, { limit } = {}) {
+function computeSessions(records, compactions = [], { limit } = {}) {
+  const compactionCounts = new Map(); // sessionId -> 圧縮回数
+  for (const c of compactions) {
+    compactionCounts.set(c.sessionId, (compactionCounts.get(c.sessionId) || 0) + 1);
+  }
+
   const map = new Map(); // sessionId -> 集計
 
   for (const r of records) {
@@ -218,6 +224,7 @@ function computeSessions(records, { limit } = {}) {
         ...rest,
         avgContextPerMsg: s.messages > 0 ? (s.cacheRead + s.input) / s.messages : 0,
         topModel: topEntry ? { model: topEntry[0], cost: topEntry[1] } : null,
+        compactionCount: compactionCounts.get(s.sessionId) || 0,
       };
     })
     .sort((a, b) => b.cost - a.cost);
@@ -291,10 +298,11 @@ export function filterRecordsByPeriod(records, period) {
 /**
  * 正規化レコード配列からダッシュボード用サマリを生成する。
  * @param {object[]} records - 正規化レコード配列
- * @param {{ sessionLimit?: number }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
+ * @param {{ sessionLimit?: number, compactions?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
+ *   compactions 省略時はセッションの compactionCount が全て 0 になる。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
-export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}) {
+export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [] } = {}) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -505,7 +513,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
-    bySession: computeSessions(records, { limit: sessionLimit }),
+    bySession: computeSessions(records, compactions, { limit: sessionLimit }),
     hourly: computeHourly(records),
   };
 }

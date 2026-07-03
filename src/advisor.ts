@@ -1,4 +1,4 @@
-import { isBloatedSession, type BillingMode, type Summary } from "./api";
+import { isBloatedSession, isFrequentlyCompactedSession, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -279,6 +279,20 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       detail: `1h キャッシュ書き込みに約 ${cs.premium1h.toFixed(2)} USD の超過コスト（5m 比）。読み込み回収が不足。`,
       action: "短命セッションや再利用の少ない作業では 1h キャッシュ指定を避け、5m 既定に寄せる。",
       estMonthlySavings: Math.max(0, cs.premium1h * monthlyFactor),
+    });
+  }
+
+  // 6b. コンテキスト圧縮が多発 → 先回りして /compact（medium, 定性）
+  const frequentlyCompacted = s.bySession.filter((sess) => isFrequentlyCompactedSession(sess));
+  if (frequentlyCompacted.length > 0) {
+    const cwds = [...new Set(frequentlyCompacted.map((b) => shortCwd(b.cwd)))].slice(0, 3).join(", ");
+    items.push({
+      id: "frequent-compaction",
+      priority: "medium",
+      title: "頻繁なコンテキスト圧縮が発生している",
+      detail: `${frequentlyCompacted.length} 件のセッションで自動コンテキスト圧縮（compaction）が繰り返し発生（${cwds} ほか）。`,
+      action: "区切りの良いタイミングで先回りして /compact を実行し、意図しない圧縮によるコンテキスト欠落を防ぐ。",
+      estMonthlySavings: 0,
     });
   }
 

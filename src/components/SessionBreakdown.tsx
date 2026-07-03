@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import type { Summary, SessionCost, SessionTurn } from "../api";
 import {
   isBloatedSession,
+  isFrequentlyCompactedSession,
   fetchSessionTurns,
   filterSessions,
   sessionEfficiencyScore,
@@ -242,6 +243,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
               {efficiencySort === "asc" && " ▲"}
               {efficiencySort === "desc" && " ▼"}
             </th>
+            <th>圧縮</th>
             <th>期間</th>
           </tr>
         </thead>
@@ -250,6 +252,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
             const bloated = isBloatedSession(sess);
             const isExpanded = expandedId === sess.sessionId;
             const efficiencyScore = sessionEfficiencyScore(sess);
+            const frequentlyCompacted = isFrequentlyCompactedSession(sess);
             return (
               <>
                 <tr
@@ -291,12 +294,26 @@ export function SessionBreakdown({ s }: { s: Summary }) {
                   <td style={{ color: sessionEfficiencyColor(efficiencyScore) }}>
                     {efficiencyScore === null ? "-" : `${efficiencyScore}%`}
                   </td>
+                  <td
+                    style={{
+                      color: frequentlyCompacted ? "var(--danger)" : undefined,
+                      fontWeight: frequentlyCompacted ? "bold" : undefined,
+                    }}
+                    title={
+                      frequentlyCompacted
+                        ? "コンテキスト圧縮が多発しています。区切りの良いタイミングで先回りして /compact を実行することを推奨します。"
+                        : undefined
+                    }
+                  >
+                    {sess.compactionCount}
+                    {frequentlyCompacted && <span className="badge">多発</span>}
+                  </td>
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{periodLabel(sess)}</td>
                 </tr>
                 {isExpanded && (
                   <tr key={`${sess.sessionId}-turns`}>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         padding: 0,
                         background: "var(--surface, #f9fafb)",

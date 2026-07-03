@@ -23,6 +23,7 @@ const session = (over: Partial<SessionCost>): SessionCost => ({
   lastTs: "2026-06-01T01:00:00.000Z",
   avgContextPerMsg: 0,
   topModel: null,
+  compactionCount: 0,
   ...over,
 });
 
@@ -288,6 +289,30 @@ describe("buildRecommendations", () => {
     const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "bloated-sessions");
     expect(item).toBeDefined();
   });
+
+describe("buildRecommendations - frequent-compaction", () => {
+  it("compactionCount が閾値(3)以上のセッションがあれば frequent-compaction 推奨を出す", () => {
+    const s = baseSummary({
+      bySession: [session({ sessionId: "compacted", compactionCount: 3 })],
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "frequent-compaction");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+  });
+
+  it("compactionCount が閾値未満なら frequent-compaction は発火しない", () => {
+    const s = baseSummary({
+      bySession: [session({ sessionId: "ok", compactionCount: 2 })],
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "frequent-compaction");
+    expect(item).toBeUndefined();
+  });
+
+  it("該当セッションが無ければ frequent-compaction は発火しない", () => {
+    const item = buildRecommendations(baseSummary()).items.find((i) => i.id === "frequent-compaction");
+    expect(item).toBeUndefined();
+  });
+});
 
 describe("calculateOverheadStatus", () => {
   it("現在値が目標以下なら good を返す", () => {
