@@ -1,12 +1,17 @@
-import type { Summary } from "../api";
+import type { BillingMode, Summary } from "../api";
 import { buildRecommendations, type Priority } from "../advisor";
 import { usd } from "../format";
 
 const PRIORITY_LABEL: Record<Priority, string> = { high: "高", medium: "中", low: "低" };
 const PRIORITY_TONE: Record<Priority, string> = { high: "warn", medium: "warn", low: "" };
 
-export function OptimizationAdvisor({ s }: { s: Summary }) {
-  const { items, totalEstMonthlySavings } = buildRecommendations(s);
+interface OptimizationAdvisorProps {
+  s: Summary;
+  billingMode?: BillingMode;
+}
+
+export function OptimizationAdvisor({ s, billingMode = "api" }: OptimizationAdvisorProps) {
+  const { items, totalEstMonthlySavings } = buildRecommendations(s, billingMode);
 
   if (items.length === 0) {
     return (
@@ -26,7 +31,9 @@ export function OptimizationAdvisor({ s }: { s: Summary }) {
       {totalEstMonthlySavings > 0 && (
         <div className="advisor-headline">
           推定削減ポテンシャル <strong>{usd(totalEstMonthlySavings)}/月</strong>
-          <span className="advisor-note">（現在の利用ペースからの目安）</span>
+          <span className="advisor-note">
+            （現在の利用ペースからの目安{billingMode === "subscription" ? "、プラン利用枠の節約・概算" : ""}）
+          </span>
         </div>
       )}
       <div className="drivers">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { activeBurnWarning, filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, PERIOD_DAYS, type Period, type FixedPeriod } from "./api";
+import { activeBurnWarning, filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, PERIOD_DAYS, type Period, type FixedPeriod, type BillingMode } from "./api";
 import { usd } from "./format";
 import { useSummaryQuery } from "./hooks/useSummaryQuery";
 import { useHourlyQuery } from "./hooks/useHourlyQuery";
@@ -33,6 +33,11 @@ export default function App() {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") return saved;
     return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  });
+  const [billingMode, setBillingMode] = useState<BillingMode>(() => {
+    const saved = localStorage.getItem("billingMode");
+    if (saved === "subscription" || saved === "api") return saved;
+    return "api";
   });
 
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -87,6 +92,10 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("billingMode", billingMode);
+  }, [billingMode]);
 
   const burn = data ? activeBurnWarning(data.blocks) : null;
 
@@ -145,6 +154,16 @@ export default function App() {
             >
               {theme === "light" ? "☀" : "🌙"}
             </button>
+            <button
+              type="button"
+              className="billing-mode-toggle"
+              aria-pressed={billingMode === "subscription"}
+              aria-label="課金モード切替（サブスクリプション/API従量課金）"
+              title="課金モードに応じてキャッシュTTLアドバイスを補正します"
+              onClick={() => setBillingMode((m) => (m === "api" ? "subscription" : "api"))}
+            >
+              {billingMode === "subscription" ? "サブスク" : "API従量課金"}
+            </button>
             {data && data.projects.length > 0 && (
               <ProjectSelector
                 projects={data.projects}
@@ -196,7 +215,7 @@ export default function App() {
           />
           <section id="section-summary" ref={summaryRef}>
             <SummaryCards s={displayData} prev={prevDisplayData ?? undefined} />
-            <OptimizationAdvisor s={displayData} />
+            <OptimizationAdvisor s={displayData} billingMode={billingMode} />
             <BudgetProjection s={data!} />
             <BillingBlocks s={data!} />
           </section>
