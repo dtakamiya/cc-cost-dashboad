@@ -959,6 +959,18 @@ describe("computeToolUsage", () => {
     expect(result[0].sessions).toBe(2);
   });
 
+  it("sessionId が (unknown) のレコードは sessions 集計から除外される（calls には含まれる）", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "(unknown)" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "(unknown)" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(1);
+  });
+
   it("Agent/Skill が key で分離集計される", () => {
     const toolUseRecords = [
       toolUseRec({ toolName: "Agent", subagentType: "Explore", sessionId: "s1" }),

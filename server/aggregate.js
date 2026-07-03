@@ -172,7 +172,6 @@ export function computeToolUsage(toolUseRecords = []) {
   if (!toolUseRecords.length) return [];
 
   const map = new Map(); // key (e.g. "Agent:Explore") -> { toolName, key, name, calls, sessions: Set }
-  const sessionSets = new Map(); // key -> Set of sessionIds
 
   for (const r of toolUseRecords) {
     let key, name;
@@ -187,22 +186,18 @@ export function computeToolUsage(toolUseRecords = []) {
       continue;
     }
 
-    if (!map.has(key)) {
-      map.set(key, {
-        toolName: r.toolName,
-        key,
-        name,
-        calls: 0,
-      });
-      sessionSets.set(key, new Set());
+    let entry = map.get(key);
+    if (!entry) {
+      entry = { toolName: r.toolName, key, name, calls: 0, sessions: new Set() };
+      map.set(key, entry);
     }
-
-    map.get(key).calls += 1;
-    sessionSets.get(key).add(r.sessionId);
+    entry.calls += 1;
+    // computeSessions と同様、sessionId 欠落レコードは集約すると無意味なため sessions には含めない。
+    if (r.sessionId !== "(unknown)") entry.sessions.add(r.sessionId);
   }
 
   return [...map.values()]
-    .map((entry) => ({ ...entry, sessions: sessionSets.get(entry.key).size }))
+    .map((entry) => ({ ...entry, sessions: entry.sessions.size }))
     .sort((a, b) => b.calls - a.calls);
 }
 
