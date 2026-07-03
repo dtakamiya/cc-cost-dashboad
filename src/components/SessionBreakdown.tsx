@@ -148,7 +148,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
       })
     : filtered;
   const rows = showAll ? sorted : sorted.slice(0, VISIBLE_SESSION_LIMIT);
-  const hasMore = sorted.length > VISIBLE_SESSION_LIMIT;
+  const hasMore = !showAll && sorted.length > VISIBLE_SESSION_LIMIT;
 
   const handleEfficiencySort = () => {
     setEfficiencySort((prev) => (prev === "desc" ? "asc" : "desc"));

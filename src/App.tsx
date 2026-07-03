@@ -34,6 +34,7 @@ export default function App() {
   const [compareMode, setCompareMode] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [activeSection, setActiveSection] = useState<SectionId | null>(null);
+  const [topbarHeight, setTopbarHeight] = useState(108);
   const [hourlyMetric, setHourlyMetric] = useState<"cost" | "tokens">("cost");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem("theme");
@@ -131,16 +132,21 @@ export default function App() {
   useEffect(() => {
     if (!displayData) return;
 
+    const ratios = new Map<SectionId, number>();
+
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (!visible) return;
-        const id = visible.target.id.replace(/^section-/, "") as SectionId;
-        setActiveSection(id);
+        for (const entry of entries) {
+          const id = entry.target.id.replace(/^section-/, "") as SectionId;
+          ratios.set(id, entry.isIntersecting ? entry.intersectionRatio : 0);
+        }
+
+        const next = [...ratios.entries()].sort((a, b) => b[1] - a[1])[0];
+        if (next && next[1] > 0) {
+          setActiveSection(next[0]);
+        }
       },
-      { rootMargin: "-120px 0px -60% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+      { rootMargin: `-${topbarHeight}px 0px -60% 0px`, threshold: [0, 0.25, 0.5, 0.75, 1] }
     );
 
     Object.values(sectionRefs).forEach((ref) => {
@@ -148,15 +154,17 @@ export default function App() {
     });
 
     return () => observer.disconnect();
-  }, [displayData, sectionRefs]);
+  }, [displayData, sectionRefs, topbarHeight]);
 
-  // topbar の実測高さを section-nav の sticky オフセットへ反映する（折り返しで高さが変わっても追従させる）
+  // topbar の実測高さを section-nav の sticky オフセット・スクロールスパイの両方へ反映する（折り返しで高さが変わっても追従させる）
   useEffect(() => {
     const el = topbarRef.current;
     if (!el) return;
 
     const updateHeight = () => {
-      document.documentElement.style.setProperty("--topbar-height", `${el.offsetHeight}px`);
+      const height = el.offsetHeight;
+      document.documentElement.style.setProperty("--topbar-height", `${height}px`);
+      setTopbarHeight(height);
     };
     updateHeight();
 

@@ -190,6 +190,7 @@ describe("SessionBreakdown", () => {
     fireEvent.click(screen.getByRole("button", { name: /さらに表示/ }));
 
     expect(screen.getByText("proj-19")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /さらに表示/ })).not.toBeInTheDocument();
   });
 
   it("clear コピーボタンをクリックするとコピー済みアイコン(Icon コンポーネント)が表示される", async () => {
