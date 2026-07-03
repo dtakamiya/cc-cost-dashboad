@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -467,6 +467,55 @@ describe("fetchSummary の period クエリ", () => {
     await fetchSummary(true, "30d");
 
     expect(mockFetch).toHaveBeenCalledWith("/api/reload", { method: "POST" });
+  });
+});
+
+describe("sessionEfficiencyScore", () => {
+  it("cacheRead=0 のとき null を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), cacheRead: 0, input: 100 };
+    expect(sessionEfficiencyScore(s)).toBeNull();
+  });
+
+  it("input=30, cacheRead=70 のとき score=70 を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 30, cacheRead: 70 };
+    expect(sessionEfficiencyScore(s)).toBe(70);
+  });
+
+  it("境界値: score=49 相当は danger 判定になる値を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 51, cacheRead: 49 };
+    expect(sessionEfficiencyScore(s)).toBe(49);
+  });
+
+  it("境界値: score=50 相当を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 50, cacheRead: 50 };
+    expect(sessionEfficiencyScore(s)).toBe(50);
+  });
+
+  it("境界値: score=69 相当を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 31, cacheRead: 69 };
+    expect(sessionEfficiencyScore(s)).toBe(69);
+  });
+});
+
+describe("sessionEfficiencyColor", () => {
+  it("null のとき muted 色を返す", () => {
+    expect(sessionEfficiencyColor(null)).toBe("var(--muted)");
+  });
+
+  it("score=49 のとき danger 色を返す", () => {
+    expect(sessionEfficiencyColor(49)).toBe("var(--danger)");
+  });
+
+  it("score=50 のとき warn 色を返す", () => {
+    expect(sessionEfficiencyColor(50)).toBe("var(--warn)");
+  });
+
+  it("score=69 のとき warn 色を返す", () => {
+    expect(sessionEfficiencyColor(69)).toBe("var(--warn)");
+  });
+
+  it("score=70 のとき success 色を返す", () => {
+    expect(sessionEfficiencyColor(70)).toBe("var(--success)");
   });
 });
 

@@ -192,6 +192,21 @@ export function isBloatedSession(
   return s.messages >= minMessages && s.avgContextPerMsg > contextThreshold;
 }
 
+/** セッションのキャッシュ活用率スコア（0-100の整数）。cacheRead=0の場合はnull（計算をスキップ）。 */
+export function sessionEfficiencyScore(s: SessionCost): number | null {
+  if (s.cacheRead <= 0) return null;
+  const ratio = s.cacheRead / (s.input + s.cacheRead);
+  return Math.round(ratio * 100);
+}
+
+/** 効率スコアに応じた表示色（CSS変数）。null（cacheRead=0）はmuted。 */
+export function sessionEfficiencyColor(score: number | null): string {
+  if (score === null) return "var(--muted)";
+  if (score >= 70) return "var(--success)";
+  if (score >= 50) return "var(--warn)";
+  return "var(--danger)";
+}
+
 export interface DateRange {
   from: string; // YYYY-MM-DD
   to: string;   // YYYY-MM-DD
