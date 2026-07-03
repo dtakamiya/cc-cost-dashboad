@@ -96,6 +96,15 @@ export interface SubagentStats {
   subagentRatio: number; // subagentTokens / (mainTokens + subagentTokens)。0-1件でも0除算しない。
 }
 
+// tool_use（Agent/Skill）の呼び出し集計。ツール名ごとの使用回数・セッション数。
+export interface ToolUsage {
+  toolName: "Agent" | "Skill"; // Agent | Skill
+  key: string; // e.g. "Agent:Explore" or "Skill:codebase-onboarding"
+  name: string; // subagentType or skill name
+  calls: number; // 呼び出し回数
+  sessions: number; // ユニークセッション数
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -156,6 +165,7 @@ export interface Summary {
   projection: Projection | null;
   activity: Activity;
   bySession: SessionCost[];
+  byTool: ToolUsage[];
 }
 
 export interface Activity {

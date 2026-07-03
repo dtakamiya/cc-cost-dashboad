@@ -35,6 +35,7 @@ const baseSummary = (over: Partial<Summary> = {}): Summary => ({
   projection: null,
   activity: { matrix: [], max: 0, total: 0, peak: null },
   bySession: [],
+  byTool: [],
   ...over,
 });
 

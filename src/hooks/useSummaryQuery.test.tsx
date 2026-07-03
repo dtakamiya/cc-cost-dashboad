@@ -46,6 +46,7 @@ const minimalSummary: api.Summary = {
   projection: null,
   activity: { matrix: [], max: 0, total: 0, peak: null },
   bySession: [],
+  byTool: [],
 };
 
 describe("useSummaryQuery", () => {

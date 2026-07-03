@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeToolUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -898,5 +898,128 @@ describe("aggregate() cacheGapStats", () => {
     expect(result.cacheGapStats).toBeDefined();
     expect(result.cacheGapStats.expiredGapCount).toBe(1);
     expect(result.cacheGapStats.affectedSessions).toEqual(["s1"]);
+  });
+});
+
+// ─── computeToolUsage ─────────────────────────────────────────────────────
+
+const toolUseRec = (over = {}) => ({
+  toolName: "Agent",
+  ts: "2026-06-15T10:00:00.000Z",
+  sessionId: "s1",
+  cwd: "/home/u/proj",
+  subagentType: "Explore",
+  description: null,
+  skill: null,
+  ...over,
+});
+
+describe("computeToolUsage", () => {
+  it("空配列入力 → [] を返す", () => {
+    const result = computeToolUsage([]);
+    expect(result).toEqual([]);
+  });
+
+  it("単一 Agent tool_use → key, calls, sessions を集計する", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({
+      toolName: "Agent",
+      key: "Agent:Explore",
+      name: "Explore",
+      calls: 1,
+      sessions: 1,
+    });
+  });
+
+  it("同一ツール複数呼び出し → calls が加算される", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(1);
+  });
+
+  it("複数セッション → sessions がユニーク数になる", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s2" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(2);
+  });
+
+  it("sessionId が (unknown) のレコードは sessions 集計から除外される（calls には含まれる）", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "(unknown)" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "(unknown)" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(1);
+  });
+
+  it("Agent/Skill が key で分離集計される", () => {
+    const toolUseRecords = [
+      toolUseRec({ toolName: "Agent", subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ toolName: "Skill", skill: "codebase-onboarding", subagentType: null, sessionId: "s1" }),
+      toolUseRec({ toolName: "Agent", subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result).toHaveLength(2);
+    const agent = result.find((r) => r.key === "Agent:Explore");
+    const skill = result.find((r) => r.key === "Skill:codebase-onboarding");
+    expect(agent.calls).toBe(2);
+    expect(skill.calls).toBe(1);
+  });
+
+  it("calls 降順ソート", () => {
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Plan", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = computeToolUsage(toolUseRecords);
+    expect(result[0].name).toBe("Explore");
+    expect(result[0].calls).toBe(3);
+    expect(result[1].name).toBe("Plan");
+    expect(result[1].calls).toBe(1);
+  });
+
+  it("aggregate() の戻り値に byTool が含まれ、toolUseRecords オプションで渡される", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const toolUseRecords = [
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+      toolUseRec({ subagentType: "Explore", sessionId: "s1" }),
+    ];
+    const result = aggregate(records, { toolUseRecords });
+    expect(result.byTool).toBeDefined();
+    expect(result.byTool).toHaveLength(1);
+    expect(result.byTool[0]).toEqual({
+      toolName: "Agent",
+      key: "Agent:Explore",
+      name: "Explore",
+      calls: 2,
+      sessions: 1,
+    });
+  });
+
+  it("toolUseRecords 未指定時は byTool は []", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const result = aggregate(records);
+    expect(result.byTool).toEqual([]);
   });
 });
