@@ -40,6 +40,7 @@ const baseSummary: Summary = {
     peak: { day: 0, hour: 10, tokens: 500 },
   },
   bySession: [],
+  byTool: [],
 };
 
 describe("ActivityHeatmap", () => {

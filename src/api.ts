@@ -165,7 +165,7 @@ export interface Summary {
   projection: Projection | null;
   activity: Activity;
   bySession: SessionCost[];
-  byTool?: ToolUsage[];
+  byTool: ToolUsage[];
 }
 
 export interface Activity {

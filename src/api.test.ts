@@ -105,6 +105,7 @@ const summaryWithProjects = (): Summary => ({
     sess("/home/u/projA", 100, 130_000),
     sess("/home/u/projB", 50, 20_000),
   ],
+  byTool: [],
   subagentStats: {
     mainTokens: 117_000,
     mainCost: 117,
@@ -168,6 +169,7 @@ const summary = (): Summary => ({
   projection: null,
   activity: { matrix: [], max: 0, total: 0, peak: null },
   bySession: [],
+  byTool: [],
 });
 
 describe("fetchPricing", () => {
@@ -456,6 +458,7 @@ describe("filterSummary カスタム日付範囲", () => {
       { ...sess("/proj", 50, 50_000), lastTs: "2025-06-10T00:00:00.000Z" },
       { ...sess("/proj", 20, 20_000), lastTs: "2025-05-10T00:00:00.000Z" },
     ],
+    byTool: [],
   });
 
   it("from-to 範囲の日付のみ daily に残す", () => {

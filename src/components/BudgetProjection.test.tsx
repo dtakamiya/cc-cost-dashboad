@@ -24,6 +24,7 @@ function makeSummary(projection: Projection | null, overrides: Partial<Summary> 
     projection,
     activity: { matrix: [], max: 0, total: 0, peak: null },
     bySession: [],
+    byTool: [],
     ...overrides,
   };
 }
