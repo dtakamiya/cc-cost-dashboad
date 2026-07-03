@@ -56,16 +56,19 @@ export function simulateCacheHitSavings(s: Summary, targetCacheHitRate: number):
   return Math.max(0, savings);
 }
 
+// Haikuの実データが無い場合のフォールバック倍率（topモデル比、経験則による近似値）。
+const HAIKU_FALLBACK_RATE_DIVISOR = 3;
+
 /** Haiku移行率を上げた場合の月額節約額を試算する。 */
 export function simulateHaikuShiftSavings(s: Summary, haikuShiftRate: number): number {
   const top = s.drivers.topModel;
   if (!top || top.tokens <= 0) return 0;
 
   const topRate = safeRate(top.cost, top.tokens);
-  const haikuModel = s.models.find(
-    (m) => /haiku/i.test(m.model) && m.tokens > 0
-  );
-  const haikuRate = haikuModel ? safeRate(haikuModel.cost, haikuModel.tokens) : topRate / 3;
+  const haikuRates = s.models
+    .filter((m) => /haiku/i.test(m.model) && m.tokens > 0)
+    .map((m) => safeRate(m.cost, m.tokens));
+  const haikuRate = haikuRates.length > 0 ? Math.min(...haikuRates) : topRate / HAIKU_FALLBACK_RATE_DIVISOR;
   if (haikuRate >= topRate) return 0;
 
   const savings = top.tokens * haikuShiftRate * (topRate - haikuRate) * monthlyFactorOf(s);

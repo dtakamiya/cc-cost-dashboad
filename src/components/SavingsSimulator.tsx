@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ChangeEvent } from "react";
 import type { Summary } from "../api";
 import { defaultSimulatorInput, simulateSavings, type SimulatorInput } from "../simulator";
 import { usd, pct } from "../format";
@@ -27,7 +27,7 @@ export function SavingsSimulator({ s }: { s: Summary }) {
     clearRate: result.clearSavings,
   };
 
-  const handleChange = (key: keyof SimulatorInput) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (key: keyof SimulatorInput) => (e: ChangeEvent<HTMLInputElement>) => {
     const value = Number(e.target.value) / 100;
     setInput((prev) => ({ ...prev, [key]: value }));
   };

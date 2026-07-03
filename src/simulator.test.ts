@@ -174,6 +174,28 @@ describe("simulateHaikuShiftSavings", () => {
     });
     expect(simulateHaikuShiftSavings(s, 0.5)).toBe(0);
   });
+
+  it("複数のHaiku変種がある場合は最安レートを採用する", () => {
+    const s = baseSummary({
+      models: [
+        { model: "claude-opus-4-8", cost: 100, tokens: 1_000_000, isFallback: false },
+        // 単価: cost/tokens = 2/100_000 = 0.00002（高い方）
+        { model: "claude-haiku-4-0", cost: 2, tokens: 100_000, isFallback: false },
+        // 単価: cost/tokens = 1/100_000 = 0.00001（最安）
+        { model: "claude-haiku-4-5", cost: 1, tokens: 100_000, isFallback: false },
+      ],
+    });
+    const cheapestOnly = baseSummary({
+      models: [
+        { model: "claude-opus-4-8", cost: 100, tokens: 1_000_000, isFallback: false },
+        { model: "claude-haiku-4-5", cost: 1, tokens: 100_000, isFallback: false },
+      ],
+    });
+    expect(simulateHaikuShiftSavings(s, 0.5)).toBeCloseTo(
+      simulateHaikuShiftSavings(cheapestOnly, 0.5),
+      6
+    );
+  });
 });
 
 describe("simulateClearSavings", () => {
