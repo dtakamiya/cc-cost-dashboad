@@ -7,6 +7,7 @@ const BURN_WINDOW_MS = 15 * 60 * 1000; // スライディングウィンドウ: 
 const BURN_WINDOW_MIN = 15;
 
 export const CACHE_5M_TTL_MS = 300_000; // 既定キャッシュTTL（5分）。これを超える中断でキャッシュが失効する。
+export const CACHE_1H_TTL_MS = 3_600_000; // 1hキャッシュTTL。直前レコードが1h TTLの場合はこちらを閾値にする。
 
 /**
  * レコード配列から 5 時間課金ブロック配列を生成する（新しい順、最大 20 件）。
@@ -235,10 +236,10 @@ function computeSessions(records, compactions = [], { limit } = {}) {
 }
 
 /**
- * セッション内アイドルギャップによる5分キャッシュ失効（無駄な再書き込み）を検出・定量化する。
- * 同一セッション内で連続レコード間のギャップが CACHE_5M_TTL_MS を超えると、
- * 次のメッセージでプロンプトキャッシュが失効し、cache read で済むはずの文脈が
- * cache creation として再課金される。
+ * セッション内アイドルギャップによるキャッシュ失効（無駄な再書き込み）を検出・定量化する。
+ * 同一セッション内で連続レコード間のギャップが直前レコードのTTL（cache1hならCACHE_1H_TTL_MS、
+ * それ以外はCACHE_5M_TTL_MS）を超えると、次のメッセージでプロンプトキャッシュが失効し、
+ * cache read で済むはずの文脈が cache creation として再課金される。
  * @param {object[]} records - 正規化レコード配列
  * @returns {{ expiredGapCount: number, reWriteTokens: number, reWriteCost: number, affectedSessions: string[] }}
  */
@@ -263,7 +264,8 @@ export function computeCacheGapStats(records) {
       const prev = sorted[i - 1];
       const cur = sorted[i];
       const gapMs = new Date(cur.ts) - new Date(prev.ts);
-      if (gapMs <= CACHE_5M_TTL_MS) continue;
+      const ttlMs = prev.cache1h ? CACHE_1H_TTL_MS : CACHE_5M_TTL_MS;
+      if (gapMs <= ttlMs) continue;
 
       expiredGapCount++;
       affectedSessions.add(sessionId);

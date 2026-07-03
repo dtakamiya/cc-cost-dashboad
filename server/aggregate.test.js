@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, CACHE_5M_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -859,6 +859,30 @@ describe("computeCacheGapStats", () => {
     const stats = computeCacheGapStats(records);
     const expectedCost = costOf(cur.model, cur).cacheWrite;
     expect(stats.reWriteCost).toBeCloseTo(expectedCost, 10);
+  });
+
+  it("直前レコードがcache1hのとき、5分超1時間以内のギャップは失効ギャップとしてカウントしない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1; // 5分超だが1時間以内
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), cache1h: true }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("直前レコードがcache1hのとき、1時間超のギャップは失効ギャップとしてカウントする", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_1H_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), cache1h: true }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.affectedSessions).toEqual(["s1"]);
   });
 });
 
