@@ -63,14 +63,15 @@ function toRecord(obj) {
 /**
  * コンテキスト圧縮（compaction）イベントの行をマーカーに変換する。
  * `isCompactSummary: true` または `type: "summary"` かつ sessionId を持つ行が対象。
+ * ts は将来の期間別フィルタ対応向けに保持する（現状の集計では未使用）。
  * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
- * @returns {{ sessionId: string }|null} 圧縮マーカー、または対象外の場合 null
+ * @returns {{ sessionId: string, ts: string|null }|null} 圧縮マーカー、または対象外の場合 null
  */
 function toCompactionMarker(obj) {
   if (!obj) return null;
   const isCompaction = obj.isCompactSummary === true || obj.type === "summary";
   if (!isCompaction || !obj.sessionId) return null;
-  return { sessionId: obj.sessionId };
+  return { sessionId: obj.sessionId, ts: obj.timestamp || null };
 }
 
 /**
