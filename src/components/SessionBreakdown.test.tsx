@@ -192,6 +192,22 @@ describe("SessionBreakdown", () => {
     expect(screen.getByText("proj-19")).toBeInTheDocument();
   });
 
+  it("clear コピーボタンをクリックするとコピー済みアイコン(Icon コンポーネント)が表示される", async () => {
+    // navigator.clipboard.writeText をモック
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    const s = makeSummary([
+      makeSession({ messages: 100, avgContextPerMsg: 150_000 }),
+    ]);
+    render(<SessionBreakdown s={s} />);
+    const copyBtn = screen.getByRole("button", { name: /clear コピー/ });
+    fireEvent.click(copyBtn);
+    await waitFor(() => {
+      expect(screen.getByTestId("icon-check")).toBeInTheDocument();
+    });
+  });
+
   it("複数セッションがコスト降順で表示される", () => {
     const sessions = [
       makeSession({ sessionId: "cheap", cwd: "/home/u/cheap-proj", cost: 0.5 }),

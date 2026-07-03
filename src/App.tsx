@@ -25,6 +25,8 @@ import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
 import { ContextBudget } from "./components/ContextBudget";
 import { ScrollToTopButton } from "./components/ScrollToTopButton";
+import { DataQualityBadge } from "./components/DataQualityBadge";
+import { Icon } from "./components/icons/Icon";
 
 export default function App() {
   const [period, setPeriod] = useState<Period>('7d');
@@ -174,9 +176,10 @@ export default function App() {
           {lastUpdated && (
             <span className="last-updated">
               最終更新 {new Date(lastUpdated).toLocaleTimeString("ja-JP")}
+              <DataQualityBadge source={data?.source} />
               {autoRefreshError && (
                 <span className="auto-refresh-error" title={autoRefreshError}>
-                  　⚠ 自動更新失敗
+                  　<Icon name="warning" size={12} /> 自動更新失敗
                 </span>
               )}
             </span>
@@ -184,16 +187,28 @@ export default function App() {
         </div>
         <div className="topbar-row-2">
           <div className="topbar-controls">
-            <button
-              type="button"
-              className={`live-toggle ${autoRefresh ? "live-on" : ""}`}
-              aria-pressed={autoRefresh}
-              onClick={() => setAutoRefresh((v) => !v)}
-              title="30秒ごとに自動で再集計します"
-            >
-              <span className="live-dot" />
-              ライブ更新 {autoRefresh ? "ON" : "OFF"}
-            </button>
+            <div className="control-group">
+              <button
+                type="button"
+                className={`live-toggle ${autoRefresh ? "live-on" : ""}`}
+                aria-pressed={autoRefresh}
+                onClick={() => setAutoRefresh((v) => !v)}
+                title="30秒ごとに自動で再集計します"
+              >
+                <span className="live-dot" />
+                ライブ更新 {autoRefresh ? "ON" : "OFF"}
+              </button>
+              <button
+                type="button"
+                className="reload"
+                aria-label="再読込"
+                title="再読込"
+                onClick={() => reload()}
+                disabled={loading}
+              >
+                <Icon name="refresh" className={loading ? "spin" : undefined} />
+              </button>
+            </div>
             <button
               type="button"
               className={`theme-toggle${theme === "light" ? " theme-light" : ""}`}
@@ -201,7 +216,7 @@ export default function App() {
               aria-label="ライト/ダークモード切替"
               onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             >
-              {theme === "light" ? "☀" : "🌙"}
+              <Icon name={theme === "light" ? "sun" : "moon"} />
             </button>
             <button
               type="button"
@@ -227,9 +242,6 @@ export default function App() {
               onCompareChange={setCompareMode}
               canCompare={canCompare}
             />
-            <button className="reload" onClick={() => reload()} disabled={loading}>
-              {loading ? "集計中…" : "再読込"}
-            </button>
           </div>
         </div>
       </header>
@@ -239,7 +251,7 @@ export default function App() {
 
       {burn && (
         <div className="burn-warn">
-          ⚠ 高バーンレート: {usd(burn.perMin)}/分（残り {burn.remainMin} 分）
+          <Icon name="warning" size={14} /> 高バーンレート: {usd(burn.perMin)}/分（残り {burn.remainMin} 分）
         </div>
       )}
 
