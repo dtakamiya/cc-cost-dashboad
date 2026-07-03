@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
 const rec = (over = {}) => ({
@@ -727,5 +728,175 @@ describe("filterRecordsByPeriod", () => {
     ];
     const filtered = filterRecordsByPeriod(records, { days: 365 * 10 });
     expect(filtered.map((r) => r.sessionId)).toEqual(["has-ts"]);
+  });
+});
+
+describe("computeCacheGapStats", () => {
+  it("ギャップが5分以内(299999ms)なら失効ギャップとしてカウントしない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 299_999;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(0);
+    expect(stats.reWriteTokens).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("ギャップが5分超(300001ms)なら失効ギャップとしてカウントする", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 1000, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.reWriteTokens).toBe(1000);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("cacheReadがcacheCreate以上のメッセージは再書き込みコストに計上しない（ギャップ自体はカウントする）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 200 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.reWriteTokens).toBe(0);
+    expect(stats.reWriteCost).toBe(0);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("cacheCreateがcacheRead以上のメッセージは再書き込みとして計上する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 500, cacheRead: 500 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.reWriteTokens).toBe(500);
+    expect(stats.reWriteCost).toBeGreaterThan(0);
+  });
+
+  it("複数セッションを個別にグループ化して集計する（セッションを跨いだ入力でも正しく判定）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "a", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "b", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "a", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "b", ts: new Date(t0 + 1000).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.affectedSessions).toEqual(["a"]);
+  });
+
+  it('sessionIdが"(unknown)"のレコードは除外する', () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "(unknown)", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "(unknown)", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("tsが欠損しているレコードはギャップ判定をスキップする", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: null }),
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+  });
+
+  it("入力配列がts順でソートされていなくても、セッション内でts昇順に並べ替えて判定する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.reWriteTokens).toBe(100);
+  });
+
+  it("affectedSessionsは失効ギャップを持つセッションIDの重複なし配列を返す", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const t2 = t1 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: new Date(t2).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(2);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("reWriteCostはcostOf(model, record).cacheWriteの合算と一致する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const cur = { model: "claude-opus-4-8", cacheCreate: 700, cacheRead: 100, cacheCreate1h: 0, cache1h: false };
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), ...cur }),
+    ];
+    const stats = computeCacheGapStats(records);
+    const expectedCost = costOf(cur.model, cur).cacheWrite;
+    expect(stats.reWriteCost).toBeCloseTo(expectedCost, 10);
+  });
+
+  it("直前レコードがcache1hのとき、5分超1時間以内のギャップは失効ギャップとしてカウントしない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1; // 5分超だが1時間以内
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), cache1h: true }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("直前レコードがcache1hのとき、1時間超のギャップは失効ギャップとしてカウントする", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_1H_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), cache1h: true }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeCacheGapStats(records);
+    expect(stats.expiredGapCount).toBe(1);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+});
+
+describe("aggregate() cacheGapStats", () => {
+  it("aggregate() の戻り値に cacheGapStats が含まれる", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString() }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const result = aggregate(records);
+    expect(result.cacheGapStats).toBeDefined();
+    expect(result.cacheGapStats.expiredGapCount).toBe(1);
+    expect(result.cacheGapStats.affectedSessions).toEqual(["s1"]);
   });
 });

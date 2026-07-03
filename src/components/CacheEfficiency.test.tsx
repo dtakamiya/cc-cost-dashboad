@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CacheEfficiency } from "./CacheEfficiency";
-import type { Summary, CacheStats } from "../api";
+import type { Summary, CacheStats, CacheGapStats } from "../api";
 
 function makeSummary(overrides: Partial<Summary> = {}): Summary {
   return {
@@ -74,5 +74,38 @@ describe("CacheEfficiency", () => {
     render(<CacheEfficiency s={s} />);
     expect(screen.getByText("1h（×2）")).toBeInTheDocument();
     expect(screen.getByText("5m（×1.25）")).toBeInTheDocument();
+  });
+
+  it("cacheGapStats が未提供でも既存の ROI 表示は壊れない", () => {
+    const s = makeSummary({ cacheStats: defaultCacheStats, cacheGapStats: undefined });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.getByText("キャッシュ TTL 損益分岐")).toBeInTheDocument();
+    expect(screen.queryByText("アイドル失効による再書き込み")).not.toBeInTheDocument();
+  });
+
+  it("expiredGapCount が0のときは追加セクションを表示しない", () => {
+    const gapStats: CacheGapStats = {
+      expiredGapCount: 0,
+      reWriteTokens: 0,
+      reWriteCost: 0,
+      affectedSessions: [],
+    };
+    const s = makeSummary({ cacheStats: defaultCacheStats, cacheGapStats: gapStats });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.queryByText("アイドル失効による再書き込み")).not.toBeInTheDocument();
+  });
+
+  it("expiredGapCount > 0 のとき発生回数と推定超過コストを表示する", () => {
+    const gapStats: CacheGapStats = {
+      expiredGapCount: 4,
+      reWriteTokens: 20000,
+      reWriteCost: 0.125,
+      affectedSessions: ["s1", "s2"],
+    };
+    const s = makeSummary({ cacheStats: defaultCacheStats, cacheGapStats: gapStats });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.getByText("アイドル失効による再書き込み")).toBeInTheDocument();
+    expect(screen.getAllByText("4 回")).toHaveLength(2);
+    expect(screen.getByText((_, el) => el?.textContent === "−$0.13")).toBeInTheDocument();
   });
 });
