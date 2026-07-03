@@ -90,16 +90,20 @@ body {
 .topbar-controls {
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
 }
+.control-group { display: flex; align-items: center; gap: var(--sp-2); }
 .topbar-title h1 { font-size: 19px; margin: 0; letter-spacing: 0.01em; }
 .topbar-title .sub { color: var(--subtle); font-size: 12px; margin-top: 2px; }
 .topbar-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 .topbar button.reload {
+  display: inline-flex; align-items: center; justify-content: center;
   background: var(--accent-strong); color: #fff; border: 0; border-radius: var(--r-sm);
-  padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  width: 34px; height: 34px; padding: 0; cursor: pointer;
   transition: filter 0.15s, opacity 0.15s;
 }
 .topbar button.reload:hover { filter: brightness(1.1); }
 .topbar button.reload:disabled { opacity: 0.5; cursor: default; }
+.topbar button.reload .spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---- states ---- */
 .error {
@@ -124,6 +128,10 @@ body {
 
 /* ---- live refresh ---- */
 .last-updated { color: var(--subtle); font-size: 12px; white-space: nowrap; }
+.data-quality-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-left: var(--sp-2); color: var(--success); font-size: 11px; cursor: default;
+}
 .auto-refresh-error { color: var(--warn); font-size: 11px; margin-left: var(--sp-2); }
 .topbar button.live-toggle {
   display: inline-flex; align-items: center; gap: 6px;
@@ -203,7 +211,12 @@ body {
 .advisor-note { font-size: 12px; color: var(--subtle); }
 .driver-title { display: flex; align-items: center; gap: var(--sp-2); }
 .advisor-saving { color: var(--success); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.driver-action { font-size: 12px; color: var(--text); line-height: 1.6; margin-top: var(--sp-2); }
+.driver-action {
+  display: block; width: 100%; text-align: left;
+  font-size: 12px; color: var(--text); line-height: 1.6; margin-top: var(--sp-2);
+  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+}
+.driver-action:hover { color: var(--accent-strong); text-decoration: underline; }
 .badge.prio-high { background: var(--warn-soft); color: var(--warn); margin-left: 0; }
 .badge.prio-medium { background: var(--warn-soft); color: var(--warn); margin-left: 0; }
 .badge.prio-low { background: rgba(255,255,255,0.06); color: var(--muted); margin-left: 0; }

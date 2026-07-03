@@ -80,7 +80,7 @@ describe("OptimizationAdvisor", () => {
     expect(screen.getByText("優先度 中")).toBeInTheDocument();
   });
 
-  it("推奨がある場合「→」始まりのアクションが表示される", () => {
+  it("推奨がある場合「→」始まりのアクションが<button>要素として表示される", () => {
     const s = makeSummary({
       tokenSplit: { input: 20_000, output: 75_000, cacheCreate: 0, cacheRead: 5_000 },
       costSplit: { input: 0.1, output: 7.5, cacheWrite: 0, cacheRead: 0.005 },
@@ -95,6 +95,31 @@ describe("OptimizationAdvisor", () => {
     render(<OptimizationAdvisor s={s} />);
     const actions = screen.queryAllByText(/^→/);
     expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(action.tagName).toBe("BUTTON");
+    }
+  });
+
+  it("shortTitle が見出しとして表示される", () => {
+    const s = makeSummary({
+      tokenSplit: { input: 20_000, output: 75_000, cacheCreate: 0, cacheRead: 5_000 },
+      costSplit: { input: 0.1, output: 7.5, cacheWrite: 0, cacheRead: 0.005 },
+      drivers: {
+        topModel: null,
+        topDay: null,
+        topDayModel: null,
+        cacheReadRatio: 0.05,
+        outputCostRatio: 0.75,
+      },
+    });
+    render(<OptimizationAdvisor s={s} />);
+    // output-heavy ルールの shortTitle が見出しとして出る
+    expect(screen.getByText(/output過多/)).toBeInTheDocument();
+  });
+
+  it("推奨がない場合のアイコンが Icon コンポーネント(SVG)で描画される", () => {
+    render(<OptimizationAdvisor s={makeSummary()} />);
+    expect(screen.getByTestId("icon-thumbsUp")).toBeInTheDocument();
   });
 
   it("billingMode='subscription'のとき見出しにプラン利用枠の概算注記が表示される", () => {
