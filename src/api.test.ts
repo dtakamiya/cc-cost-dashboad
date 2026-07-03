@@ -304,6 +304,17 @@ describe("filterSummary subagentStats", () => {
     const filtered = filterSummary(s, "7d");
     expect(filtered.subagentStats).toBeUndefined();
   });
+
+  it("sidechain レコードが0件（main/subagentともに0）でも0除算せずsubagentRatio=0になる", () => {
+    const s: Summary = {
+      ...summary(),
+      daily: [day(ymdAgo(1), 10, undefined, undefined, { mainTokens: 0, mainCost: 0, subagentTokens: 0, subagentCost: 0 })],
+    };
+    const filtered = filterSummary(s, "7d");
+    expect(filtered.subagentStats!.mainTokens).toBe(0);
+    expect(filtered.subagentStats!.subagentTokens).toBe(0);
+    expect(filtered.subagentStats!.subagentRatio).toBe(0);
+  });
 });
 
 describe("filterSummary projects コスト集計", () => {

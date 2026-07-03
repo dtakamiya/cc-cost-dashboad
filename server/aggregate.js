@@ -410,7 +410,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
   const daily = [...byDay.entries()]
     .map(([date, {
       costMap, tokenMap, projectTokenMap, projectCostMap, inputTokens, cacheReadTokens,
-      mainTokens, mainCost, subagentTokens, subagentCost,
+      mainTokens: dayMainTokens, mainCost: dayMainCost, subagentTokens: daySubagentTokens, subagentCost: daySubagentCost,
     }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
@@ -424,7 +424,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT } = {}
       return {
         date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts,
         inputTokens, cacheReadTokens, cacheReadRatio,
-        mainTokens, mainCost, subagentTokens, subagentCost,
+        mainTokens: dayMainTokens, mainCost: dayMainCost, subagentTokens: daySubagentTokens, subagentCost: daySubagentCost,
       };
     })
     .filter((d) => d.date !== "(unknown)")
