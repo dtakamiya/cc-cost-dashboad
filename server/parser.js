@@ -61,6 +61,50 @@ function toRecord(obj) {
 }
 
 /**
+ * assistant 行の message.content[] から Agent/Skill の tool_use を検出し、
+ * 正規化レコードの配列として返す。対象がなければ空配列。
+ * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
+ * @returns {object[]} tool_use 正規化レコードの配列（0件の場合は []）
+ */
+function toToolUseRecords(obj) {
+  if (!obj || obj.type !== "assistant") return [];
+  const msg = obj.message || obj;
+  const content = msg.content;
+  if (!Array.isArray(content)) return [];
+
+  const results = [];
+  for (const block of content) {
+    if (!block || block.type !== "tool_use") continue;
+    if (block.name !== "Agent" && block.name !== "Skill") continue;
+
+    const input = block.input || {};
+    const base = {
+      toolName: block.name,
+      ts: obj.timestamp || null,
+      sessionId: obj.sessionId || "(unknown)",
+      cwd: obj.cwd || "(unknown)",
+    };
+
+    if (block.name === "Agent") {
+      results.push({
+        ...base,
+        subagentType: input.subagent_type || null,
+        description: input.description || null,
+        skill: null,
+      });
+    } else {
+      results.push({
+        ...base,
+        subagentType: null,
+        description: null,
+        skill: input.skill || null,
+      });
+    }
+  }
+  return results;
+}
+
+/**
  * コンテキスト圧縮（compaction）イベントの行をマーカーに変換する。
  * `isCompactSummary: true` または `type: "summary"` かつ sessionId を持つ行が対象。
  * ts は将来の期間別フィルタ対応向けに保持する（現状の集計では未使用）。
@@ -79,11 +123,12 @@ function toCompactionMarker(obj) {
  * 行の末尾に改行がない（書き込み途中の可能性がある）部分行は消費せず、offset を進めない。
  * @param {string} file - 読み込み対象ファイルの絶対パス
  * @param {number} startOffset - 読み込み開始バイトオフセット
- * @returns {Promise<{ records: object[], compactions: object[], parsedLines: number, parseErrors: number, newOffset: number, readFailed: boolean }>}
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], parsedLines: number, parseErrors: number, newOffset: number, readFailed: boolean }>}
  */
 async function readFileFromOffset(file, startOffset) {
   const records = [];
   const compactions = [];
+  const toolUseRecords = [];
   let parsedLines = 0;
   let parseErrors = 0;
   let bytesConsumed = startOffset;
@@ -122,6 +167,7 @@ async function readFileFromOffset(file, startOffset) {
         if (rec) records.push(rec);
         const compaction = toCompactionMarker(obj);
         if (compaction) compactions.push(compaction);
+        toolUseRecords.push(...toToolUseRecords(obj));
       }
     }
   } catch {
@@ -129,7 +175,7 @@ async function readFileFromOffset(file, startOffset) {
   }
   // buffer に残った内容（改行なしの末尾未完了行）は消費しない＝ offset を進めない
 
-  return { records, compactions, parsedLines, parseErrors, newOffset: bytesConsumed, readFailed };
+  return { records, compactions, toolUseRecords, parsedLines, parseErrors, newOffset: bytesConsumed, readFailed };
 }
 
 /**
@@ -138,13 +184,14 @@ async function readFileFromOffset(file, startOffset) {
  * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
  * @param {Map<string, {offset: number, mtimeMs: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
- * @returns {Promise<{ records: object[], compactions: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
  */
 export async function loadRecords(offsetState = new Map()) {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
   const files = findJsonlFiles(projectsDir);
   const records = [];
   const compactions = [];
+  const toolUseRecords = [];
   let parsedLines = 0;
   let parseErrors = 0;
   let unreadableFiles = 0;
@@ -173,6 +220,7 @@ export async function loadRecords(offsetState = new Map()) {
 
     records.push(...result.records);
     compactions.push(...result.compactions);
+    toolUseRecords.push(...result.toolUseRecords);
     parsedLines += result.parsedLines;
     parseErrors += result.parseErrors;
 
@@ -181,5 +229,5 @@ export async function loadRecords(offsetState = new Map()) {
 
   const skippedLines = parsedLines - records.length;
 
-  return { records, compactions, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles };
+  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles };
 }

@@ -364,6 +364,254 @@ describe("loadRecords - CLAUDE_LOGS_DIR", () => {
   });
 });
 
+describe("loadRecords - toolUseRecords", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+  });
+
+  it("Agent の tool_use から toolName, subagentType, description が抽出される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_xxx",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: "コードを探す" },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("Agent");
+      expect(toolUseRecords[0].subagentType).toBe("Explore");
+      expect(toolUseRecords[0].description).toBe("コードを探す");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("Skill の tool_use から toolName, skill 名が抽出される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_yyy",
+            name: "Skill",
+            input: { skill: "codebase-onboarding" },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("Skill");
+      expect(toolUseRecords[0].skill).toBe("codebase-onboarding");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("1メッセージに複数の tool_use ブロックがある場合、すべて toolUseRecords に含まれる", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Agent",
+            input: { subagent_type: "Explore", description: "探す" },
+          },
+          {
+            type: "tool_use",
+            id: "toolu_2",
+            name: "Skill",
+            input: { skill: "tdd-workflow" },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(2);
+      expect(toolUseRecords[0].toolName).toBe("Agent");
+      expect(toolUseRecords[1].toolName).toBe("Skill");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("text content のみで tool_use を含まない行では toolUseRecords が増えない", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [{ type: "text", text: "hello" }],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("Agent/Skill 以外の tool_use（例: Bash）は toolUseRecords に含まれない", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          { type: "tool_use", id: "toolu_bash", name: "Bash", input: { command: "ls" } },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("tool_use を含む行でも、既存の usage レコード（records）の抽出には影響しない", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        usage: { input_tokens: 10, output_tokens: 5 },
+        content: [
+          { type: "tool_use", id: "toolu_xxx", name: "Agent", input: { subagent_type: "Explore" } },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { records, toolUseRecords } = await loadRecords();
+      expect(records).toHaveLength(1);
+      expect(records[0].input).toBe(10);
+      expect(toolUseRecords).toHaveLength(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loadRecords() の戻り値に toolUseRecords フィールドが配列として存在する（tool_useが全くないログでも [] であること）", async () => {
+    const tmpDir = makeTmpLogDir();
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const result = await loadRecords();
+      expect(Array.isArray(result.toolUseRecords)).toBe(true);
+      expect(result.toolUseRecords).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("content が配列でない/存在しない行でも例外を投げず toolUseRecords は空配列になる", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const lineNoContent = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: { model: "claude-haiku-4-5-20251001", usage: { input_tokens: 1, output_tokens: 1 } },
+    });
+    const lineStringContent = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: { model: "claude-haiku-4-5-20251001", content: "plain string content" },
+    });
+    fs.writeFileSync(
+      path.join(projectDir, "session.jsonl"),
+      lineNoContent + "\n" + lineStringContent + "\n"
+    );
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("loadRecords - 差分読み込み（offsetState）", () => {
   let originalEnv;
   let tmpDir;
