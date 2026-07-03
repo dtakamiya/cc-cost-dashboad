@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { usd, compact } from "../format";
 import { buildClearCommand } from "../clearCommand";
+import { Icon } from "./icons/Icon";
 
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
@@ -59,7 +60,13 @@ function CopyButton({ cwd }: { cwd: string }) {
       }}
       title={buildClearCommand(cwd)}
     >
-      {copied ? "コピー済み ✓" : "clear コピー"}
+      {copied ? (
+        <>
+          コピー済み <Icon name="check" size={11} />
+        </>
+      ) : (
+        "clear コピー"
+      )}
     </button>
   );
 }

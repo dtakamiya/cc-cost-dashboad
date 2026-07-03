@@ -77,6 +77,25 @@ const baseSummary = (over: Partial<Summary> = {}): Summary => ({
 });
 
 describe("buildRecommendations", () => {
+  it("全ての推奨アイテムに shortTitle（空でない短縮見出し）が付与される", () => {
+    const s = baseSummary({
+      bySession: [
+        session({
+          sessionId: "big",
+          messages: BLOAT_MIN_MESSAGES,
+          avgContextPerMsg: BLOAT_CONTEXT_THRESHOLD + 1,
+          cacheRead: 500_000,
+        }),
+      ],
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.length).toBeGreaterThan(0);
+    for (const item of r.items) {
+      expect(typeof item.shortTitle).toBe("string");
+      expect(item.shortTitle.length).toBeGreaterThan(0);
+    }
+  });
+
   it("中立データでは推奨なし・節約0", () => {
     const r = buildRecommendations(baseSummary());
     expect(r.items).toEqual([]);
@@ -99,6 +118,9 @@ describe("buildRecommendations", () => {
     const item = r.items.find((i) => i.id === "bloated-sessions");
     expect(item).toBeDefined();
     expect(item!.estMonthlySavings).toBeGreaterThan(0);
+    // shortTitle: 件数付きの短縮見出し。既存の title（長文）は変更しない。
+    expect(item!.shortTitle).toBe("セッションの肥大化（1件）");
+    expect(item!.title).toBe("肥大化したセッションが文脈を再送している");
   });
 
   it("高単価モデル偏りは安価モデルが判明したときのみ発火", () => {

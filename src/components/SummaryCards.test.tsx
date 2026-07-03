@@ -105,58 +105,30 @@ describe("SummaryCards - 総コストカード", () => {
   });
 });
 
-describe("SummaryCards - データ品質カード", () => {
-  it("source が undefined のとき parsedLines 表示はない", () => {
-    // Arrange
-    const s = makeSummary({ source: undefined });
-
-    // Act
-    render(<SummaryCards s={s} />);
-
-    // Assert: データ品質カードが表示されないことを確認
-    expect(screen.queryByText("データ品質")).not.toBeInTheDocument();
-  });
-
-  it("source に parsedLines があるとき「データ品質」カードが表示される", () => {
+describe("SummaryCards - KPIカードは4枚固定", () => {
+  it("source があってもKPIカードは4枚のまま増えない（データ品質カードは削除）", () => {
     // Arrange
     const s = makeSummary({
       source: { fileCount: 3, parsedLines: 150, skippedLines: 5, parseErrors: 2, unreadableFiles: 0 },
     });
 
     // Act
-    render(<SummaryCards s={s} />);
+    const { container } = render(<SummaryCards s={s} />);
 
-    // Assert
-    expect(screen.getByText("データ品質")).toBeInTheDocument();
-    expect(screen.getByText("150")).toBeInTheDocument();
+    // Assert: .cards 配下の .card 要素は常に4枚
+    expect(container.querySelectorAll(".cards > .card")).toHaveLength(4);
+    expect(screen.queryByText("データ品質")).not.toBeInTheDocument();
   });
 
-  it("skippedLines > 0 のとき「スキップ」情報が表示される", () => {
+  it("source が undefined でもKPIカードは4枚", () => {
     // Arrange
-    const s = makeSummary({
-      source: { fileCount: 3, parsedLines: 100, skippedLines: 10, parseErrors: 3, unreadableFiles: 0 },
-    });
+    const s = makeSummary({ source: undefined });
 
     // Act
-    render(<SummaryCards s={s} />);
-
-    // Assert: スキップ行数とエラー数が表示される
-    const subText = screen.getByText(/スキップ: 10 行/);
-    expect(subText).toBeInTheDocument();
-    expect(subText.textContent).toContain("エラー: 3");
-  });
-
-  it("skippedLines が 0 のとき「完全」と表示される", () => {
-    // Arrange
-    const s = makeSummary({
-      source: { fileCount: 3, parsedLines: 100, skippedLines: 0, parseErrors: 0, unreadableFiles: 0 },
-    });
-
-    // Act
-    render(<SummaryCards s={s} />);
+    const { container } = render(<SummaryCards s={s} />);
 
     // Assert
-    expect(screen.getByText("完全")).toBeInTheDocument();
+    expect(container.querySelectorAll(".cards > .card")).toHaveLength(4);
   });
 
   it("既存の「セッション数」カードは変わらず表示される", () => {
@@ -172,5 +144,19 @@ describe("SummaryCards - データ品質カード", () => {
     expect(screen.getByText("セッション数")).toBeInTheDocument();
     expect(screen.getByText("総トークン")).toBeInTheDocument();
     expect(screen.getByText("期間")).toBeInTheDocument();
+  });
+
+  it("各カードのアイコンが Icon コンポーネント(SVG)で描画される", () => {
+    // Arrange
+    const s = makeSummary();
+
+    // Act
+    const { container } = render(<SummaryCards s={s} />);
+
+    // Assert: 絵文字ではなく data-testid 付きの svg アイコンが使われる
+    expect(container.querySelector('[data-testid="icon-token"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="icon-sessions"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="icon-calendar"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-testid="icon-cost"]')).toBeInTheDocument();
   });
 });

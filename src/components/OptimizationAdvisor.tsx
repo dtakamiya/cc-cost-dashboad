@@ -1,6 +1,7 @@
 import type { BillingMode, Summary } from "../api";
 import { buildRecommendations, type Priority } from "../advisor";
 import { usd } from "../format";
+import { Icon } from "./icons/Icon";
 
 const PRIORITY_LABEL: Record<Priority, string> = { high: "高", medium: "中", low: "低" };
 const PRIORITY_TONE: Record<Priority, string> = { high: "warn", medium: "warn", low: "" };
@@ -18,7 +19,9 @@ export function OptimizationAdvisor({ s, billingMode = "api" }: OptimizationAdvi
       <section className="panel">
         <h2>最適化アドバイス</h2>
         <div className="driver tone-good">
-          <div className="driver-body">目立った無駄は検出されませんでした 👍</div>
+          <div className="driver-body">
+            目立った無駄は検出されませんでした <Icon name="thumbsUp" size={14} />
+          </div>
           <div className="driver-hint">使い方は効率的です。期間を変えると別の傾向が見える場合があります。</div>
         </div>
       </section>
@@ -45,9 +48,11 @@ export function OptimizationAdvisor({ s, billingMode = "api" }: OptimizationAdvi
                 <span className="advisor-saving">〜{usd(it.estMonthlySavings)}/月</span>
               )}
             </div>
-            <div className="driver-body">{it.title}</div>
+            <div className="driver-body">{it.shortTitle}</div>
             <div className="driver-hint">{it.detail}</div>
-            <div className="driver-action">→ {it.action}</div>
+            <button type="button" className="driver-action">
+              → {it.action}
+            </button>
           </div>
         ))}
       </div>

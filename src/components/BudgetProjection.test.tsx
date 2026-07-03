@@ -86,4 +86,15 @@ describe("BudgetProjection", () => {
     // バーラベルが表示されること
     expect(screen.getByText(/実績 \d+%/)).toBeInTheDocument();
   });
+
+  it("予算超過見込みのとき警告アイコン(Icon コンポーネント)が表示される", () => {
+    render(<BudgetProjection s={makeSummary(sampleProjection)} />);
+    fireEvent.click(screen.getByRole("button", { name: "予算を設定" }));
+    const input = screen.getByLabelText(/月額予算上限/);
+    // 予算 10 に対して着地予測 18.21 → 超過
+    fireEvent.change(input, { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(screen.getByTestId("icon-warning")).toBeInTheDocument();
+    expect(screen.getByText(/予算超過見込み/)).toBeInTheDocument();
+  });
 });

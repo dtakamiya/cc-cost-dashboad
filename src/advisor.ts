@@ -32,7 +32,8 @@ export interface FileImpact {
 export interface Recommendation {
   id: string;
   priority: Priority;
-  title: string;
+  title: string; // 長文見出し（後方互換のため維持）
+  shortTitle: string; // 短縮見出し（件数付きなど、UI上の見出し表示用）
   detail: string; // 観測した事実（根拠）
   action: string; // 取るべき具体アクション
   estMonthlySavings: number; // USD。定量化できない場合は 0
@@ -161,6 +162,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "bloated-sessions",
       priority: "high",
       title: "肥大化したセッションが文脈を再送している",
+      shortTitle: `セッションの肥大化（${bloated.length}件）`,
       detail: `${bloated.length} 件のセッションが毎ターン巨大な会話履歴を再送（${cwds} ほか）。`,
       action: "区切りのよい所で /clear するか新規セッションを開始し、不要な履歴の再送を止める。",
       estMonthlySavings: savings,
@@ -180,6 +182,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
         id: "model-skew",
         priority: "high",
         title: "高単価モデルにトークンが偏っている",
+        shortTitle: `モデル偏り（${top.model}）`,
         detail: `${top.model} が全トークンの ${(topShare * 100).toFixed(0)}% を占有。`,
         action: `ルーチン作業（整形・調査・要約）を ${cheaper.model} に振り分ける。`,
         estMonthlySavings: Math.max(0, savings),
@@ -198,6 +201,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "overhead-baseline",
       priority: "medium",
       title: "常時注入のコンテキストが大きい",
+      shortTitle: `常時注入オーバーヘッド過大（${baseline.toLocaleString()}トークン）`,
       detail: `毎セッション冒頭で約 ${baseline.toLocaleString()} トークンをキャッシュ書き込み（${biggestOverhead(s)}）。`,
       action: "CLAUDE.md / プラグイン / スキルの常時注入分を削り、起動時のみ読む形に寄せる。",
       estMonthlySavings: savings,
@@ -212,6 +216,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "output-heavy",
       priority: "medium",
       title: "生成（output）が高コスト要因になっている",
+      shortTitle: `output過多（コスト比 ${(s.drivers.outputCostRatio * 100).toFixed(0)}%）`,
       detail: `output がコスト全体の ${(s.drivers.outputCostRatio * 100).toFixed(0)}% を占有。`,
       action: "出力長の上限指定・簡潔な指示・effort 設定の見直しで生成量を抑える。",
       estMonthlySavings: savings,
@@ -224,6 +229,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "low-cache",
       priority: "low",
       title: "キャッシュが効いていない",
+      shortTitle: "キャッシュ効率の低下",
       detail: `cache read 比率が ${(s.drivers.cacheReadRatio * 100).toFixed(0)}%（input が割高になりがち）。`,
       action: "関連作業は同一セッションで継続する。ただし肥大化（上記）とのトレードオフに注意。",
       estMonthlySavings: 0,
@@ -261,6 +267,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
         id: `overhead-file:${c.label}`,
         priority: "medium",
         title: `${c.label} が常時 ${c.alwaysTokens.toLocaleString()} トークンを消費`,
+        shortTitle: `${c.label} の常時注入過大`,
         detail: `毎セッション冒頭で ${c.alwaysTokens.toLocaleString()} トークンが注入される（推奨 ≤ ${OVERHEAD_FILE_CAUTION_TOKENS} トークン）。`,
         action: actionText,
         estMonthlySavings: Math.max(0, savings),
@@ -277,6 +284,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "cache-ttl-premium",
       priority: "medium",
       title: "1h キャッシュの 2倍プレミアムが回収できていない",
+      shortTitle: "1hキャッシュのプレミアム未回収",
       detail: `1h キャッシュ書き込みに約 ${cs.premium1h.toFixed(2)} USD の超過コスト（5m 比）。読み込み回収が不足。`,
       action: "短命セッションや再利用の少ない作業では 1h キャッシュ指定を避け、5m 既定に寄せる。",
       estMonthlySavings: Math.max(0, cs.premium1h * monthlyFactor),
@@ -292,6 +300,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "idle-cache-expiry",
       priority: "medium",
       title: "5分キャッシュの中断による無駄な再書き込み",
+      shortTitle: `アイドルによるキャッシュ失効（${gs.expiredGapCount}回）`,
       detail: `${gs.expiredGapCount} 回のアイドルギャップ（5分TTL超の中断）でキャッシュが失効し、約 ${gs.reWriteTokens.toLocaleString()} トークンが再書き込みされた（約 ${gs.reWriteCost.toFixed(2)} USD）。`,
       action: "セッション内の中断時間を最小化するか、重要なコンテキストは1h TTLで保護する。",
       estMonthlySavings: gs.reWriteCost * monthlyFactor,
@@ -306,6 +315,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "frequent-compaction",
       priority: "medium",
       title: "頻繁なコンテキスト圧縮が発生している",
+      shortTitle: `頻発するコンテキスト圧縮（${frequentlyCompacted.length}件）`,
       detail: `${frequentlyCompacted.length} 件のセッションで自動コンテキスト圧縮（compaction）が繰り返し発生（${cwds} ほか）。`,
       action: "区切りの良いタイミングで先回りして /compact を実行し、意図しない圧縮によるコンテキスト欠落を防ぐ。",
       estMonthlySavings: 0,
@@ -318,6 +328,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       id: "fallback-pricing",
       priority: "low",
       title: "価格未登録のモデルがある",
+      shortTitle: `価格未登録モデル（${s.warnings.fallbackModels.length}件）`,
       detail: `${s.warnings.fallbackModels.join(", ")} は暫定単価で計算（数値は過小/過大の可能性）。`,
       action: "server/pricing.js に該当モデルの単価を追加して精度を上げる。",
       estMonthlySavings: 0,

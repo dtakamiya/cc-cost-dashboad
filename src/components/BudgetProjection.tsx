@@ -6,6 +6,7 @@ import {
   clearBudgetLimit,
   calcBudgetProgress,
 } from "../budget";
+import { Icon } from "./icons/Icon";
 
 function fmt(v: number) {
   return v < 10 ? `$${v.toFixed(2)}` : `$${v.toFixed(1)}`;
@@ -119,7 +120,12 @@ export function BudgetProjection({ s }: { s: Summary }) {
             <span>実績 {progress.actualPct.toFixed(0)}%</span>
             <span className={progress.isProjectedOver ? "text-warn" : ""}>
               予測 {progress.projectedPct.toFixed(0)}%
-              {progress.isProjectedOver && " ⚠ 予算超過見込み"}
+              {progress.isProjectedOver && (
+                <>
+                  {" "}
+                  <Icon name="warning" size={12} /> 予算超過見込み
+                </>
+              )}
             </span>
           </div>
         </>
