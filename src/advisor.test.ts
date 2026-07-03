@@ -241,6 +241,54 @@ describe("buildRecommendations", () => {
     });
   });
 
+  const premiumSummary = () =>
+    baseSummary({
+      totals: { cost: 100, tokens: 1_000_000, sessions: 5, messages: 50, from: "2026-06-01", to: "2026-06-30" },
+      cacheStats: {
+        create1hTokens: 1_000_000,
+        create5mTokens: 0,
+        write1hCost: 10,
+        write5mCost: 0,
+        premium1h: 3.75,
+        readSavings: 1,
+        writeCost: 10,
+        roiNet: -9,
+      },
+    });
+
+  it("billingMode省略時はapiとして扱われ、既存のcache-ttl-premiumが発火する", () => {
+    const item = buildRecommendations(premiumSummary()).items.find((i) => i.id === "cache-ttl-premium");
+    expect(item).toBeDefined();
+  });
+
+  it("billingMode='api'を明示してもcache-ttl-premiumは従来通り発火する", () => {
+    const item = buildRecommendations(premiumSummary(), "api").items.find((i) => i.id === "cache-ttl-premium");
+    expect(item).toBeDefined();
+  });
+
+  it("billingMode='subscription'のときcache-ttl-premiumは抑制される", () => {
+    const item = buildRecommendations(premiumSummary(), "subscription").items.find(
+      (i) => i.id === "cache-ttl-premium"
+    );
+    expect(item).toBeUndefined();
+  });
+
+  it("billingMode='subscription'でも他のルール（bloated-sessions等）は通常通り発火する", () => {
+    const s = {
+      ...premiumSummary(),
+      bySession: [
+        session({
+          sessionId: "big",
+          messages: BLOAT_MIN_MESSAGES,
+          avgContextPerMsg: BLOAT_CONTEXT_THRESHOLD + 1,
+          cacheRead: 500_000,
+        }),
+      ],
+    };
+    const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "bloated-sessions");
+    expect(item).toBeDefined();
+  });
+
 describe("calculateOverheadStatus", () => {
   it("現在値が目標以下なら good を返す", () => {
     const result = calculateOverheadStatus(1000, 1500);

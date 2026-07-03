@@ -216,6 +216,8 @@ export type FixedPeriod = '7d' | '30d' | '90d' | 'all';
 
 export type Period = FixedPeriod | DateRange;
 
+export type BillingMode = 'subscription' | 'api';
+
 export const PERIOD_DAYS: Record<Exclude<FixedPeriod, 'all'>, number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 export function isDateRange(p: Period): p is DateRange {

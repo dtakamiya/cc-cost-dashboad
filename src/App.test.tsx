@@ -331,6 +331,32 @@ describe("App - テーマ切り替え", () => {
   });
 });
 
+describe("App - 課金モード切り替え", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetchSummary.mockResolvedValue(minimalSummary);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+  });
+
+  it("localStorageのbillingModeキーから初期値を復元し、トグルで切り替えるとlocalStorageが更新される", async () => {
+    localStorage.setItem("billingMode", "subscription");
+    renderApp();
+    await waitFor(() => expect(mockFetchSummary).toHaveBeenCalledTimes(1));
+
+    const toggle = screen.getByRole("button", { name: /課金モード切替/ });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(localStorage.getItem("billingMode")).toBe("api");
+  });
+});
+
 describe("App - セクションナビゲーション", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

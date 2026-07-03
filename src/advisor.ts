@@ -1,4 +1,4 @@
-import { isBloatedSession, type Summary } from "./api";
+import { isBloatedSession, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -142,7 +142,7 @@ export function rankFilesByImpact(
 }
 
 /** Summary を解析してコスト削減推奨アクション一覧を生成する。 */
-export function buildRecommendations(s: Summary): AdvisorResult {
+export function buildRecommendations(s: Summary, billingMode: BillingMode = "api"): AdvisorResult {
   const periodDays = periodDaysOf(s.totals.from, s.totals.to);
   const monthlyFactor = 30 / periodDays;
 
@@ -271,7 +271,7 @@ export function buildRecommendations(s: Summary): AdvisorResult {
   // 2026年に TTL が 60分→5分へ短縮され、1h キャッシュ（書き込み 2倍）の損益分岐が厳しくなった。
   // プレミアムを払ったのに ROI 純益で吸収しきれていない場合に、5m 既定への寄せを提案する。
   const cs = s.cacheStats;
-  if (cs && cs.premium1h > 0 && cs.roiNet < cs.premium1h) {
+  if (billingMode !== "subscription" && cs && cs.premium1h > 0 && cs.roiNet < cs.premium1h) {
     items.push({
       id: "cache-ttl-premium",
       priority: "medium",
