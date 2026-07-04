@@ -224,7 +224,7 @@ export const PRICING = {
 
 ## アーキテクチャ
 
-```
+```text
 cc-cost-dashboad/
 ├── server/
 │   ├── index.js      # Express API（ポート 3001。PORT 環境変数で変更可）
@@ -249,7 +249,7 @@ cc-cost-dashboad/
 
 **データフロー：**
 
-```
+```text
 ~/.claude/projects/**/*.jsonl
        ↓ parser.js（readline ストリーム、<synthetic> 等の内部モデルは除外）
  正規化レコード配列
