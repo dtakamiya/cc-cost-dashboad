@@ -34,6 +34,7 @@ const minimalSummary: Summary = {
     { toolName: "Agent", key: "Agent:Explore", name: "Explore", calls: 15, sessions: 3 },
     { toolName: "Skill", key: "Skill:codebase-onboarding", name: "codebase-onboarding", calls: 8, sessions: 2 },
   ],
+  byMcpServer: [],
 };
 
 describe("ToolBreakdown", () => {

@@ -75,7 +75,8 @@ function toToolUseRecords(obj) {
   const results = [];
   for (const block of content) {
     if (!block || block.type !== "tool_use") continue;
-    if (block.name !== "Agent" && block.name !== "Skill") continue;
+    const isMcp = typeof block.name === "string" && block.name.startsWith("mcp__");
+    if (block.name !== "Agent" && block.name !== "Skill" && !isMcp) continue;
 
     const input = block.input || {};
     const base = {
@@ -92,12 +93,27 @@ function toToolUseRecords(obj) {
         description: input.description || null,
         skill: null,
       });
-    } else {
+    } else if (block.name === "Skill") {
       results.push({
         ...base,
         subagentType: null,
         description: null,
         skill: input.skill || null,
+      });
+    } else {
+      // mcp__<serverName>__<mcpTool>。サーバー名自体に "__" を含まない前提で、
+      // 最後の "__" で分割する（UUID・ハイフンを含むサーバー名にも対応）。
+      const rest = block.name.slice("mcp__".length);
+      const splitIndex = rest.lastIndexOf("__");
+      const serverName = splitIndex === -1 ? "(unknown)" : rest.slice(0, splitIndex);
+      const mcpTool = splitIndex === -1 ? rest : rest.slice(splitIndex + 2);
+      results.push({
+        ...base,
+        subagentType: null,
+        description: null,
+        skill: null,
+        serverName,
+        mcpTool,
       });
     }
   }

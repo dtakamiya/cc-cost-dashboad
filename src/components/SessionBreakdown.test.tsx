@@ -36,6 +36,7 @@ function makeSummary(sessions: SessionCost[], overrides: Partial<Summary> = {}):
     activity: { matrix: [], max: 0, total: 0, peak: null },
     bySession: sessions,
     byTool: [],
+    byMcpServer: [],
     ...overrides,
   };
 }

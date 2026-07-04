@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1121,5 +1121,88 @@ describe("computeToolUsage", () => {
     const records = [rec({ sessionId: "s1" })];
     const result = aggregate(records);
     expect(result.byTool).toEqual([]);
+  });
+});
+
+// ─── computeMcpUsage ─────────────────────────────────────────────────────
+
+const mcpUseRec = (over = {}) => ({
+  toolName: "mcp__ccd_session__mark_chapter",
+  ts: "2026-06-15T10:00:00.000Z",
+  sessionId: "s1",
+  cwd: "/home/u/proj",
+  serverName: "ccd_session",
+  mcpTool: "mark_chapter",
+  ...over,
+});
+
+describe("computeMcpUsage", () => {
+  it("空配列入力 → [] を返す", () => {
+    expect(computeMcpUsage([])).toEqual([]);
+  });
+
+  it("同一サーバーの複数呼び出しが calls に集計される", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ serverName: "ccd_session", calls: 3, sessions: 1 });
+  });
+
+  it("複数セッションにまたがる呼び出しで sessions のユニーク数が正しい", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s2" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result).toHaveLength(1);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(2);
+  });
+
+  it("sessionId が (unknown) のレコードは sessions にカウントされない", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "(unknown)" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "(unknown)" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result[0].calls).toBe(3);
+    expect(result[0].sessions).toBe(1);
+  });
+
+  it("calls 降順ソート", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "gh", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result[0].serverName).toBe("ccd_session");
+    expect(result[0].calls).toBe(3);
+    expect(result[1].serverName).toBe("gh");
+    expect(result[1].calls).toBe(1);
+  });
+
+  it("aggregate() の戻り値に byMcpServer が含まれ、toolUseRecords オプションで渡される", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1" }),
+    ];
+    const result = aggregate(records, { toolUseRecords });
+    expect(result.byMcpServer).toBeDefined();
+    expect(result.byMcpServer).toEqual([{ serverName: "ccd_session", calls: 2, sessions: 1 }]);
+  });
+
+  it("toolUseRecords 未指定時は byMcpServer は []（回帰なし）", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const result = aggregate(records);
+    expect(result.byMcpServer).toEqual([]);
   });
 });

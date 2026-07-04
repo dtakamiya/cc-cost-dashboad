@@ -537,6 +537,109 @@ describe("loadRecords - toolUseRecords", () => {
     }
   });
 
+  it("mcp__ プレフィックスの tool_use から serverName, mcpTool が抽出される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_mcp1",
+            name: "mcp__ccd_session__mark_chapter",
+            input: { chapter: "intro" },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("mcp__ccd_session__mark_chapter");
+      expect(toolUseRecords[0].serverName).toBe("ccd_session");
+      expect(toolUseRecords[0].mcpTool).toBe("mark_chapter");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("サーバー名に UUID・ハイフンを含む mcp__ tool_use でも serverName が正しく分離される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_mcp2",
+            name: "mcp__944da724-fa9e-43cd-bfa8-b1b2d3f6acfb__create_draft",
+            input: {},
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].serverName).toBe("944da724-fa9e-43cd-bfa8-b1b2d3f6acfb");
+      expect(toolUseRecords[0].mcpTool).toBe("create_draft");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("Agent/Skill の tool_use には serverName/mcpTool が付与されない（undefined）", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_agent",
+            name: "Agent",
+            input: { subagent_type: "Explore" },
+          },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].serverName).toBeUndefined();
+      expect(toolUseRecords[0].mcpTool).toBeUndefined();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("tool_use を含む行でも、既存の usage レコード（records）の抽出には影響しない", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
     const projectDir = path.join(tmpDir, "project1");
