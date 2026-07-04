@@ -1206,3 +1206,85 @@ describe("computeMcpUsage", () => {
     expect(result.byMcpServer).toEqual([]);
   });
 });
+
+describe("aggregate thinking トークン内訳", () => {
+  it("thinkingTokensApproxを持つレコードでthinking.approxTokensが合算される", () => {
+    const s = aggregate([
+      rec({ output: 1000, thinkingTokensApprox: 300, hasThinking: true, thinkingBlockCount: 1 }),
+      rec({ output: 500, thinkingTokensApprox: 100, hasThinking: true, thinkingBlockCount: 1 }),
+    ]);
+    expect(s.thinking.approxTokens).toBe(400);
+    expect(s.thinking.hasAnyThinking).toBe(true);
+  });
+
+  it("thinking.outputShareはapproxTokens/tokenSplit.outputで算出される", () => {
+    const s = aggregate([
+      rec({ output: 1000, thinkingTokensApprox: 400, hasThinking: true, thinkingBlockCount: 1 }),
+    ]);
+    expect(s.thinking.outputShare).toBeCloseTo(0.4, 10);
+  });
+
+  it("outputが0の場合、outputShareは0除算にならず0になる", () => {
+    const s = aggregate([
+      rec({ output: 0, thinkingTokensApprox: 0, hasThinking: false, thinkingBlockCount: 0 }),
+    ]);
+    expect(s.thinking.outputShare).toBe(0);
+    expect(s.thinking.approxTokens).toBe(0);
+    expect(s.thinking.hasAnyThinking).toBe(false);
+  });
+
+  it("thinking.isApproxは常にtrue（近似値であることを明示）", () => {
+    const s = aggregate([rec({})]);
+    expect(s.thinking.isApprox).toBe(true);
+  });
+
+  it("thinkingTokensApproxを持つレコードでもtotalCost・totalTokensが変化しない（二重計上防止）", () => {
+    const withoutThinking = aggregate([rec({ output: 1000 })]);
+    const withThinking = aggregate([
+      rec({ output: 1000, thinkingTokensApprox: 800, hasThinking: true, thinkingBlockCount: 1 }),
+    ]);
+    expect(withThinking.totals.cost).toBeCloseTo(withoutThinking.totals.cost, 10);
+    expect(withThinking.totals.tokens).toBe(withoutThinking.totals.tokens);
+    expect(withThinking.tokenSplit.output).toBe(withoutThinking.tokenSplit.output);
+    expect(withThinking.costSplit.output).toBeCloseTo(withoutThinking.costSplit.output, 10);
+  });
+
+  it("thinkingフィールドが無いレコード（既存rec()デフォルト）でもthinkingTokensApproxが0扱いになる（後方互換）", () => {
+    const s = aggregate([rec({ output: 100 })]);
+    expect(s.thinking.approxTokens).toBe(0);
+    expect(s.thinking.hasAnyThinking).toBe(false);
+    expect(s.thinking.outputShare).toBe(0);
+  });
+
+  it("byModel各要素にthinkingTokensApproxが合算される", () => {
+    const s = aggregate([
+      rec({ model: "claude-opus-4-8", output: 1000, thinkingTokensApprox: 300, hasThinking: true, thinkingBlockCount: 1 }),
+      rec({ model: "claude-opus-4-8", output: 500, thinkingTokensApprox: 100, hasThinking: true, thinkingBlockCount: 1 }),
+      rec({ model: "claude-haiku-4-5", output: 200 }),
+    ]);
+    const opus = s.models.find((m) => m.model === "claude-opus-4-8");
+    const haiku = s.models.find((m) => m.model === "claude-haiku-4-5");
+    expect(opus.thinkingTokensApprox).toBe(400);
+    expect(haiku.thinkingTokensApprox).toBe(0);
+  });
+
+  it("byDay各要素にthinkingTokensApproxが合算される", () => {
+    const s = aggregate([
+      rec({ ts: "2026-06-15T10:00:00.000Z", output: 1000, thinkingTokensApprox: 300, hasThinking: true, thinkingBlockCount: 1 }),
+      rec({ ts: "2026-06-15T12:00:00.000Z", output: 500, thinkingTokensApprox: 100, hasThinking: true, thinkingBlockCount: 1 }),
+      rec({ ts: "2026-06-16T10:00:00.000Z", output: 200 }),
+    ]);
+    const day1 = s.daily.find((d) => d.date === "2026-06-15");
+    const day2 = s.daily.find((d) => d.date === "2026-06-16");
+    expect(day1.thinkingTokensApprox).toBe(400);
+    expect(day2.thinkingTokensApprox).toBe(0);
+  });
+
+  it("既存のcacheStats・driversは引き続き正しく計算される（回帰なし）", () => {
+    const s = aggregate([
+      rec({ cacheCreate: 1000, cacheCreate1h: 1000, cache1h: true, thinkingTokensApprox: 50, hasThinking: true, thinkingBlockCount: 1 }),
+    ]);
+    expect(s.cacheStats.create1hTokens).toBe(1000);
+    expect(s.drivers).toBeDefined();
+  });
+});

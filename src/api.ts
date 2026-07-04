@@ -4,6 +4,7 @@ export interface ModelCost {
   tokens: number;
   isFallback: boolean;
   tokenSplit?: { input: number; output: number; cacheCreate: number; cacheRead: number };
+  thinkingTokensApprox?: number; // outputに既に含まれるextended thinking近似トークン数（内訳）
 }
 
 export interface ModelPrice {
@@ -40,6 +41,7 @@ export interface DailyCost {
   mainCost?: number;
   subagentTokens?: number;
   subagentCost?: number;
+  thinkingTokensApprox?: number; // outputに既に含まれるextended thinking近似トークン数（内訳）
 }
 
 export interface SessionCost {
@@ -134,6 +136,16 @@ export interface McpServerOverhead {
   source: "measured" | "estimated" | "unknown";
 }
 
+// extended thinking（推論）トークンの近似内訳。
+// 重要: approxTokensはtokenSplit.output（およびcostSplit.output）に既に含まれる内訳であり、
+// 追加コストではない。usageにthinking専用フィールドが無いため、テキスト長からの近似値（isApprox: true）。
+export interface ThinkingStats {
+  approxTokens: number; // output内のthinking近似トークン数（合算）
+  outputShare: number;  // approxTokens / tokenSplit.output（0-1、outputが0なら0）
+  isApprox: boolean;    // 常にtrue（近似値であることの明示）
+  hasAnyThinking: boolean;
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -184,6 +196,7 @@ export interface Summary {
   cacheGapStats?: CacheGapStats;
   modelSwitch?: ModelSwitchStats;
   subagentStats?: SubagentStats;
+  thinking?: ThinkingStats;
   source?: {
     fileCount: number;
     parsedLines?: number;

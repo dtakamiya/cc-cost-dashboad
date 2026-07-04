@@ -1083,3 +1083,117 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
     }
   });
 });
+
+describe("loadRecords - thinking トークン近似", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+  });
+
+  function writeAndLoad(tmpDir, line) {
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+    process.env.CLAUDE_LOGS_DIR = tmpDir;
+    return loadRecords();
+  }
+
+  it("thinkingブロックのテキスト長からthinkingTokensApproxをMath.ceil(chars/4)で算出する", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-thinking-test-"));
+    const thinkingText = "a".repeat(40); // 40 chars -> ceil(40/4) = 10 tokens
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        usage: { input_tokens: 10, output_tokens: 50 },
+        content: [{ type: "thinking", thinking: thinkingText }],
+      },
+    });
+
+    try {
+      const { records } = await writeAndLoad(tmpDir, line);
+      expect(records).toHaveLength(1);
+      expect(records[0].thinkingTokensApprox).toBe(10);
+      expect(records[0].hasThinking).toBe(true);
+      expect(records[0].thinkingBlockCount).toBe(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("複数のthinkingブロックがある場合、テキストを合算してから算出する", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-thinking-multi-test-"));
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        usage: { input_tokens: 10, output_tokens: 50 },
+        content: [
+          { type: "thinking", thinking: "a".repeat(20) },
+          { type: "text", text: "final answer" },
+          { type: "thinking", thinking: "b".repeat(20) },
+        ],
+      },
+    });
+
+    try {
+      const { records } = await writeAndLoad(tmpDir, line);
+      expect(records).toHaveLength(1);
+      // 合算 40 chars -> ceil(40/4) = 10
+      expect(records[0].thinkingTokensApprox).toBe(10);
+      expect(records[0].hasThinking).toBe(true);
+      expect(records[0].thinkingBlockCount).toBe(2);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("thinkingブロックが無い場合、hasThinking: false, thinkingTokensApprox: 0, thinkingBlockCount: 0", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-no-thinking-test-"));
+    try {
+      const { records } = await writeAndLoad(tmpDir, VALID_LINE);
+      expect(records).toHaveLength(1);
+      expect(records[0].thinkingTokensApprox).toBe(0);
+      expect(records[0].hasThinking).toBe(false);
+      expect(records[0].thinkingBlockCount).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("contentがない（配列でない）場合もthinking関連フィールドは0/falseになる", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-no-content-test-"));
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+    });
+
+    try {
+      const { records } = await writeAndLoad(tmpDir, line);
+      expect(records).toHaveLength(1);
+      expect(records[0].thinkingTokensApprox).toBe(0);
+      expect(records[0].hasThinking).toBe(false);
+      expect(records[0].thinkingBlockCount).toBe(0);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});

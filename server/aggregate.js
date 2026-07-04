@@ -489,10 +489,14 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
   let maxTs = null;
   let fallbackModels = new Set();
   let mainTokens = 0, mainCost = 0, subagentTokens = 0, subagentCost = 0;
+  // thinking近似トークンはoutputのサブセット（内訳）であり、totalCost/totalTokens/tokenSplit.output/
+  // costSplit.outputには一切加算しない（二重計上禁止）。
+  let thinkingTokensApprox = 0;
 
   for (const r of records) {
     const c = costOf(r.model, r);
     const tokens = r.input + r.output + r.cacheCreate + r.cacheRead;
+    const recThinkingTokens = r.thinkingTokensApprox || 0;
 
     totalCost += c.total;
     totalTokens += tokens;
@@ -520,6 +524,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     const m = byModel.get(r.model) || {
       cost: 0, tokens: 0, isFallback: c.isFallback,
       tokenSplit: { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 },
+      thinkingTokensApprox: 0,
     };
     m.cost += c.total;
     m.tokens += tokens;
@@ -527,6 +532,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     m.tokenSplit.output += r.output;
     m.tokenSplit.cacheCreate += r.cacheCreate;
     m.tokenSplit.cacheRead += r.cacheRead;
+    m.thinkingTokensApprox += recThinkingTokens;
     byModel.set(r.model, m);
     if (c.isFallback) fallbackModels.add(r.model);
 
@@ -536,6 +542,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
         costMap: new Map(), tokenMap: new Map(), projectTokenMap: new Map(), projectCostMap: new Map(),
         inputTokens: 0, cacheReadTokens: 0,
         mainTokens: 0, mainCost: 0, subagentTokens: 0, subagentCost: 0,
+        thinkingTokensApprox: 0,
       });
     }
     const dd = byDay.get(day);
@@ -545,6 +552,9 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     dd.projectCostMap.set(r.cwd, (dd.projectCostMap.get(r.cwd) || 0) + c.total);
     dd.inputTokens += r.input;
     dd.cacheReadTokens += r.cacheRead;
+    dd.thinkingTokensApprox += recThinkingTokens;
+
+    thinkingTokensApprox += recThinkingTokens;
 
     if (r.isSidechain) {
       dd.subagentTokens += tokens;
@@ -586,6 +596,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     .map(([date, {
       costMap, tokenMap, projectTokenMap, projectCostMap, inputTokens, cacheReadTokens,
       mainTokens: dayMainTokens, mainCost: dayMainCost, subagentTokens: daySubagentTokens, subagentCost: daySubagentCost,
+      thinkingTokensApprox: dayThinkingTokensApprox,
     }]) => {
       const models = Object.fromEntries(costMap);
       const total = [...costMap.values()].reduce((s, v) => s + v, 0);
@@ -600,6 +611,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
         date, models, total, tokenModels, tokenTotal, projectTokens, projectCosts,
         inputTokens, cacheReadTokens, cacheReadRatio,
         mainTokens: dayMainTokens, mainCost: dayMainCost, subagentTokens: daySubagentTokens, subagentCost: daySubagentCost,
+        thinkingTokensApprox: dayThinkingTokensApprox,
       };
     })
     .filter((d) => d.date !== "(unknown)")
@@ -673,6 +685,14 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
       fallbackModels: [...fallbackModels],
     },
     cacheStats,
+    // thinking（extended thinking）近似トークン内訳。あくまで tokenSplit.output に既に含まれる
+    // 内訳の可視化であり、totalCost/totalTokens/tokenSplit/costSplit には加算していない（二重計上禁止）。
+    thinking: {
+      approxTokens: thinkingTokensApprox,
+      outputShare: tokenSplit.output ? thinkingTokensApprox / tokenSplit.output : 0,
+      isApprox: true,
+      hasAnyThinking: thinkingTokensApprox > 0,
+    },
     subagentStats: {
       mainTokens, mainCost, subagentTokens, subagentCost,
       subagentRatio: (mainTokens + subagentTokens) > 0 ? subagentTokens / (mainTokens + subagentTokens) : 0,
