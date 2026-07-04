@@ -671,6 +671,47 @@ export function computeCumulativeCostCurve(turns: SessionTurn[]): CumulativeCost
   });
 }
 
+export interface CumulativeInputPoint {
+  turnIndex: number;
+  ts: string | null;
+  input: number;
+  cumulativeInput: number;
+  exceedsThreshold: boolean;
+}
+
+// proactiveな /clear・/compact を推奨する累積入力トークン閾値。
+// Claude Code は毎メッセージで会話履歴全体を input として再送するため、
+// 累積が大きいほど1ターンあたりの再送コストが単調増加する。250k は
+// 主要モデルのコンテキストウィンドウ（200k〜）に対して十分な余裕を残しつつ
+// 早めに区切りを促すための目安値。
+export const PROACTIVE_COMPACT_THRESHOLD = 250_000;
+
+/** セッションの累積入力トークン（cacheRead + input）が proactive 閾値を超えているかどうかを返す。 */
+export function isProactiveThresholdSession(
+  s: SessionCost,
+  threshold = PROACTIVE_COMPACT_THRESHOLD
+): boolean {
+  return s.cacheRead + s.input > threshold;
+}
+
+/** セッション内ターン配列から累積入力トークン曲線を計算する。閾値を超えたターン以降は exceedsThreshold=true を付与する。 */
+export function computeCumulativeInputCurve(turns: SessionTurn[]): CumulativeInputPoint[] {
+  let cumulativeInput = 0;
+
+  return turns.map((t, i) => {
+    const input = t.cacheRead + t.input;
+    cumulativeInput += input;
+
+    return {
+      turnIndex: i + 1,
+      ts: t.ts,
+      input,
+      cumulativeInput,
+      exceedsThreshold: cumulativeInput > PROACTIVE_COMPACT_THRESHOLD,
+    };
+  });
+}
+
 export function filterSessions(
   sessions: SessionCost[],
   cwdQuery: string,

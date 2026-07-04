@@ -860,3 +860,28 @@ describe("buildRecommendations - tool-result-bloat", () => {
     expect(r.items.find((i) => i.id === "tool-result-bloat")).toBeUndefined();
   });
 });
+
+describe("buildRecommendations - proactive-compact-threshold", () => {
+  it("cacheRead + input が250kを超えるセッションがあれば proactive-compact-threshold 推奨を出す", () => {
+    const s = baseSummary({
+      bySession: [session({ sessionId: "big-input", cacheRead: 200_000, input: 60_000 })],
+    });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "proactive-compact-threshold");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+  });
+
+  it("cacheRead + input が250k未満のセッションのみの場合は発火しない", () => {
+    const s = baseSummary({
+      bySession: [session({ sessionId: "small-input", cacheRead: 100_000, input: 50_000 })],
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "proactive-compact-threshold")).toBeUndefined();
+  });
+
+  it("中立な baseSummary() に対して誤発火しない", () => {
+    const r = buildRecommendations(baseSummary());
+    expect(r.items.find((i) => i.id === "proactive-compact-threshold")).toBeUndefined();
+  });
+});

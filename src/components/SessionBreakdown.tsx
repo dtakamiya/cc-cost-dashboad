@@ -14,6 +14,7 @@ import { usd, compact, pct } from "../format";
 import { buildClearCommand } from "../clearCommand";
 import { Icon } from "./icons/Icon";
 import { SessionCostCurve } from "./SessionCostCurve";
+import { InputContextCurve } from "./InputContextCurve";
 
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
@@ -358,6 +359,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
                       ) : (
                         <>
                           <SessionCostCurve turns={turnsData} loading={false} />
+                          <InputContextCurve turns={turnsData} loading={false} />
                           <TurnsDetail turns={turnsData} loading={false} />
                         </>
                       )}
