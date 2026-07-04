@@ -117,7 +117,25 @@ describe("SessionBreakdown", () => {
     fireEvent.click(expandBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/2 ターン/)).toBeInTheDocument();
+      expect(screen.getByText(/会話ターン別トークン消費/)).toBeInTheDocument();
+    });
+  });
+
+  it("fetchSessionTurns が成功すると累積コスト曲線も表示される", async () => {
+    const turns: SessionTurn[] = [
+      { ts: "2026-06-15T10:00:00.000Z", model: "claude-opus-4-8", input: 1000, output: 500, cacheCreate: 0, cacheRead: 0, cost: 0.01 },
+      { ts: "2026-06-15T10:05:00.000Z", model: "claude-opus-4-8", input: 2000, output: 800, cacheCreate: 0, cacheRead: 0, cost: 0.02 },
+    ];
+    vi.mocked(fetchSessionTurns).mockResolvedValue(turns);
+
+    const s = makeSummary([makeSession()]);
+    render(<SessionBreakdown s={s} />);
+
+    const expandBtn = screen.getByRole("button", { name: "詳細を展開" });
+    fireEvent.click(expandBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/累積コスト推移/)).toBeInTheDocument();
     });
   });
 

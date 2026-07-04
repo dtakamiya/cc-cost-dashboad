@@ -5,8 +5,10 @@ import {
   BLOAT_MIN_MESSAGES,
   fetchSessionTurns,
   filterSessions,
+  computeCumulativeCostCurve,
+  SPIKE_RATIO_THRESHOLD,
 } from "./api";
-import type { SessionCost } from "./api";
+import type { SessionCost, SessionTurn } from "./api";
 
 const session = (over: Partial<SessionCost>): SessionCost => ({
   sessionId: "s1",
@@ -158,5 +160,67 @@ describe("isBloatedSession", () => {
     const s = session({ messages: 3, avgContextPerMsg: 50_000 });
     expect(isBloatedSession(s, 40_000, 2)).toBe(true);
     expect(isBloatedSession(s, 60_000, 2)).toBe(false);
+  });
+});
+
+describe("computeCumulativeCostCurve", () => {
+  const turn = (over: Partial<SessionTurn>): SessionTurn => ({
+    ts: null,
+    model: "claude-sonnet-4-6",
+    input: 0,
+    output: 0,
+    cacheCreate: 0,
+    cacheRead: 0,
+    cost: 0,
+    ...over,
+  });
+
+  it("空配列を渡すと空配列を返す", () => {
+    expect(computeCumulativeCostCurve([])).toEqual([]);
+  });
+
+  it("単一ターンでもエラーにならず1点で描画できる", () => {
+    const result = computeCumulativeCostCurve([turn({ cost: 0.01 })]);
+    expect(result).toHaveLength(1);
+    expect(result[0].turnIndex).toBe(1);
+    expect(result[0].cumulativeCost).toBeCloseTo(0.01);
+    expect(result[0].isSpike).toBe(false);
+  });
+
+  it("累積コストが単調増加する", () => {
+    const turns = [
+      turn({ cost: 0.01 }),
+      turn({ cost: 0.02 }),
+      turn({ cost: 0.005 }),
+    ];
+    const result = computeCumulativeCostCurve(turns);
+    expect(result.map((r) => r.turnIndex)).toEqual([1, 2, 3]);
+    expect(result[0].cumulativeCost).toBeCloseTo(0.01);
+    expect(result[1].cumulativeCost).toBeCloseTo(0.03);
+    expect(result[2].cumulativeCost).toBeCloseTo(0.035);
+    // 単調増加であること
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i].cumulativeCost).toBeGreaterThanOrEqual(result[i - 1].cumulativeCost);
+    }
+  });
+
+  it("傾きが急増したターンを isSpike = true としてマークする", () => {
+    // 前のターンまでの平均コストに対し、SPIKE_RATIO_THRESHOLD 倍を超えるターンをスパイクとする
+    const turns = [
+      turn({ cost: 0.01 }),
+      turn({ cost: 0.01 }),
+      turn({ cost: 0.01 }),
+      turn({ cost: 0.01 * (SPIKE_RATIO_THRESHOLD + 1) }), // 急増
+    ];
+    const result = computeCumulativeCostCurve(turns);
+    expect(result[0].isSpike).toBe(false);
+    expect(result[1].isSpike).toBe(false);
+    expect(result[2].isSpike).toBe(false);
+    expect(result[3].isSpike).toBe(true);
+  });
+
+  it("最初のターンは比較対象がないため isSpike は常に false", () => {
+    const result = computeCumulativeCostCurve([turn({ cost: 100 })]);
+    expect(result[0].isSpike).toBe(false);
   });
 });
