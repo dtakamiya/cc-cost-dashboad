@@ -8,6 +8,7 @@ import {
   OUTPUT_COST_RATIO_THRESHOLD,
   IDLE_REWRITE_COST_THRESHOLD,
   MODEL_SWITCH_REWRITE_COST_THRESHOLD,
+  MCP_OVERHEAD_TOKEN_THRESHOLD,
 } from "./advisor";
 import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
 
@@ -433,6 +434,55 @@ describe("buildRecommendations - model-switch-cost", () => {
       },
     });
     const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "model-switch-cost");
+    expect(item).toBeUndefined();
+  });
+});
+
+describe("buildRecommendations - mcp-overhead", () => {
+  it("MCPサーバ推定トークン合計が閾値超のとき mcp-overhead 推奨を出す", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          { name: "github", toolCount: null, estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD + 1, source: "estimated" },
+        ],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-overhead");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+    expect(item!.estMonthlySavings).toBeGreaterThan(0);
+  });
+
+  it("MCP未設定（空配列）のとき mcp-overhead は発火しない", () => {
+    const item = buildRecommendations(baseSummary()).items.find((i) => i.id === "mcp-overhead");
+    expect(item).toBeUndefined();
+  });
+
+  it("MCPサーバ推定トークン合計が閾値以下のとき mcp-overhead は発火しない", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          { name: "github", toolCount: null, estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD, source: "estimated" },
+        ],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-overhead");
+    expect(item).toBeUndefined();
+  });
+
+  it("estimatedTokensがnull（unknown）のサーバはnull扱いされクラッシュしない", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          { name: "unknown-server", toolCount: null, estimatedTokens: null, source: "unknown" },
+        ],
+      },
+    });
+    expect(() => buildRecommendations(s)).not.toThrow();
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-overhead");
     expect(item).toBeUndefined();
   });
 });
