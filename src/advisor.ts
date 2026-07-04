@@ -1,4 +1,4 @@
-import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, isToolResultHeavySession, type BillingMode, type Summary } from "./api";
+import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, isToolResultHeavySession, PROACTIVE_COMPACT_THRESHOLD, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -426,6 +426,30 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       shortTitle: `ツール結果の肥大（${toolResultHeavySessions.length}件）`,
       detail: `${toolResultHeavySessions.length} 件のセッションで Read/Bash/Grep 等のツール結果累積が大きい（${cwds} ほか、近似値）。`,
       action: "大きなファイル読み込みや大量出力を伴う調査は subagent（Explore等）に委譲し、メインコンテキストへの再送を避ける。",
+      estMonthlySavings: 0,
+    });
+  }
+
+  // 5h. 累積入力トークンが絶対閾値(250k)を超過 → proactiveな /compact・/clear（medium, 定性）
+  // "bloated-sessions"（avgContextPerMsg × messages の相対的な肥大化）や
+  // "frequent-compaction"（自動compaction回数）とは異なり、こちらは
+  // cacheRead + input の累積絶対量そのものが閾値を超えたかどうかで判定する。
+  // ターン単位のリアルタイム判定はグラフ側（InputContextCurve）で行うため、
+  // ここではセッション累計による近似のみを扱う。
+  const proactiveThresholdSessions = s.bySession.filter(
+    (sess) => sess.cacheRead + sess.input > PROACTIVE_COMPACT_THRESHOLD
+  );
+  if (proactiveThresholdSessions.length > 0) {
+    const cwds = [...new Set(proactiveThresholdSessions.map((sess) => shortCwd(sess.cwd)))]
+      .slice(0, 3)
+      .join(", ");
+    items.push({
+      id: "proactive-compact-threshold",
+      priority: "medium",
+      title: "累積入力トークンが閾値を超えたセッションがある",
+      shortTitle: `累積入力トークン超過（${proactiveThresholdSessions.length}件）`,
+      detail: `${proactiveThresholdSessions.length} 件のセッションで累積入力トークン（cache read + input）が ${PROACTIVE_COMPACT_THRESHOLD.toLocaleString()} を超過（${cwds} ほか）。`,
+      action: "250kトークン到達前にproactiveに /compact を実行するか、無関係なタスクに移る際は /clear で会話を区切る。",
       estMonthlySavings: 0,
     });
   }

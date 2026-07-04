@@ -7,6 +7,8 @@ import {
   filterSessions,
   computeCumulativeCostCurve,
   SPIKE_RATIO_THRESHOLD,
+  computeCumulativeInputCurve,
+  PROACTIVE_COMPACT_THRESHOLD,
 } from "./api";
 import type { SessionCost, SessionTurn } from "./api";
 
@@ -222,5 +224,80 @@ describe("computeCumulativeCostCurve", () => {
   it("最初のターンは比較対象がないため isSpike は常に false", () => {
     const result = computeCumulativeCostCurve([turn({ cost: 100 })]);
     expect(result[0].isSpike).toBe(false);
+  });
+});
+
+describe("computeCumulativeInputCurve", () => {
+  const turn = (over: Partial<SessionTurn>): SessionTurn => ({
+    ts: null,
+    model: "claude-sonnet-4-6",
+    input: 0,
+    output: 0,
+    cacheCreate: 0,
+    cacheRead: 0,
+    cost: 0,
+    ...over,
+  });
+
+  it("空配列を渡すと空配列を返す", () => {
+    expect(computeCumulativeInputCurve([])).toEqual([]);
+  });
+
+  it("各ターンの cacheRead + input を累積加算する", () => {
+    const turns = [
+      turn({ input: 1000, cacheRead: 2000 }),
+      turn({ input: 500, cacheRead: 1500 }),
+    ];
+    const result = computeCumulativeInputCurve(turns);
+    expect(result[0].input).toBe(3000);
+    expect(result[0].cumulativeInput).toBe(3000);
+    expect(result[1].input).toBe(2000);
+    expect(result[1].cumulativeInput).toBe(5000);
+  });
+
+  it("turnIndex は1始まり", () => {
+    const turns = [turn({ input: 1 }), turn({ input: 1 }), turn({ input: 1 })];
+    const result = computeCumulativeInputCurve(turns);
+    expect(result.map((r) => r.turnIndex)).toEqual([1, 2, 3]);
+  });
+
+  it("累積が閾値未満のターンは exceedsThreshold = false", () => {
+    const result = computeCumulativeInputCurve([turn({ input: 100, cacheRead: 100 })]);
+    expect(result[0].cumulativeInput).toBe(200);
+    expect(result[0].exceedsThreshold).toBe(false);
+  });
+
+  it("累積が PROACTIVE_COMPACT_THRESHOLD を超えたターンで exceedsThreshold = true になる", () => {
+    const turns = [
+      turn({ input: PROACTIVE_COMPACT_THRESHOLD - 1000 }),
+      turn({ input: 2000 }), // 累積が閾値を超える
+    ];
+    const result = computeCumulativeInputCurve(turns);
+    expect(result[0].exceedsThreshold).toBe(false);
+    expect(result[1].cumulativeInput).toBe(PROACTIVE_COMPACT_THRESHOLD + 1000);
+    expect(result[1].exceedsThreshold).toBe(true);
+  });
+
+  it("境界値: ちょうど閾値は超過扱いにしない（> 比較で統一）", () => {
+    const result = computeCumulativeInputCurve([turn({ input: PROACTIVE_COMPACT_THRESHOLD })]);
+    expect(result[0].cumulativeInput).toBe(PROACTIVE_COMPACT_THRESHOLD);
+    expect(result[0].exceedsThreshold).toBe(false);
+  });
+
+  it("閾値+1から超過扱いになる", () => {
+    const result = computeCumulativeInputCurve([turn({ input: PROACTIVE_COMPACT_THRESHOLD + 1 })]);
+    expect(result[0].exceedsThreshold).toBe(true);
+  });
+
+  it("一度超過したら以降のターンも exceedsThreshold = true のまま", () => {
+    const turns = [
+      turn({ input: PROACTIVE_COMPACT_THRESHOLD + 1 }),
+      turn({ input: 0 }),
+      turn({ input: 0 }),
+    ];
+    const result = computeCumulativeInputCurve(turns);
+    expect(result[0].exceedsThreshold).toBe(true);
+    expect(result[1].exceedsThreshold).toBe(true);
+    expect(result[2].exceedsThreshold).toBe(true);
   });
 });
