@@ -183,8 +183,8 @@ async function readFileFromOffset(file, startOffset) {
  * offsetState を渡すと、前回読み込み済みのバイトオフセット以降のみを差分読み込みする。
  * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
- * @param {Map<string, {offset: number, mtimeMs: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
- * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
+ * @param {Map<string, {offset: number, mtimeMs: number, dev: number, ino: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number, truncationDetected: boolean }>}
  */
 export async function loadRecords(offsetState = new Map()) {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
@@ -195,22 +195,49 @@ export async function loadRecords(offsetState = new Map()) {
   let parsedLines = 0;
   let parseErrors = 0;
   let unreadableFiles = 0;
+  let truncationDetected = false;
+
+  // 事前に全ファイルの stat を取得する。切り詰め・mtime 後退を検知した場合、
+  // offsetState 全体をクリアし、今回のループは「全ファイルを起点0から読み直す」形にする。
+  // これにより、真偽だけでなく records/compactions/toolUseRecords も
+  // 「切り詰め時は全ファイル全件」という一貫した戻り値になる。
+  const stats = new Map();
+  for (const file of files) {
+    try {
+      stats.set(file, fs.statSync(file));
+    } catch {
+      // 読み取り失敗はこの後のループで unreadableFiles としてカウントする
+    }
+  }
+  for (const [file, stat] of stats) {
+    const cached = offsetState.get(file);
+    if (
+      cached &&
+      (stat.size < cached.offset ||
+        stat.mtimeMs < cached.mtimeMs ||
+        stat.dev !== cached.dev ||
+        stat.ino !== cached.ino)
+    ) {
+      // サイズ縮小・mtime後退に加え、dev/ino の変化（同一パスでの削除→再作成によるファイル差し替え）も検知する。
+      // 差し替え後のファイルがたまたま前回より大きいサイズ・新しい mtime を持っていても、
+      // 別ファイルである以上は先頭から読み直す必要がある。
+      truncationDetected = true;
+      break;
+    }
+  }
+  if (truncationDetected) {
+    offsetState.clear(); // 他ファイル分も含め、今回は全件0から読み直す
+  }
 
   for (const file of files) {
-    let stat;
-    try {
-      stat = fs.statSync(file);
-    } catch {
+    const stat = stats.get(file);
+    if (!stat) {
       unreadableFiles++;
       continue;
     }
 
     const cached = offsetState.get(file);
-    let startOffset = 0;
-    if (cached && stat.size >= cached.offset && stat.mtimeMs >= cached.mtimeMs) {
-      startOffset = cached.offset;
-    }
-    // それ以外（新規ファイル／切り詰め／mtime 後退）は offset 0 から再読み込みする
+    const startOffset = cached ? cached.offset : 0;
 
     const result = await readFileFromOffset(file, startOffset);
     if (result.readFailed) {
@@ -224,10 +251,10 @@ export async function loadRecords(offsetState = new Map()) {
     parsedLines += result.parsedLines;
     parseErrors += result.parseErrors;
 
-    offsetState.set(file, { offset: result.newOffset, mtimeMs: stat.mtimeMs });
+    offsetState.set(file, { offset: result.newOffset, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino });
   }
 
   const skippedLines = parsedLines - records.length;
 
-  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles };
+  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected };
 }

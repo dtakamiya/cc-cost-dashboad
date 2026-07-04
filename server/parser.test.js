@@ -805,3 +805,178 @@ describe("loadRecords - 差分読み込み（offsetState）", () => {
     expect(third.unreadableFiles).toBe(0);
   });
 });
+
+describe("loadRecords - 切り詰め検知フラグ", () => {
+  let originalEnv;
+  let tmpDir;
+  let projectDir;
+  let logFile;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-truncation-test-"));
+    projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    logFile = path.join(projectDir, "session.jsonl");
+    process.env.CLAUDE_LOGS_DIR = tmpDir;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("ファイルが切り詰められた場合、truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    // ファイルを切り詰めて短くする
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.truncationDetected).toBe(true);
+  });
+
+  it("mtimeが後退した場合も truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const cachedEntry = offsetState.get(logFile);
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const pastMtime = new Date(cachedEntry.mtimeMs - 60_000);
+    fs.utimesSync(logFile, pastMtime, pastMtime);
+
+    const second = await loadRecords(offsetState);
+    expect(second.truncationDetected).toBe(true);
+  });
+
+  it("通常の差分読み込み（追記のみ）では truncationDetected が false になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    fs.appendFileSync(logFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.truncationDetected).toBe(false);
+  });
+
+  it("新規ファイルのみの場合は truncationDetected が false になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const newFile = path.join(projectDir, "session2.jsonl");
+    fs.writeFileSync(newFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.truncationDetected).toBe(false);
+  });
+
+  it("複数ファイル中1つだけ切り詰められた場合でも truncationDetected が true になる", async () => {
+    const logFile2 = path.join(projectDir, "session2.jsonl");
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    fs.writeFileSync(logFile2, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+    expect(first.records).toHaveLength(3);
+
+    // logFile2 のみ追記（正常）、logFile は切り詰め
+    fs.appendFileSync(logFile2, VALID_LINE + "\n");
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const second = await loadRecords(offsetState);
+    expect(second.truncationDetected).toBe(true);
+    // 切り詰められていない logFile2 の既存レコードも含め、全ファイル全件が返ること
+    // (logFile: 1件 + logFile2: 2件 = 3件)
+    expect(second.records).toHaveLength(3);
+
+    // 以降の差分読み込みでも重複・欠落が起きないことを確認する
+    fs.appendFileSync(logFile2, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.truncationDetected).toBe(false);
+    expect(third.records).toHaveLength(1);
+  });
+
+  it("同一パスでファイルが削除→再作成され、inoが変わった場合、truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const cachedEntry = offsetState.get(logFile);
+
+    // 同一パスへの削除→再作成をシミュレートする。
+    // 新ファイルが偶然、前回より大きいサイズ・新しい mtime を持つケースを想定するため、
+    // stat の dev/ino だけを差し替えたオブジェクトを返すようモックする
+    // （実ファイル操作でも inode は変わるが、ファイルシステム依存のため確実性を担保する）。
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const realStat = fs.statSync(logFile);
+    const originalStatSync = fs.statSync.bind(fs);
+    const statSyncSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        return {
+          ...realStat,
+          mtimeMs: cachedEntry.mtimeMs + 60_000,
+          dev: cachedEntry.dev,
+          ino: cachedEntry.ino + 1,
+        };
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    try {
+      const second = await loadRecords(offsetState);
+      expect(second.truncationDetected).toBe(true);
+    } finally {
+      statSyncSpy.mockRestore();
+    }
+  });
+
+  it("同一パスでファイルが削除→再作成され、devが変わった場合も truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const cachedEntry = offsetState.get(logFile);
+
+    // ino はそのまま、dev のみ差し替えて検証する（別デバイス/ファイルシステムへの差し替えを想定）
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const realStat = fs.statSync(logFile);
+    const originalStatSync = fs.statSync.bind(fs);
+    const statSyncSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        return {
+          ...realStat,
+          mtimeMs: cachedEntry.mtimeMs + 60_000,
+          dev: cachedEntry.dev + 1,
+          ino: cachedEntry.ino,
+        };
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    try {
+      const second = await loadRecords(offsetState);
+      expect(second.truncationDetected).toBe(true);
+    } finally {
+      statSyncSpy.mockRestore();
+    }
+  });
+});
