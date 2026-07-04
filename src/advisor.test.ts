@@ -7,6 +7,7 @@ import {
   OVERHEAD_TARGET_TOKENS,
   OUTPUT_COST_RATIO_THRESHOLD,
   IDLE_REWRITE_COST_THRESHOLD,
+  MODEL_SWITCH_REWRITE_COST_THRESHOLD,
 } from "./advisor";
 import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
 
@@ -389,6 +390,48 @@ describe("buildRecommendations - idle-cache-expiry", () => {
       },
     });
     const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "idle-cache-expiry");
+    expect(item).toBeUndefined();
+  });
+});
+
+describe("buildRecommendations - model-switch-cost", () => {
+  it("modelSwitch.reCreateCost が閾値超のとき model-switch-cost が medium priority で生成される", () => {
+    const s = baseSummary({
+      modelSwitch: {
+        switchCount: 3,
+        reCreateTokens: 50_000,
+        reCreateCost: MODEL_SWITCH_REWRITE_COST_THRESHOLD + 1,
+        affectedSessions: ["s1", "s2"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "model-switch-cost");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+  });
+
+  it("modelSwitch.reCreateCost が閾値以下のとき model-switch-cost は生成されない", () => {
+    const s = baseSummary({
+      modelSwitch: {
+        switchCount: 3,
+        reCreateTokens: 10,
+        reCreateCost: MODEL_SWITCH_REWRITE_COST_THRESHOLD,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "model-switch-cost");
+    expect(item).toBeUndefined();
+  });
+
+  it("billingMode='subscription' のとき model-switch-cost は除外される", () => {
+    const s = baseSummary({
+      modelSwitch: {
+        switchCount: 3,
+        reCreateTokens: 50_000,
+        reCreateCost: MODEL_SWITCH_REWRITE_COST_THRESHOLD + 1,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "model-switch-cost");
     expect(item).toBeUndefined();
   });
 });

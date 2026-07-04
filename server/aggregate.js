@@ -325,6 +325,53 @@ export function computeCacheGapStats(records) {
 }
 
 /**
+ * セッション内でのモデル切替直後に発生するキャッシュ再作成コストを検出する。
+ * プロンプトキャッシュはモデル固有のため、切替直後にcache creationが発生すると
+ * cache readで済むはずのトークンが再課金される。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ switchCount: number, reCreateTokens: number, reCreateCost: number, affectedSessions: string[] }}
+ */
+export function computeModelSwitchStats(records) {
+  const bySession = new Map();
+
+  for (const r of records) {
+    if (r.sessionId === "(unknown)" || !r.ts) continue;
+    if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
+    bySession.get(r.sessionId).push(r);
+  }
+
+  let switchCount = 0;
+  let reCreateTokens = 0;
+  let reCreateCost = 0;
+  const affectedSessions = new Set();
+
+  for (const [sessionId, recs] of bySession) {
+    const sorted = [...recs].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      if (cur.model === prev.model) continue;
+
+      switchCount++;
+
+      if (cur.cacheCreate > 0 && cur.cacheCreate >= cur.cacheRead) {
+        reCreateTokens += cur.cacheCreate;
+        reCreateCost += costOf(cur.model, cur).cacheWrite;
+        affectedSessions.add(sessionId);
+      }
+    }
+  }
+
+  return {
+    switchCount,
+    reCreateTokens,
+    reCreateCost,
+    affectedSessions: [...affectedSessions],
+  };
+}
+
+/**
  * レコード配列から曜日(0=日)×時間帯(0-23) のトークン使用量行列とピークを生成する。
  * ローカル時刻基準（サーバー = ユーザーのマシン）。
  * @param {object[]} records - 正規化レコード配列
@@ -609,6 +656,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     bySession: computeSessions(records, compactions, { limit: sessionLimit }),
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
+    modelSwitch: computeModelSwitchStats(records),
     byTool: computeToolUsage(toolUseRecords),
   };
 }

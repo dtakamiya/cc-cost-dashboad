@@ -87,6 +87,16 @@ export interface CacheGapStats {
   affectedSessions: string[]; // 失効ギャップを持つセッションIDの重複なし配列
 }
 
+// セッション内モデル切替直後に発生するキャッシュ再作成コストの集計。
+// プロンプトキャッシュはモデル固有のため、切替直後にcache creationが発生すると
+// cache readで済むはずのトークンが再課金される。
+export interface ModelSwitchStats {
+  switchCount: number;      // モデルが変化した回数
+  reCreateTokens: number;   // 切替直後に再作成されたトークン数
+  reCreateCost: number;     // 再作成による超過コスト（USD）
+  affectedSessions: string[]; // 再作成コストが発生したセッションIDの重複なし配列
+}
+
 // サブエージェント（isSidechain）委譲のトークン/コスト内訳。デリゲーションROI判断用。
 export interface SubagentStats {
   mainTokens: number;
@@ -153,6 +163,7 @@ export interface Summary {
   warnings: { fallbackModels: string[] };
   cacheStats?: CacheStats;
   cacheGapStats?: CacheGapStats;
+  modelSwitch?: ModelSwitchStats;
   subagentStats?: SubagentStats;
   source?: {
     fileCount: number;
