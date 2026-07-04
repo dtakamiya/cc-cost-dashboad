@@ -184,7 +184,7 @@ async function readFileFromOffset(file, startOffset) {
  * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
  * @param {Map<string, {offset: number, mtimeMs: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
- * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number }>}
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number, truncationDetected: boolean }>}
  */
 export async function loadRecords(offsetState = new Map()) {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
@@ -195,6 +195,7 @@ export async function loadRecords(offsetState = new Map()) {
   let parsedLines = 0;
   let parseErrors = 0;
   let unreadableFiles = 0;
+  let truncationDetected = false;
 
   for (const file of files) {
     let stat;
@@ -209,8 +210,10 @@ export async function loadRecords(offsetState = new Map()) {
     let startOffset = 0;
     if (cached && stat.size >= cached.offset && stat.mtimeMs >= cached.mtimeMs) {
       startOffset = cached.offset;
+    } else if (cached) {
+      // 既存ファイルなのに offset 0 にリセットされた＝切り詰め or mtime 後退（新規ファイルは対象外）
+      truncationDetected = true;
     }
-    // それ以外（新規ファイル／切り詰め／mtime 後退）は offset 0 から再読み込みする
 
     const result = await readFileFromOffset(file, startOffset);
     if (result.readFailed) {
@@ -229,5 +232,5 @@ export async function loadRecords(offsetState = new Map()) {
 
   const skippedLines = parsedLines - records.length;
 
-  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles };
+  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected };
 }

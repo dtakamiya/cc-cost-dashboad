@@ -46,7 +46,13 @@ async function rebuild() {
   if (rebuildInFlight) return rebuildInFlight;
 
   rebuildInFlight = (async () => {
-    const { records, compactions = [], toolUseRecords = [], fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles } = await loadRecords(offsetState);
+    const { records, compactions = [], toolUseRecords = [], fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected = false } = await loadRecords(offsetState);
+    if (truncationDetected) {
+      // ファイル切り詰め・ローテーションを検知した場合、過去データとの重複を避けるためキャッシュを再初期化する
+      recordsCache = null;
+      compactionsCache = null;
+      toolUseRecordsCache = null;
+    }
     if (recordsCache) {
       // concat は毎回 recordsCache 全件をコピーし直すため、差分読み込みの効果を打ち消してしまう。
       // recordsCache は外部に参照を渡さない内部専用の蓄積キャッシュなので、破壊的な追記で対応する。

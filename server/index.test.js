@@ -239,6 +239,115 @@ describe("rebuild() - compactions の累積とaggregateへの伝播", () => {
   });
 });
 
+describe("rebuild() - 切り詰め検知時のキャッシュ再初期化", () => {
+  it("truncationDetected が true の場合、recordsCache が破棄され重複しない", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+    const mod = await import("./index.js");
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [{ id: "A" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [{ id: "B" }],
+      truncationDetected: true,
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    const lastCall = vi.mocked(aggregate).mock.calls.at(-1);
+    expect(lastCall[0]).toEqual([{ id: "B" }]);
+  });
+
+  it("truncationDetected が true の場合、compactionsCache/toolUseRecordsCache も同様に破棄される", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+    const mod = await import("./index.js");
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      compactions: [{ sessionId: "s1" }],
+      toolUseRecords: [{ id: "t1" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [],
+      compactions: [{ sessionId: "s2" }],
+      toolUseRecords: [{ id: "t2" }],
+      truncationDetected: true,
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    const lastCall = vi.mocked(aggregate).mock.calls.at(-1);
+    expect(lastCall[1].compactions).toEqual([{ sessionId: "s2" }]);
+    expect(lastCall[1].toolUseRecords).toEqual([{ id: "t2" }]);
+  });
+
+  it("truncationDetected が false（省略時含む）の場合は従来通り累積される", async () => {
+    const { loadRecords } = await import("./parser.js");
+    const { aggregate } = await import("./aggregate.js");
+    const mod = await import("./index.js");
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [{ id: "A" }],
+      compactions: [{ sessionId: "s1" }],
+      toolUseRecords: [{ id: "t1" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    vi.mocked(loadRecords).mockResolvedValueOnce({
+      records: [{ id: "B" }],
+      compactions: [{ sessionId: "s2" }],
+      toolUseRecords: [{ id: "t2" }],
+      fileCount: 1,
+      parsedLines: 1,
+      parseErrors: 0,
+      skippedLines: 0,
+      unreadableFiles: 0,
+    });
+    await mod.rebuild();
+
+    const lastCall = vi.mocked(aggregate).mock.calls.at(-1);
+    expect(lastCall[0]).toEqual(
+      expect.arrayContaining([{ id: "A" }, { id: "B" }])
+    );
+    expect(lastCall[0]).toHaveLength(2);
+    expect(lastCall[1].compactions).toEqual(
+      expect.arrayContaining([{ sessionId: "s1" }, { sessionId: "s2" }])
+    );
+    expect(lastCall[1].toolUseRecords).toEqual(
+      expect.arrayContaining([{ id: "t1" }, { id: "t2" }])
+    );
+  });
+});
+
 describe("GET /api/summary", () => {
   it("200 と JSON を返す", async () => {
     const res = await request(app).get("/api/summary");
