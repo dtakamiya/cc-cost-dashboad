@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeToolUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -898,6 +898,106 @@ describe("aggregate() cacheGapStats", () => {
     expect(result.cacheGapStats).toBeDefined();
     expect(result.cacheGapStats.expiredGapCount).toBe(1);
     expect(result.cacheGapStats.affectedSessions).toEqual(["s1"]);
+  });
+});
+
+describe("computeModelSwitchStats", () => {
+  it("単一モデルのみのセッション → switchCountが0、reCreateTokens/reCreateCostが0、affectedSessionsが空配列", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.reCreateCost).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("Opus→Sonnet切替直後にcacheCreate>0かつcacheCreate>=cacheReadのレコードがある → switchCountが1、reCreateTokens/reCreateCostが計上され、affectedSessionsに含まれる", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.reCreateCost).toBeGreaterThan(0);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("モデル切替はあるが切替直後のレコードでcacheReadがcacheCreateを上回る → switchCountは1のままだがreCreateTokens/reCreateCost/affectedSessionsには計上されない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 100, cacheRead: 500 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.reCreateCost).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it('sessionIdが"(unknown)"のレコードは除外される', () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "(unknown)", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "(unknown)", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("複数セッションが独立して集計される", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "a", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "a", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 200, cacheRead: 0 }),
+      rec({ sessionId: "b", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "b", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 200, cacheRead: 0 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(1);
+    expect(stats.affectedSessions).toEqual(["a"]);
+  });
+
+  it("サブエージェント（isSidechain）のレコードはモデル切替検出から除外される", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const t2 = t0 + 2000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-haiku-4-5", isSidechain: true, cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: new Date(t2).toISOString(), model: "claude-opus-4-8", isSidechain: false, cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+});
+
+describe("aggregate() modelSwitch", () => {
+  it("aggregate() の戻り値に modelSwitch が含まれる", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const result = aggregate(records);
+    expect(result.modelSwitch).toBeDefined();
+    expect(result.modelSwitch.switchCount).toBe(1);
+    expect(result.modelSwitch.affectedSessions).toEqual(["s1"]);
   });
 });
 
