@@ -46,6 +46,17 @@ npm install
 
 ---
 
+## 環境変数
+
+すべて任意（未設定でも動作する）。
+
+| 変数 | 必須 | 説明 | 例 |
+|------|------|------|-----|
+| `PORT` | いいえ | Express API サーバーのポート番号（既定値: `3001`） | `4000` |
+| `CLAUDE_LOGS_DIR` | いいえ | JSONL ログの読み込み元ディレクトリ（既定値: `~/.claude/projects`）。テストや複数環境の切り替えに使用 | `/path/to/logs` |
+
+---
+
 ## 起動方法
 
 ### 開発モード（推奨）
@@ -57,6 +68,7 @@ npm run dev
 - Express API サーバー（ポート 3001）と Vite 開発サーバー（ポート 5173）が同時起動する
 - ブラウザで http://localhost:5173 を開く
 - ファイル変更時にフロントが自動リロードされる
+- `~/.claude/projects/**/*.jsonl` の変更も `server/watcher.js` が監視しており、更新時は SSE（`/api/events`）経由でブラウザ側が自動再取得する
 
 ### 本番モード
 
@@ -167,19 +179,19 @@ npm start       # API サーバー起動（ポート 3001 で UI も配信）
 
 ## 価格表のカスタマイズ
 
-`server/pricing.js` の `PRICING` オブジェクトを編集する。単位は USD / MTok（100万トークン当たり）。
+`server/pricing.js` の `PRICING` オブジェクトを編集する。単位は USD / MTok（100万トークン当たり）。Claude 3 / 3.5 / 4 シリーズが登録済み。
 
 ```js
-const PRICING = new Map([
-  ["claude-opus-4",    { input: 5,  output: 25 }],
-  ["claude-sonnet-4",  { input: 3,  output: 15 }],
-  ["claude-haiku-4-5", { input: 1,  output:  5 }],
-  ["claude-fable-5",   { input: 10, output: 50 }],
-  // 行を追加すれば新モデルに対応
-]);
+export const PRICING = {
+  "claude-opus-4-8":   { input: 5, output: 25 },
+  "claude-sonnet-5":   { input: 3, output: 15 },
+  "claude-haiku-4-5":  { input: 1, output: 5 },
+  "claude-fable-5":    { input: 10, output: 50 },
+  // 行を追加すれば新モデルに対応。日付サフィックス（例 -20251001）は前方一致で自動解決される
+};
 ```
 
-キャッシュ単価は `costOf()` 関数内で自動計算される（write 5m = input × 1.25、write 1h = input × 2、read = input × 0.1）。
+キャッシュ単価は `costOf()` 関数内で自動計算される（write 5m = input × 1.25、write 1h = input × 2、read = input × 0.1）。価格表にないモデルは opus 相当の単価にフォールバックし、`isFallback: true` が付与される。
 
 ---
 
@@ -187,7 +199,7 @@ const PRICING = new Map([
 
 | ファイル | 用途 |
 |----------|------|
-| `~/.claude/projects/**/*.jsonl` | Claude Code の会話ログ（メインデータ） |
+| `~/.claude/projects/**/*.jsonl` | Claude Code の会話ログ（メインデータ。`CLAUDE_LOGS_DIR` で変更可） |
 | `~/.claude/settings.json` | 有効プラグイン一覧（オーバーヘッド分析用） |
 | `~/.claude/CLAUDE.md` と @参照ファイル | システムプロンプトサイズ計測用 |
 | `~/.claude/plugins/cache/` | プラグインのスキル定義（サイズ計測用） |
@@ -197,32 +209,47 @@ const PRICING = new Map([
 
 ---
 
+## API エンドポイント
+
+| メソッド・パス | 用途 |
+|----------------|------|
+| `GET /api/summary` | 集計サマリを返す。`period=7d\|30d\|90d\|all` または `from=YYYY-MM-DD&to=YYYY-MM-DD` で期間絞り込み |
+| `POST /api/reload` | ログを再スキャンして再集計する（30 秒のレート制限あり） |
+| `GET /api/hourly` | 全期間の時間帯別（0–23 時）集計を返す |
+| `GET /api/events` | Server-Sent Events。ログファイル変更時に `update` イベントを配信する |
+| `GET /api/sessions/:id/turns` | 指定セッション ID のターンごとのトークン・コスト内訳を返す |
+| `GET /api/pricing` | 価格表（モデル別単価・キャッシュ倍率）を返す |
+
+---
+
 ## アーキテクチャ
 
-```
+```text
 cc-cost-dashboad/
 ├── server/
-│   ├── index.js      # Express API（ポート 3001）
-│   ├── parser.js     # JSONL 読み込み・正規化
+│   ├── index.js      # Express API（ポート 3001。PORT 環境変数で変更可）
+│   ├── parser.js     # JSONL 読み込み・正規化（CLAUDE_LOGS_DIR で読み込み元を変更可）
 │   ├── aggregate.js  # モデル別/日別/プロジェクト別集計
 │   ├── pricing.js    # 価格表 + costOf() 計算
-│   └── analyze.js    # システムプロンプトオーバーヘッド計測
+│   ├── analyze.js    # システムプロンプトオーバーヘッド計測
+│   └── watcher.js    # ~/.claude/projects の変更監視（デバウンス付き自動リロード）
 └── src/
     ├── App.tsx
-    ├── api.ts        # API クライアント + 型定義
+    ├── api.ts        # API クライアント + 型定義（データ形状の正）
     ├── format.ts     # 数値フォーマット + モデルカラー
-    └── components/
-        ├── SummaryCards.tsx      # 上部 4 カード
-        ├── CostDrivers.tsx       # なぜコストが高いか
-        ├── ModelBreakdown.tsx    # モデル別コスト
-        ├── DailyTrend.tsx        # 日別推移グラフ
-        ├── ActivityHeatmap.tsx   # 時間帯別アクティビティ
-        └── OverheadAnalysis.tsx  # コンテキストオーバーヘッド
+    ├── weekly.ts      # 週次バーンレート計算
+    ├── advisor.ts     # 最適化アドバイスロジック
+    └── components/    # UI コンポーネント一式（SummaryCards, CostDrivers,
+                        # ModelBreakdown, DailyTrend, ActivityHeatmap,
+                        # OverheadAnalysis, BudgetProjection, OptimizationAdvisor,
+                        # ProjectBreakdown, SessionBreakdown, BillingBlocks,
+                        # PeriodSelector, ContextBudget, ThinkingBreakdown,
+                        # ToolBreakdown, McpServerBreakdown, SubagentBreakdown 等）
 ```
 
 **データフロー：**
 
-```
+```text
 ~/.claude/projects/**/*.jsonl
        ↓ parser.js（readline ストリーム、<synthetic> 等の内部モデルは除外）
  正規化レコード配列
@@ -232,6 +259,9 @@ cc-cost-dashboad/
  オーバーヘッド情報を追記
        ↓ /api/summary または /api/reload
    React ダッシュボード（Recharts）
+
+watcher.js が並行して ~/.claude/projects を監視し、
+変更検知時に自動で rebuild() → SSE（/api/events）でブラウザへ通知する
 ```
 
 ---
