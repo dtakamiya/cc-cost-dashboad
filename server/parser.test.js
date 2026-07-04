@@ -1196,4 +1196,29 @@ describe("loadRecords - thinking トークン近似", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("redacted_thinkingブロックはhasThinking/thinkingBlockCountに反映されるがthinkingTokensApproxには寄与しない", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-redacted-thinking-test-"));
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [{ type: "redacted_thinking", data: "encrypted-blob" }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+    });
+
+    try {
+      const { records } = await writeAndLoad(tmpDir, line);
+      expect(records).toHaveLength(1);
+      expect(records[0].thinkingTokensApprox).toBe(0);
+      expect(records[0].hasThinking).toBe(true);
+      expect(records[0].thinkingBlockCount).toBe(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

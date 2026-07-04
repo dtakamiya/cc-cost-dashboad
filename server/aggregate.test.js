@@ -1224,6 +1224,13 @@ describe("aggregate thinking トークン内訳", () => {
     expect(s.thinking.outputShare).toBeCloseTo(0.4, 10);
   });
 
+  it("thinkingTokensApproxがtokenSplit.outputを上回る近似誤差でも、outputShareは1でクランプされる", () => {
+    const s = aggregate([
+      rec({ output: 100, thinkingTokensApprox: 150, hasThinking: true, thinkingBlockCount: 1 }),
+    ]);
+    expect(s.thinking.outputShare).toBe(1);
+  });
+
   it("outputが0の場合、outputShareは0除算にならず0になる", () => {
     const s = aggregate([
       rec({ output: 0, thinkingTokensApprox: 0, hasThinking: false, thinkingBlockCount: 0 }),

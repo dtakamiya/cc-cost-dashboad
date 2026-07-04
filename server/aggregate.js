@@ -689,7 +689,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     // 内訳の可視化であり、totalCost/totalTokens/tokenSplit/costSplit には加算していない（二重計上禁止）。
     thinking: {
       approxTokens: thinkingTokensApprox,
-      outputShare: tokenSplit.output ? thinkingTokensApprox / tokenSplit.output : 0,
+      outputShare: tokenSplit.output ? Math.min(1, thinkingTokensApprox / tokenSplit.output) : 0,
       isApprox: true,
       hasAnyThinking: thinkingTokensApprox > 0,
     },
