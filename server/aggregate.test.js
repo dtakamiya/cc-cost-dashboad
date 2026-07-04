@@ -969,6 +969,21 @@ describe("computeModelSwitchStats", () => {
     expect(stats.switchCount).toBe(1);
     expect(stats.affectedSessions).toEqual(["a"]);
   });
+
+  it("サブエージェント（isSidechain）のレコードはモデル切替検出から除外される", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const t2 = t0 + 2000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-haiku-4-5", isSidechain: true, cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: new Date(t2).toISOString(), model: "claude-opus-4-8", isSidechain: false, cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = computeModelSwitchStats(records);
+    expect(stats.switchCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
 });
 
 describe("aggregate() modelSwitch", () => {

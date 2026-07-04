@@ -335,7 +335,7 @@ export function computeModelSwitchStats(records) {
   const bySession = new Map();
 
   for (const r of records) {
-    if (r.sessionId === "(unknown)" || !r.ts) continue;
+    if (r.sessionId === "(unknown)" || !r.ts || r.isSidechain) continue;
     if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
     bySession.get(r.sessionId).push(r);
   }
