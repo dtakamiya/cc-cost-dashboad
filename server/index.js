@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { loadRecords } from "./parser.js";
-import { aggregate, filterRecordsByPeriod, computeToolResultOutliers, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeToolResultOutliers, computeDuplicateReads, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { analyzeOverhead } from "./analyze.js";
 import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER, costOf } from "./pricing.js";
 
@@ -89,6 +89,7 @@ async function rebuild() {
     summary.source = { ...cumulativeSource };
     summary.overhead = analyzeOverhead();
     summary.toolResultOutliers = computeToolResultOutliers(toolResultRecordsCache, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    summary.duplicateReads = computeDuplicateReads(toolUseRecordsCache, toolResultRecordsCache);
     cache = summary;
     return summary;
   })();
@@ -161,6 +162,7 @@ app.get("/api/summary", async (req, res) => {
     periodSummary.source = cache.source;
     periodSummary.overhead = cache.overhead;
     periodSummary.toolResultOutliers = cache.toolResultOutliers;
+    periodSummary.duplicateReads = cache.duplicateReads;
     res.json(periodSummary);
   } catch (e) {
     res.status(500).json({ error: "Internal server error" });

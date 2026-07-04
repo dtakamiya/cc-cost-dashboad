@@ -387,6 +387,73 @@ export function computeToolResultOutliers(records, { mcpCap, bashCap }) {
   return { overCount, maxTokensApprox, totalOverTokensApprox, byTool, sampleSessions, isApprox: true };
 }
 
+// duplicateReads.byFile の表示上限（重複トークン降順の上位のみ返す）。
+const DUPLICATE_READ_FILE_LIMIT = 10;
+
+/**
+ * 同一セッション内で同じ filePath を複数回 Read した「重複読み込み」を集計する。
+ * セッション×filePath ごとに2回目以降の Read を重複と数え、重複 Read の toolUseId を
+ * tool_result レコードと突合して重複トークン（近似）を推定する。
+ * 結果は可視化専用（isApprox: true）であり、totalCost/totalTokens には加算しないこと。
+ * @param {object[]} toolUseRecords - tool_use レコード配列（toolName: "Read" のみ対象。filePath/toolUseId を持つ）
+ * @param {object[]} toolResultRecords - tool_result レコード配列（{ toolUseId, tokensApprox }）
+ * @returns {{ totalDuplicateReads: number, totalDuplicateTokensApprox: number,
+ *   byFile: Array<{ filePath: string, readCount: number, duplicateCount: number, duplicateTokensApprox: number }>,
+ *   isApprox: true }}
+ */
+export function computeDuplicateReads(toolUseRecords = [], toolResultRecords = []) {
+  const tokensByToolUseId = new Map(); // toolUseId -> tokensApprox
+  for (const r of toolResultRecords) {
+    if (r.toolUseId) tokensByToolUseId.set(r.toolUseId, r.tokensApprox || 0);
+  }
+
+  const byFileMap = new Map(); // `${sessionId}\n${filePath}` -> { filePath, readCount, duplicateCount, duplicateTokensApprox }
+  let totalDuplicateReads = 0;
+  let totalDuplicateTokensApprox = 0;
+
+  for (const r of toolUseRecords) {
+    if (r.toolName !== "Read" || !r.filePath) continue;
+
+    const key = `${r.sessionId}\n${r.filePath}`;
+    let entry = byFileMap.get(key);
+    if (!entry) {
+      entry = { filePath: r.filePath, readCount: 0, duplicateCount: 0, duplicateTokensApprox: 0 };
+      byFileMap.set(key, entry);
+    }
+    entry.readCount += 1;
+    if (entry.readCount === 1) continue;
+
+    const tokens = (r.toolUseId && tokensByToolUseId.get(r.toolUseId)) || 0;
+    entry.duplicateCount += 1;
+    entry.duplicateTokensApprox += tokens;
+    totalDuplicateReads += 1;
+    totalDuplicateTokensApprox += tokens;
+  }
+
+  // 同一 filePath が複数セッションで重複していた場合はファイル単位に合算して返す。
+  const mergedByFile = new Map(); // filePath -> entry
+  for (const entry of byFileMap.values()) {
+    if (entry.duplicateCount === 0) continue;
+    const merged = mergedByFile.get(entry.filePath);
+    if (!merged) {
+      mergedByFile.set(entry.filePath, { ...entry });
+    } else {
+      mergedByFile.set(entry.filePath, {
+        filePath: entry.filePath,
+        readCount: merged.readCount + entry.readCount,
+        duplicateCount: merged.duplicateCount + entry.duplicateCount,
+        duplicateTokensApprox: merged.duplicateTokensApprox + entry.duplicateTokensApprox,
+      });
+    }
+  }
+
+  const byFile = [...mergedByFile.values()]
+    .sort((a, b) => b.duplicateTokensApprox - a.duplicateTokensApprox || b.duplicateCount - a.duplicateCount)
+    .slice(0, DUPLICATE_READ_FILE_LIMIT);
+
+  return { totalDuplicateReads, totalDuplicateTokensApprox, byFile, isApprox: true };
+}
+
 /**
  * セッション別サマリ配列に、tool_result 累積近似トークン数（toolResultTokensApprox）を
  * イミュータブルにマージする。sessionId が "(unknown)" の tool_result レコードは除外する。

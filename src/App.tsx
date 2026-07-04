@@ -23,6 +23,7 @@ import { ProjectBreakdown } from "./components/ProjectBreakdown";
 import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ToolBreakdown } from "./components/ToolBreakdown";
 import { ToolResultBreakdown } from "./components/ToolResultBreakdown";
+import { DuplicateReadBreakdown } from "./components/DuplicateReadBreakdown";
 import { ToolResultOutliers } from "./components/ToolResultOutliers";
 import { McpServerBreakdown } from "./components/McpServerBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
@@ -322,6 +323,7 @@ export default function App() {
             <ProjectBreakdown s={displayData} />
             <ToolBreakdown s={displayData} />
             <ToolResultBreakdown s={displayData} />
+            <DuplicateReadBreakdown s={displayData} />
             <McpServerBreakdown s={displayData} />
           </section>
           <section id="section-toolOutput" ref={toolOutputRef}>

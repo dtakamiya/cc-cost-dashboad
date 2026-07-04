@@ -537,6 +537,66 @@ describe("loadRecords - toolUseRecords", () => {
     }
   });
 
+  it("toToolUseRecords は Read の file_path と toolUseId を保持する", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          { type: "tool_use", id: "toolu_read1", name: "Read", input: { file_path: "/tmp/x.txt" } },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("Read");
+      expect(toolUseRecords[0].filePath).toBe("/tmp/x.txt");
+      expect(toolUseRecords[0].toolUseId).toBe("toolu_read1");
+      expect(toolUseRecords[0].sessionId).toBe("test-session");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("Read の input.file_path が欠落している場合、filePath は null になる", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "test-session",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          { type: "tool_use", id: "toolu_read2", name: "Read", input: {} },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("Read");
+      expect(toolUseRecords[0].filePath).toBeNull();
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("mcp__ プレフィックスの tool_use から serverName, mcpTool が抽出される", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-tooluse-test-"));
     const projectDir = path.join(tmpDir, "project1");

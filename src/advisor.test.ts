@@ -9,6 +9,7 @@ import {
   IDLE_REWRITE_COST_THRESHOLD,
   MODEL_SWITCH_REWRITE_COST_THRESHOLD,
   MCP_OVERHEAD_TOKEN_THRESHOLD,
+  DUPLICATE_READ_TOKEN_THRESHOLD,
 } from "./advisor";
 import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
 
@@ -941,5 +942,39 @@ describe("buildRecommendations - tool-output-cap", () => {
     const ids = r.items.map((i) => i.id);
     expect(ids.filter((id) => id === "tool-result-bloat")).toHaveLength(1);
     expect(ids.filter((id) => id === "tool-output-cap")).toHaveLength(1);
+  });
+});
+
+describe("buildRecommendations - duplicate-reads", () => {
+  const duplicateReads = (over: Partial<NonNullable<Summary["duplicateReads"]>> = {}) => ({
+    totalDuplicateReads: 20,
+    totalDuplicateTokensApprox: DUPLICATE_READ_TOKEN_THRESHOLD + 1,
+    byFile: [
+      { filePath: "/home/u/proj/big.ts", readCount: 5, duplicateCount: 4, duplicateTokensApprox: 40_000 },
+    ],
+    isApprox: true as const,
+    ...over,
+  });
+
+  it("重複トークンが閾値超過で duplicate-reads アドバイスが出る", () => {
+    const s = baseSummary({ duplicateReads: duplicateReads() });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "duplicate-reads");
+    expect(item).toBeDefined();
+    expect(item!.action).toContain("/clear");
+  });
+
+  it("重複トークンが閾値以下では発火しない", () => {
+    const s = baseSummary({
+      duplicateReads: duplicateReads({ totalDuplicateTokensApprox: DUPLICATE_READ_TOKEN_THRESHOLD }),
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "duplicate-reads")).toBeUndefined();
+  });
+
+  it("duplicateReads が未定義（旧レスポンス）では発火せずクラッシュもしない", () => {
+    const s = baseSummary({ duplicateReads: undefined });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "duplicate-reads")).toBeUndefined();
   });
 });
