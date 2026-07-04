@@ -1,6 +1,11 @@
 node_modules
 dist
 *.log
-.claude/
+.env
+.env.*
+.DS_Store
+.claude/*
+!.claude/settings.json
+!.claude/memory.md
 .vite/
 vite.config.ts.timestamp-*.mjs
