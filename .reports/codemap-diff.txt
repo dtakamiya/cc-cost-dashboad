@@ -1,0 +1,32 @@
+Codemap 生成レポート — 2026-07-04
+
+## サマリー
+docs/CODEMAPS/ が存在しなかったため、初回生成（diff比較なし）。
+
+## 生成ファイル
+- docs/CODEMAPS/architecture.md   — 新規
+- docs/CODEMAPS/backend.md        — 新規
+- docs/CODEMAPS/frontend.md       — 新規
+- docs/CODEMAPS/data.md           — 新規
+- docs/CODEMAPS/dependencies.md   — 新規
+
+## 走査ファイル数
+- server/*.js（テスト除く）: 6
+- src/*.ts, src/*.tsx（テスト除く）: 19
+- src/components/*.tsx（テスト除く）: 28
+- 合計: 52ファイル
+
+## アーキテクチャ概要
+- データフロー: ~/.claude/projects/**/*.jsonl → parser.js → aggregate.js → analyze.js
+  → Express API（インメモリキャッシュ）→ React frontend（TanStack Query + Recharts）
+- watcher.js が .jsonl 変更を検知し、rebuild + SSE通知でフロントを自動更新
+- データベースなし。永続化なし（読み取り専用の解析ツール）
+
+## 依存関係
+- Runtime: express, react/react-dom, @tanstack/react-query, recharts
+- Dev: vite, typescript, vitest, testing-library, jsdom, supertest, concurrently
+- 外部サービス連携なし
+
+## 鮮度に関する注意
+- CLAUDE.md（プロジェクトルート）は直近のコミット（2026-07-04時点）で更新済み、乖離なし
+- 今後、server/ または src/ の構造が大きく変わった場合は /ecc:update-codemaps を再実行すること
