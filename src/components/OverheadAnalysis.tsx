@@ -1,4 +1,4 @@
-import type { Summary, OverheadFile } from "../api";
+import type { Summary, OverheadFile, McpServerOverhead } from "../api";
 import {
   OVERHEAD_FILE_WARN_TOKENS,
   OVERHEAD_FILE_CAUTION_TOKENS,
@@ -50,6 +50,24 @@ function Row({
       </td>
       <td style={{ textAlign: "right", fontSize: 11, color: badge.color, whiteSpace: "nowrap" }}>
         {badge.label}
+      </td>
+    </tr>
+  );
+}
+
+function McpRow({ server, monthlyCost }: { server: McpServerOverhead; monthlyCost: number }) {
+  const isUnknown = server.estimatedTokens === null;
+  return (
+    <tr>
+      <td>{server.name}</td>
+      <td style={{ textAlign: "right" }}>
+        {isUnknown ? "推定不可" : tok(server.estimatedTokens as number)}
+      </td>
+      <td style={{ textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
+        {!isUnknown && monthlyCost > 0.001 ? usd(monthlyCost) + "/月" : "—"}
+      </td>
+      <td style={{ textAlign: "right", fontSize: 11, color: "var(--subtle)" }}>
+        {server.source === "estimated" ? "※推定" : server.source === "unknown" ? "推定不可" : "実測"}
       </td>
     </tr>
   );
@@ -185,10 +203,31 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
             MCP ツール定義・組込ツールスキーマ・長い会話引き継ぎ等が主因候補（これらは静的計測対象外）。
           </div>
           {overhead.mcpServers.length > 0 && (
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, lineHeight: 1.6 }}>
-              <strong>MCP サーバ（{overhead.mcpServers.length}）:</strong> {overhead.mcpServers.join(", ")}
-              <div style={{ color: "var(--subtle)", marginTop: 2 }}>
-                各サーバのツール定義は実行時に注入され、上記差分の主因になりやすい。不要なサーバは無効化を検討。
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
+                <strong>MCP サーバ（{overhead.mcpServers.length}）</strong>
+              </div>
+              <table className="tbl" style={{ marginTop: 6 }}>
+                <thead>
+                  <tr>
+                    <th>サーバ</th>
+                    <th style={{ textAlign: "right" }}>推定トークン</th>
+                    <th style={{ textAlign: "right" }}>月間コスト</th>
+                    <th style={{ textAlign: "right" }}>根拠</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overhead.mcpServers.map((server) => (
+                    <McpRow
+                      key={server.name}
+                      server={server}
+                      monthlyCost={fileMonthlyCost(server.estimatedTokens ?? 0)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>
+                ※ MCPツール定義は実行時依存で静的計測できないため、保守的な既定値（サーバ1件あたり約1,500トークン）で推定。不要なサーバは無効化を検討。
               </div>
             </div>
           )}

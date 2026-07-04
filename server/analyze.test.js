@@ -127,3 +127,72 @@ describe("analyzeOverhead", () => {
     expect(result.totalEstimatedTokens).toBe(result.totalAlwaysTokens);
   });
 });
+
+// ─── MCP サーバオーバーヘッド推定（issue #132） ──────────────────────────────
+
+describe("analyzeOverhead - mcpServers", () => {
+  let mockFs;
+
+  beforeEach(() => {
+    vi.resetModules();
+    mockFs = {
+      readFileSync: vi.fn().mockReturnValue(null),
+      readdirSync: vi.fn().mockReturnValue([]),
+    };
+    vi.doMock("node:fs", () => ({ default: mockFs }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("MCP未設定環境ではmcpServersは空配列", async () => {
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith("settings.json")) return "{}";
+      if (String(p).endsWith(".claude.json")) return "{}";
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    expect(result.mcpServers).toEqual([]);
+  });
+
+  it("各MCPサーバは name/toolCount:null/estimatedTokens===DEFAULT_MCP_SERVER_TOKENS/source:'estimated' を持つ", async () => {
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith("settings.json")) return "{}";
+      if (String(p).endsWith(".claude.json")) {
+        return JSON.stringify({ mcpServers: { github: { command: "gh" } } });
+      }
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead, DEFAULT_MCP_SERVER_TOKENS } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    expect(result.mcpServers).toEqual([
+      { name: "github", toolCount: null, estimatedTokens: DEFAULT_MCP_SERVER_TOKENS, source: "estimated" },
+    ]);
+  });
+
+  it(".claude.json と settings.json の mcpServers をマージし重複排除する", async () => {
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith(".claude.json")) {
+        return JSON.stringify({ mcpServers: { github: {}, filesystem: {} } });
+      }
+      if (String(p).endsWith("settings.json")) {
+        return JSON.stringify({ mcpServers: { filesystem: {}, slack: {} } });
+      }
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    const names = result.mcpServers.map((m) => m.name).sort();
+    expect(names).toEqual(["filesystem", "github", "slack"]);
+    // 重複排除されているので3件のみ
+    expect(result.mcpServers.length).toBe(3);
+  });
+});
