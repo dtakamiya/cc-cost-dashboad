@@ -8,6 +8,7 @@ import { SummaryCards } from "./components/SummaryCards";
 import { OptimizationAdvisor } from "./components/OptimizationAdvisor";
 import { SavingsSimulator } from "./components/SavingsSimulator";
 import { CostDrivers } from "./components/CostDrivers";
+import { ThinkingBreakdown } from "./components/ThinkingBreakdown";
 import { ModelBreakdown } from "./components/ModelBreakdown";
 import { DailyTrend } from "./components/DailyTrend";
 import { HourlyTrend } from "./components/HourlyTrend";
@@ -292,6 +293,7 @@ export default function App() {
           </section>
           <section id="section-drivers" ref={driversRef}>
             <CostDrivers s={displayData} />
+            <ThinkingBreakdown s={displayData} />
             {hourlyData.length > 0 && (
               <HourlyTrend
                 data={hourlyData}

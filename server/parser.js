@@ -45,6 +45,8 @@ function toRecord(obj) {
   const cacheCreate1h = cc.ephemeral_1h_input_tokens || 0;
   const cache1h = cacheCreate1h > 0;
 
+  const { thinkingTokensApprox, hasThinking, thinkingBlockCount } = extractThinkingStats(msg.content);
+
   return {
     ts: obj.timestamp || null,
     model,
@@ -57,6 +59,38 @@ function toRecord(obj) {
     cacheRead: usage.cache_read_input_tokens || 0,
     cache1h,
     isSidechain: obj.isSidechain === true,
+    thinkingTokensApprox,
+    hasThinking,
+    thinkingBlockCount,
+  };
+}
+
+/**
+ * message.content[] から type === "thinking" / "redacted_thinking" のブロックを検出し、
+ * テキスト長（合算）から近似トークン数を算出する。usage に thinking 専用フィールドが
+ * 無いため、Math.ceil(合計文字数 / 4) の近似値とする（精度改善はスコープ外）。
+ * redacted_thinking は平文を含まないため thinkingTokensApprox には寄与しないが、
+ * 存在自体は hasThinking / thinkingBlockCount に反映する。
+ * @param {unknown} content - message.content（配列でない場合は thinking なし扱い）
+ * @returns {{ thinkingTokensApprox: number, hasThinking: boolean, thinkingBlockCount: number }}
+ */
+function extractThinkingStats(content) {
+  if (!Array.isArray(content)) {
+    return { thinkingTokensApprox: 0, hasThinking: false, thinkingBlockCount: 0 };
+  }
+
+  let totalChars = 0;
+  let thinkingBlockCount = 0;
+  for (const block of content) {
+    if (!block || (block.type !== "thinking" && block.type !== "redacted_thinking")) continue;
+    thinkingBlockCount++;
+    totalChars += typeof block.thinking === "string" ? block.thinking.length : 0;
+  }
+
+  return {
+    thinkingTokensApprox: thinkingBlockCount > 0 ? Math.ceil(totalChars / 4) : 0,
+    hasThinking: thinkingBlockCount > 0,
+    thinkingBlockCount,
   };
 }
 

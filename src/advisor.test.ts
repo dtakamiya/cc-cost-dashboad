@@ -795,3 +795,36 @@ describe("diff-output-advice", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe("buildRecommendations - thinking（推論）トークン比率", () => {
+  it("thinking.outputShareが閾値超のとき、MAX_THINKING_TOKENS等を促す提案が出る", () => {
+    const s = baseSummary({
+      thinking: { approxTokens: 60_000, outputShare: 0.6, isApprox: true, hasAnyThinking: true },
+    });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "thinking-heavy");
+    expect(item).toBeDefined();
+    expect(item?.action).toMatch(/MAX_THINKING_TOKENS/);
+  });
+
+  it("thinking.outputShareが閾値以下のとき、提案は出ない", () => {
+    const s = baseSummary({
+      thinking: { approxTokens: 10_000, outputShare: 0.3, isApprox: true, hasAnyThinking: true },
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "thinking-heavy")).toBeUndefined();
+  });
+
+  it("thinkingデータが無い場合、提案は出ない", () => {
+    const r = buildRecommendations(baseSummary());
+    expect(r.items.find((i) => i.id === "thinking-heavy")).toBeUndefined();
+  });
+
+  it("hasAnyThinkingがfalseの場合、outputShareが閾値超でも提案は出ない（防御的チェック）", () => {
+    const s = baseSummary({
+      thinking: { approxTokens: 0, outputShare: 0, isApprox: true, hasAnyThinking: false },
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "thinking-heavy")).toBeUndefined();
+  });
+});

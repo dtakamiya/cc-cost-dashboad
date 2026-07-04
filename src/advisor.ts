@@ -56,6 +56,7 @@ export const MODEL_SKEW_THRESHOLD = 0.6; // 最大モデルのトークン占有
 export const IDLE_REWRITE_COST_THRESHOLD = 0.01; // アイドル失効による再書き込みコスト(USD)がこの値超で提案
 export const MODEL_SWITCH_REWRITE_COST_THRESHOLD = 0.01; // モデル切替による再作成コスト(USD)がこの値超で提案
 export const MCP_OVERHEAD_TOKEN_THRESHOLD = 3000; // MCPサーバ推定トークン合計がこの値超で無効化検討を提案
+export const THINKING_OUTPUT_SHARE_THRESHOLD = 0.5; // output中のthinking近似比率がこの値超で警告
 
 // --- 節約見積りの保守的な係数（過大評価を避ける） ---
 const BLOAT_SAVABLE_FRACTION = 0.5; // 肥大化セッションの再送文脈のうち /clear で避けられる割合
@@ -391,6 +392,22 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       shortTitle: `頻発するコンテキスト圧縮（${frequentlyCompacted.length}件）`,
       detail: `${frequentlyCompacted.length} 件のセッションで自動コンテキスト圧縮（compaction）が繰り返し発生（${cwds} ほか）。`,
       action: "区切りの良いタイミングで先回りして /compact を実行し、意図しない圧縮によるコンテキスト欠落を防ぐ。",
+      estMonthlySavings: 0,
+    });
+  }
+
+  // 5f. extended thinking（推論）トークンがoutputの大部分を占める（medium, 定性）
+  // thinkingはoutputに既に含まれる内訳であり、二重の追加コストではない。あくまで
+  // 「見えないコスト」の比率が高いことへの注意喚起であり、節約額は定量化しない（0のまま）。
+  const th = s.thinking;
+  if (th && th.hasAnyThinking && th.outputShare > THINKING_OUTPUT_SHARE_THRESHOLD) {
+    items.push({
+      id: "thinking-heavy",
+      priority: "medium",
+      title: "output（生成）の大部分がextended thinking（推論）に費やされている",
+      shortTitle: `thinking比率過大（推定 ${(th.outputShare * 100).toFixed(0)}%）`,
+      detail: `output トークンのうち約 ${(th.outputShare * 100).toFixed(0)}%（推定 約 ${th.approxTokens.toLocaleString()} トークン）がextended thinking（推論、outputに既に含まれる内訳）と推定される。`,
+      action: "MAX_THINKING_TOKENS を引き下げる、またはadaptive thinkingを活用し、複雑な推論が不要なタスクでは無効化を検討する。",
       estMonthlySavings: 0,
     });
   }
