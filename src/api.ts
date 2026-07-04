@@ -146,6 +146,23 @@ export interface ToolResultOutliers {
   isApprox: true;
 }
 
+// 同一セッション内で同じファイルを複数回Readした「重複読み込み」の集計（ファイル単位）。
+export interface DuplicateReadFile {
+  filePath: string;
+  readCount: number; // 重複が発生したセッションでの総Read回数
+  duplicateCount: number; // 2回目以降のRead回数
+  duplicateTokensApprox: number; // 重複Readのtool_result近似トークン合算
+}
+
+// セッション×file_pathで2回目以降のReadを重複と数えた集計。可視化専用の近似値であり、
+// totalCost/totalTokens には加算されない（isApprox=true）。
+export interface DuplicateReads {
+  totalDuplicateReads: number;
+  totalDuplicateTokensApprox: number;
+  byFile: DuplicateReadFile[]; // duplicateTokensApprox降順の上位のみ
+  isApprox: true;
+}
+
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
 // MCPツール定義は config（command/args）から静的取得できず実行時依存のため、
 // 現状 source は常に "estimated"（保守的な既定値）。"measured" は将来の実測拡張用、
@@ -233,6 +250,7 @@ export interface Summary {
   byMcpServer: McpServerUsage[];
   toolResultBreakdown?: ToolResultUsage[];
   toolResultOutliers?: ToolResultOutliers;
+  duplicateReads?: DuplicateReads;
 }
 
 export interface Activity {

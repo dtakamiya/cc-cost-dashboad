@@ -95,8 +95,9 @@ function extractThinkingStats(content) {
 }
 
 /**
- * assistant 行の message.content[] から Agent/Skill の tool_use を検出し、
+ * assistant 行の message.content[] から Agent/Skill/mcp__/Read の tool_use を検出し、
  * 正規化レコードの配列として返す。対象がなければ空配列。
+ * Read は重複読み込み検出（duplicateReads 集計）向けに filePath と toolUseId を保持する。
  * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
  * @returns {object[]} tool_use 正規化レコードの配列（0件の場合は []）
  */
@@ -110,7 +111,9 @@ function toToolUseRecords(obj) {
   for (const block of content) {
     if (!block || block.type !== "tool_use") continue;
     const isMcp = typeof block.name === "string" && block.name.startsWith("mcp__");
-    if (block.name !== "Agent" && block.name !== "Skill" && !isMcp) continue;
+    if (block.name !== "Agent" && block.name !== "Skill" && block.name !== "Read" && !isMcp) {
+      continue;
+    }
 
     const input = block.input || {};
     const base = {
@@ -133,6 +136,15 @@ function toToolUseRecords(obj) {
         subagentType: null,
         description: null,
         skill: input.skill || null,
+      });
+    } else if (block.name === "Read") {
+      results.push({
+        ...base,
+        subagentType: null,
+        description: null,
+        skill: null,
+        filePath: typeof input.file_path === "string" ? input.file_path : null,
+        toolUseId: typeof block.id === "string" ? block.id : null,
       });
     } else {
       // mcp__<serverName>__<mcpTool>。サーバー名自体に "__" を含まない前提で、

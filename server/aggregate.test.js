@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, computeToolResultOutliers, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1578,5 +1578,116 @@ describe("computeToolResultOutliers", () => {
     ];
     const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
     expect(result.totalOverTokensApprox).toBe((BASH_OUTPUT_CAP_TOKENS + 100) + (BASH_OUTPUT_CAP_TOKENS + 200));
+  });
+});
+
+// ─── computeDuplicateReads ────────────────────────────────────────────────
+
+const readUseRec = (over = {}) => ({
+  toolName: "Read",
+  ts: "2026-06-15T10:00:00.000Z",
+  sessionId: "s1",
+  cwd: "/home/u/proj",
+  subagentType: null,
+  description: null,
+  skill: null,
+  filePath: "/home/u/proj/a.txt",
+  toolUseId: "toolu_r1",
+  ...over,
+});
+
+describe("computeDuplicateReads", () => {
+  it("空入力で0値・空配列・isApprox: trueを返す", () => {
+    const result = computeDuplicateReads([], []);
+    expect(result).toEqual({
+      totalDuplicateReads: 0,
+      totalDuplicateTokensApprox: 0,
+      byFile: [],
+      isApprox: true,
+    });
+  });
+
+  it("同一セッション×同一filePathの2回目以降を重複として数える", () => {
+    const toolUseRecords = [
+      readUseRec({ toolUseId: "toolu_1" }),
+      readUseRec({ toolUseId: "toolu_2" }),
+      readUseRec({ toolUseId: "toolu_3" }),
+    ];
+    const result = computeDuplicateReads(toolUseRecords, []);
+    expect(result.totalDuplicateReads).toBe(2);
+    expect(result.byFile).toHaveLength(1);
+    expect(result.byFile[0].filePath).toBe("/home/u/proj/a.txt");
+    expect(result.byFile[0].readCount).toBe(3);
+    expect(result.byFile[0].duplicateCount).toBe(2);
+  });
+
+  it("初回のみのReadは重複に数えない", () => {
+    const result = computeDuplicateReads([readUseRec()], []);
+    expect(result.totalDuplicateReads).toBe(0);
+    expect(result.byFile).toEqual([]);
+  });
+
+  it("異なるセッションの同一filePathは重複としない", () => {
+    const toolUseRecords = [
+      readUseRec({ toolUseId: "toolu_1", sessionId: "s1" }),
+      readUseRec({ toolUseId: "toolu_2", sessionId: "s2" }),
+    ];
+    const result = computeDuplicateReads(toolUseRecords, []);
+    expect(result.totalDuplicateReads).toBe(0);
+  });
+
+  it("重複Readのtool_resultトークンをtoolUseIdで突合し推定重複トークンとして合算する", () => {
+    const toolUseRecords = [
+      readUseRec({ toolUseId: "toolu_1" }),
+      readUseRec({ toolUseId: "toolu_2" }),
+      readUseRec({ toolUseId: "toolu_3" }),
+    ];
+    const toolResultRecords = [
+      toolResultRec({ toolUseId: "toolu_1", tokensApprox: 100 }), // 初回: 非重複
+      toolResultRec({ toolUseId: "toolu_2", tokensApprox: 120 }),
+      toolResultRec({ toolUseId: "toolu_3", tokensApprox: 130 }),
+    ];
+    const result = computeDuplicateReads(toolUseRecords, toolResultRecords);
+    expect(result.totalDuplicateTokensApprox).toBe(250);
+    expect(result.byFile[0].duplicateTokensApprox).toBe(250);
+  });
+
+  it("対応するtool_resultが無い重複Readはトークン0として数える", () => {
+    const toolUseRecords = [
+      readUseRec({ toolUseId: "toolu_1" }),
+      readUseRec({ toolUseId: "toolu_2" }),
+    ];
+    const result = computeDuplicateReads(toolUseRecords, []);
+    expect(result.totalDuplicateReads).toBe(1);
+    expect(result.totalDuplicateTokensApprox).toBe(0);
+  });
+
+  it("byFileはduplicateTokensApprox降順で上位10件に制限される", () => {
+    const toolUseRecords = [];
+    const toolResultRecords = [];
+    for (let i = 0; i < 12; i++) {
+      const filePath = `/home/u/proj/f${i}.txt`;
+      toolUseRecords.push(
+        readUseRec({ filePath, toolUseId: `toolu_${i}_a` }),
+        readUseRec({ filePath, toolUseId: `toolu_${i}_b` }),
+      );
+      toolResultRecords.push(toolResultRec({ toolUseId: `toolu_${i}_b`, tokensApprox: (i + 1) * 10 }));
+    }
+    const result = computeDuplicateReads(toolUseRecords, toolResultRecords);
+    expect(result.byFile).toHaveLength(10);
+    expect(result.byFile[0].filePath).toBe("/home/u/proj/f11.txt");
+    expect(result.byFile[0].duplicateTokensApprox).toBe(120);
+    expect(result.totalDuplicateReads).toBe(12);
+  });
+
+  it("Read以外のtool_useレコードとfilePath欠落レコードは無視する", () => {
+    const toolUseRecords = [
+      { toolName: "Agent", sessionId: "s1", subagentType: "Explore", description: null, skill: null },
+      readUseRec({ filePath: null, toolUseId: "toolu_1" }),
+      readUseRec({ filePath: null, toolUseId: "toolu_2" }),
+    ];
+    const result = computeDuplicateReads(toolUseRecords, []);
+    expect(result.totalDuplicateReads).toBe(0);
+    expect(result.byFile).toEqual([]);
   });
 });

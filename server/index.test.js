@@ -35,6 +35,14 @@ vi.mock("./aggregate.js", () => ({
     })),
   }),
   filterRecordsByPeriod: vi.fn((records) => records),
+  computeToolResultOutliers: vi.fn().mockReturnValue({
+    overCount: 0, maxTokensApprox: 0, totalOverTokensApprox: 0, byTool: [], sampleSessions: [], isApprox: true,
+  }),
+  computeDuplicateReads: vi.fn().mockReturnValue({
+    totalDuplicateReads: 0, totalDuplicateTokensApprox: 0, byFile: [], isApprox: true,
+  }),
+  MCP_OUTPUT_CAP_TOKENS: 8000,
+  BASH_OUTPUT_CAP_TOKENS: 5000,
 }));
 
 vi.mock("./analyze.js", () => ({
@@ -92,6 +100,9 @@ beforeEach(async () => {
     filterRecordsByPeriod: vi.fn((records) => records),
     computeToolResultOutliers: vi.fn().mockReturnValue({
       overCount: 0, maxTokensApprox: 0, totalOverTokensApprox: 0, byTool: [], sampleSessions: [], isApprox: true,
+    }),
+    computeDuplicateReads: vi.fn().mockReturnValue({
+      totalDuplicateReads: 0, totalDuplicateTokensApprox: 0, byFile: [], isApprox: true,
     }),
     MCP_OUTPUT_CAP_TOKENS: 8000,
     BASH_OUTPUT_CAP_TOKENS: 5000,
