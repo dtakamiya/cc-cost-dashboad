@@ -214,10 +214,12 @@ describe("subscribeToUpdates", () => {
   it("EventSource を /api/events に接続する", () => {
     const mockClose = vi.fn();
     const mockAddEventListener = vi.fn();
-    const MockEventSource = vi.fn().mockImplementation(() => ({
-      close: mockClose,
-      addEventListener: mockAddEventListener,
-    }));
+    const MockEventSource = vi.fn().mockImplementation(function () {
+      return {
+        close: mockClose,
+        addEventListener: mockAddEventListener,
+      };
+    });
     vi.stubGlobal("EventSource", MockEventSource);
 
     subscribeToUpdates(() => {});
@@ -231,10 +233,12 @@ describe("subscribeToUpdates", () => {
     const mockAddEventListener = vi.fn().mockImplementation((event: string, listener: () => void) => {
       if (event === "update") captured.listener = listener;
     });
-    const MockEventSource = vi.fn().mockImplementation(() => ({
-      close: mockClose,
-      addEventListener: mockAddEventListener,
-    }));
+    const MockEventSource = vi.fn().mockImplementation(function () {
+      return {
+        close: mockClose,
+        addEventListener: mockAddEventListener,
+      };
+    });
     vi.stubGlobal("EventSource", MockEventSource);
 
     const onUpdate = vi.fn();
@@ -249,10 +253,12 @@ describe("subscribeToUpdates", () => {
 
   it("戻り値の unsubscribe() を呼ぶと EventSource を閉じる", () => {
     const mockClose = vi.fn();
-    const MockEventSource = vi.fn().mockImplementation(() => ({
-      close: mockClose,
-      addEventListener: vi.fn(),
-    }));
+    const MockEventSource = vi.fn().mockImplementation(function () {
+      return {
+        close: mockClose,
+        addEventListener: vi.fn(),
+      };
+    });
     vi.stubGlobal("EventSource", MockEventSource);
 
     const unsubscribe = subscribeToUpdates(() => {});
