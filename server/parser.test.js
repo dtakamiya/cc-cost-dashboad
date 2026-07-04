@@ -911,7 +911,7 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
     expect(third.records).toHaveLength(1);
   });
 
-  it("同一パスでファイルが削除→再作成され、devまたはinoが変わった場合、truncationDetected が true になる", async () => {
+  it("同一パスでファイルが削除→再作成され、inoが変わった場合、truncationDetected が true になる", async () => {
     fs.writeFileSync(logFile, VALID_LINE + "\n");
 
     const offsetState = new Map();
@@ -934,6 +934,39 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
           mtimeMs: cachedEntry.mtimeMs + 60_000,
           dev: cachedEntry.dev,
           ino: cachedEntry.ino + 1,
+        };
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    try {
+      const second = await loadRecords(offsetState);
+      expect(second.truncationDetected).toBe(true);
+    } finally {
+      statSyncSpy.mockRestore();
+    }
+  });
+
+  it("同一パスでファイルが削除→再作成され、devが変わった場合も truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const cachedEntry = offsetState.get(logFile);
+
+    // ino はそのまま、dev のみ差し替えて検証する（別デバイス/ファイルシステムへの差し替えを想定）
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const realStat = fs.statSync(logFile);
+    const originalStatSync = fs.statSync.bind(fs);
+    const statSyncSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        return {
+          ...realStat,
+          mtimeMs: cachedEntry.mtimeMs + 60_000,
+          dev: cachedEntry.dev + 1,
+          ino: cachedEntry.ino,
         };
       }
       return originalStatSync(p, ...args);
