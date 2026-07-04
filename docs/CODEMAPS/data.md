@@ -7,7 +7,7 @@
 
 ## Source: JSONL ログ行
 
-各行は Claude Code の会話イベント。集計対象は `type === "assistant"` かつ `message.usage` を持つ行のみ（[server/parser.js](../../server/parser.js) `toRecord()`）。
+各行は Claude Code の会話イベント。集計対象は `type === "assistant"` かつ `message` またはトップレベルに `usage` / `model` を持つ行のみ（[server/parser.js](../../server/parser.js) `toRecord()`）。
 
 ```text
 {
