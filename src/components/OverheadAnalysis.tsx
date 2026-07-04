@@ -202,35 +202,50 @@ export function OverheadAnalysis({ s }: { s: Summary }) {
             実測 cold start 平均（{tok(sessionStats.avgColdStartTokens)}）− ファイルで説明できる baseline（{tok(overhead.totalAlwaysTokens)}）の差分。
             MCP ツール定義・組込ツールスキーマ・長い会話引き継ぎ等が主因候補（これらは静的計測対象外）。
           </div>
-          {overhead.mcpServers.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
-                <strong>MCP サーバ（{overhead.mcpServers.length}）</strong>
+          {overhead.mcpServers.length > 0 && (() => {
+            const mcpTotalTokens = overhead.mcpServers.reduce((sum, m) => sum + (m.estimatedTokens ?? 0), 0);
+            const estimatedServers = overhead.mcpServers.filter((m) => m.estimatedTokens !== null);
+            const perServerTokens = estimatedServers.length > 0 ? mcpTotalTokens / estimatedServers.length : 0;
+            return (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>
+                  <strong>MCP サーバ（{overhead.mcpServers.length}）</strong>
+                </div>
+                <table className="tbl" style={{ marginTop: 6 }}>
+                  <thead>
+                    <tr>
+                      <th>サーバ</th>
+                      <th style={{ textAlign: "right" }}>推定トークン</th>
+                      <th style={{ textAlign: "right" }}>月間コスト</th>
+                      <th style={{ textAlign: "right" }}>根拠</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overhead.mcpServers.map((server) => (
+                      <McpRow
+                        key={server.name}
+                        server={server}
+                        monthlyCost={fileMonthlyCost(server.estimatedTokens ?? 0)}
+                      />
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight: 600 }}>
+                      <td>合計</td>
+                      <td style={{ textAlign: "right" }}>{tok(mcpTotalTokens)}</td>
+                      <td style={{ textAlign: "right", fontSize: 11, color: "var(--muted)" }}>
+                        {usd(fileMonthlyCost(mcpTotalTokens))}/月
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+                <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>
+                  ※ MCPツール定義は実行時依存で静的計測できないため、保守的な既定値（サーバ1件あたり約{tok(perServerTokens)}）で推定。不要なサーバは無効化を検討。
+                </div>
               </div>
-              <table className="tbl" style={{ marginTop: 6 }}>
-                <thead>
-                  <tr>
-                    <th>サーバ</th>
-                    <th style={{ textAlign: "right" }}>推定トークン</th>
-                    <th style={{ textAlign: "right" }}>月間コスト</th>
-                    <th style={{ textAlign: "right" }}>根拠</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {overhead.mcpServers.map((server) => (
-                    <McpRow
-                      key={server.name}
-                      server={server}
-                      monthlyCost={fileMonthlyCost(server.estimatedTokens ?? 0)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-              <div style={{ fontSize: 11, color: "var(--subtle)", marginTop: 4 }}>
-                ※ MCPツール定義は実行時依存で静的計測できないため、保守的な既定値（サーバ1件あたり約1,500トークン）で推定。不要なサーバは無効化を検討。
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="driver-title" style={{ marginTop: 14 }}>セッション cold start（初回キャッシュ書き込み）</div>
           <table className="tbl" style={{ marginTop: 6 }}>

@@ -272,7 +272,7 @@ export function analyzeOverhead() {
   // プロジェクトスコープのプラグイン（参考情報）
   result.projectPlugins = projectScopedPlugins();
 
-  // MCP サーバ（静的計測対象外。名前のみ）
+  // MCP サーバ（実行時依存のため静的計測対象外。名前ごとに保守的な既定値で推定）
   result.mcpServers = listMcpServers();
 
   result.totalAlwaysTokens = always;

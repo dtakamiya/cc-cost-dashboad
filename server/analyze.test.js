@@ -195,4 +195,19 @@ describe("analyzeOverhead - mcpServers", () => {
     // 重複排除されているので3件のみ
     expect(result.mcpServers.length).toBe(3);
   });
+
+  it("不正なJSONを含むファイルは無視し、他方から読めたサーバのみ返す", async () => {
+    mockFs.readFileSync.mockImplementation((p) => {
+      if (String(p).endsWith(".claude.json")) return "{ not valid json";
+      if (String(p).endsWith("settings.json")) {
+        return JSON.stringify({ mcpServers: { filesystem: {} } });
+      }
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    });
+
+    const { analyzeOverhead } = await import("./analyze.js");
+    const result = analyzeOverhead();
+
+    expect(result.mcpServers.map((m) => m.name)).toEqual(["filesystem"]);
+  });
 });

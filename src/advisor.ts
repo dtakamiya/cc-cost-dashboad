@@ -61,6 +61,7 @@ export const MCP_OVERHEAD_TOKEN_THRESHOLD = 3000; // MCPサーバ推定トーク
 const BLOAT_SAVABLE_FRACTION = 0.5; // 肥大化セッションの再送文脈のうち /clear で避けられる割合
 const MODEL_SHIFT_FRACTION = 0.3; // 高単価モデルから安価モデルへ振り替えられる割合
 const OUTPUT_REDUCTION_FRACTION = 0.2; // 出力長見直しで削減できる割合
+const MCP_DISABLE_FRACTION = 0.5; // 全MCP無効化は非現実的なため、未使用分のみ無効化できると仮定する割合
 
 const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
 
@@ -151,6 +152,8 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
   const monthlyFactor = 30 / periodDays;
 
   const cacheReadRate = safeRate(s.costSplit.cacheRead, s.tokenSplit.cacheRead);
+  const cacheCreateRate = safeRate(s.costSplit.cacheWrite, s.tokenSplit.cacheCreate);
+  const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 0;
 
   const items: Recommendation[] = [];
 
@@ -240,8 +243,6 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
 
   // 3b. ファイル別常時注入オーバーヘッド（individual file > OVERHEAD_FILE_WARN_TOKENS）
   {
-    const cacheCreateRate = safeRate(s.costSplit.cacheWrite, s.tokenSplit.cacheCreate);
-    const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 0;
     const candidates: Array<{ label: string; alwaysTokens: number }> = [];
     if (s.overhead.claudeMd) {
       candidates.push({ label: s.overhead.claudeMd.label, alwaysTokens: s.overhead.claudeMd.alwaysTokens });
@@ -329,22 +330,23 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
   // MCPツール定義は実行時依存で静的計測できないため、各サーバは保守的な既定推定値
   // （server/analyze.js の DEFAULT_MCP_SERVER_TOKENS）で見積もられている。
   // estimatedTokens が null（source:"unknown"）のサーバは 0 扱いで合算する。
+  // action は「未使用分のみ無効化」を促すため、節約額も全サーバ無効化ではなく
+  // MCP_DISABLE_FRACTION（部分的な無効化）を前提に保守的へ寄せる。
   {
     const mcpTotalTokens = s.overhead.mcpServers.reduce(
       (sum, m) => sum + (m.estimatedTokens ?? 0),
       0
     );
     if (mcpTotalTokens > MCP_OVERHEAD_TOKEN_THRESHOLD) {
-      const cacheCreateRate = safeRate(s.costSplit.cacheWrite, s.tokenSplit.cacheCreate);
-      const sessionFactor = s.totals.sessions > 0 ? s.totals.sessions : 0;
-      const savings = mcpTotalTokens * cacheCreateRate * sessionFactor * monthlyFactor;
+      const savings =
+        mcpTotalTokens * MCP_DISABLE_FRACTION * cacheCreateRate * sessionFactor * monthlyFactor;
       const serverNames = s.overhead.mcpServers.map((m) => m.name).slice(0, 5).join(", ");
       items.push({
         id: "mcp-overhead",
         priority: "medium",
         title: "MCPサーバのツール定義が常時オーバーヘッドになっている",
         shortTitle: `MCPオーバーヘッド過大（${mcpTotalTokens.toLocaleString()}トークン）`,
-        detail: `${s.overhead.mcpServers.length} 件の MCP サーバ（${serverNames}）で推定 約 ${mcpTotalTokens.toLocaleString()} トークンが毎セッション常時注入される（保守的な推定値）。`,
+        detail: `${s.overhead.mcpServers.length} 件の MCP サーバ（${serverNames}）で推定 約 ${mcpTotalTokens.toLocaleString()} トークンが毎セッション常時注入される（保守的な推定値。全サーバ無効化時の上限）。`,
         action: "未使用・低頻度のMCPサーバを無効化するか、gh/aws等のCLI代替を検討する。",
         estMonthlySavings: Math.max(0, savings),
       });
