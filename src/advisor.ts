@@ -1,4 +1,4 @@
-import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, isToolResultHeavySession, PROACTIVE_COMPACT_THRESHOLD, type BillingMode, type Summary } from "./api";
+import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, isProactiveThresholdSession, isToolResultHeavySession, PROACTIVE_COMPACT_THRESHOLD, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -436,9 +436,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
   // cacheRead + input の累積絶対量そのものが閾値を超えたかどうかで判定する。
   // ターン単位のリアルタイム判定はグラフ側（InputContextCurve）で行うため、
   // ここではセッション累計による近似のみを扱う。
-  const proactiveThresholdSessions = s.bySession.filter(
-    (sess) => sess.cacheRead + sess.input > PROACTIVE_COMPACT_THRESHOLD
-  );
+  const proactiveThresholdSessions = s.bySession.filter((sess) => isProactiveThresholdSession(sess));
   if (proactiveThresholdSessions.length > 0) {
     const cwds = [...new Set(proactiveThresholdSessions.map((sess) => shortCwd(sess.cwd)))]
       .slice(0, 3)

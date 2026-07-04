@@ -686,6 +686,14 @@ export interface CumulativeInputPoint {
 // 早めに区切りを促すための目安値。
 export const PROACTIVE_COMPACT_THRESHOLD = 250_000;
 
+/** セッションの累積入力トークン（cacheRead + input）が proactive 閾値を超えているかどうかを返す。 */
+export function isProactiveThresholdSession(
+  s: SessionCost,
+  threshold = PROACTIVE_COMPACT_THRESHOLD
+): boolean {
+  return s.cacheRead + s.input > threshold;
+}
+
 /** セッション内ターン配列から累積入力トークン曲線を計算する。閾値を超えたターン以降は exceedsThreshold=true を付与する。 */
 export function computeCumulativeInputCurve(turns: SessionTurn[]): CumulativeInputPoint[] {
   let cumulativeInput = 0;
