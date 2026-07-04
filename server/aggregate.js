@@ -324,7 +324,7 @@ export function computeToolResultUsage(toolResultRecords = []) {
   }
 
   return [...map.values()]
-    .map((entry) => ({ ...entry, sessions: entry.sessions.size }))
+    .map((entry) => ({ ...entry, sessions: entry.sessions.size, isApprox: true }))
     .sort((a, b) => b.tokensApprox - a.tokensApprox);
 }
 

@@ -1330,6 +1330,15 @@ describe("computeToolResultUsage", () => {
     expect(bashEntry.calls).toBe(1);
   });
 
+  it("各エントリにisApprox: trueが付与される（近似値であることの明示）", () => {
+    const records = [
+      toolResultRec({ toolName: "Read", tokensApprox: 100 }),
+      toolResultRec({ toolName: "Bash", tokensApprox: 50 }),
+    ];
+    const result = computeToolResultUsage(records);
+    expect(result.every((r) => r.isApprox === true)).toBe(true);
+  });
+
   it("unknownツール名も通常のツール名同様に集計される", () => {
     const records = [
       toolResultRec({ toolName: "unknown", tokensApprox: 10 }),
@@ -1418,6 +1427,7 @@ describe("aggregate() toolResultBreakdown", () => {
     expect(result.toolResultBreakdown).toHaveLength(1);
     expect(result.toolResultBreakdown[0].toolName).toBe("Read");
     expect(result.toolResultBreakdown[0].tokensApprox).toBe(100);
+    expect(result.toolResultBreakdown[0].isApprox).toBe(true);
   });
 
   it("toolResultRecords 未指定時は toolResultBreakdown が []", () => {
