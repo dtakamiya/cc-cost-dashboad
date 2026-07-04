@@ -342,9 +342,11 @@ describe("rebuild() - 切り詰め検知時のキャッシュ再初期化", () =
     expect(lastCall[1].compactions).toEqual(
       expect.arrayContaining([{ sessionId: "s1" }, { sessionId: "s2" }])
     );
+    expect(lastCall[1].compactions).toHaveLength(2);
     expect(lastCall[1].toolUseRecords).toEqual(
       expect.arrayContaining([{ id: "t1" }, { id: "t2" }])
     );
+    expect(lastCall[1].toolUseRecords).toHaveLength(2);
   });
 });
 

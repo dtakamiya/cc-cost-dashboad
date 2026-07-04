@@ -892,6 +892,7 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
     const offsetState = new Map();
     const first = await loadRecords(offsetState);
     expect(first.truncationDetected).toBe(false);
+    expect(first.records).toHaveLength(3);
 
     // logFile2 のみ追記（正常）、logFile は切り詰め
     fs.appendFileSync(logFile2, VALID_LINE + "\n");
@@ -899,5 +900,14 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
 
     const second = await loadRecords(offsetState);
     expect(second.truncationDetected).toBe(true);
+    // 切り詰められていない logFile2 の既存レコードも含め、全ファイル全件が返ること
+    // (logFile: 1件 + logFile2: 2件 = 3件)
+    expect(second.records).toHaveLength(3);
+
+    // 以降の差分読み込みでも重複・欠落が起きないことを確認する
+    fs.appendFileSync(logFile2, VALID_LINE + "\n");
+    const third = await loadRecords(offsetState);
+    expect(third.truncationDetected).toBe(false);
+    expect(third.records).toHaveLength(1);
   });
 });

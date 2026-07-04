@@ -197,23 +197,38 @@ export async function loadRecords(offsetState = new Map()) {
   let unreadableFiles = 0;
   let truncationDetected = false;
 
+  // 事前に全ファイルの stat を取得する。切り詰め・mtime 後退を検知した場合、
+  // offsetState 全体をクリアし、今回のループは「全ファイルを起点0から読み直す」形にする。
+  // これにより、真偽だけでなく records/compactions/toolUseRecords も
+  // 「切り詰め時は全ファイル全件」という一貫した戻り値になる。
+  const stats = new Map();
   for (const file of files) {
-    let stat;
     try {
-      stat = fs.statSync(file);
+      stats.set(file, fs.statSync(file));
     } catch {
+      // 読み取り失敗はこの後のループで unreadableFiles としてカウントする
+    }
+  }
+  for (const [file, stat] of stats) {
+    const cached = offsetState.get(file);
+    if (cached && (stat.size < cached.offset || stat.mtimeMs < cached.mtimeMs)) {
+      truncationDetected = true;
+      break;
+    }
+  }
+  if (truncationDetected) {
+    offsetState.clear(); // 他ファイル分も含め、今回は全件0から読み直す
+  }
+
+  for (const file of files) {
+    const stat = stats.get(file);
+    if (!stat) {
       unreadableFiles++;
       continue;
     }
 
     const cached = offsetState.get(file);
-    let startOffset = 0;
-    if (cached && stat.size >= cached.offset && stat.mtimeMs >= cached.mtimeMs) {
-      startOffset = cached.offset;
-    } else if (cached) {
-      // 既存ファイルなのに offset 0 にリセットされた＝切り詰め or mtime 後退（新規ファイルは対象外）
-      truncationDetected = true;
-    }
+    const startOffset = cached ? cached.offset : 0;
 
     const result = await readFileFromOffset(file, startOffset);
     if (result.readFailed) {
