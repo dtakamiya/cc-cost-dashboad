@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadRecords } from "./parser.js";
+import { loadRecords, extractToolResultChars, extractToolUseIdMap, toToolResultRecords } from "./parser.js";
 
 // JSONL 1行分の最小有効レコード
 const VALID_LINE = JSON.stringify({
@@ -1217,6 +1217,271 @@ describe("loadRecords - thinking トークン近似", () => {
       expect(records[0].thinkingTokensApprox).toBe(0);
       expect(records[0].hasThinking).toBe(true);
       expect(records[0].thinkingBlockCount).toBe(1);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ─── extractToolResultChars ──────────────────────────────────────────────
+
+describe("extractToolResultChars", () => {
+  it("文字列content -> その文字数を返す", () => {
+    expect(extractToolResultChars("hello world")).toBe(11);
+  });
+
+  it("配列content（[{type:'text', text:'...'}]）-> textの文字数合計を返す", () => {
+    const content = [
+      { type: "text", text: "abc" },
+      { type: "text", text: "defgh" },
+    ];
+    expect(extractToolResultChars(content)).toBe(8);
+  });
+
+  it("null -> 0文字扱い", () => {
+    expect(extractToolResultChars(null)).toBe(0);
+  });
+
+  it("undefined -> 0文字扱い", () => {
+    expect(extractToolResultChars(undefined)).toBe(0);
+  });
+
+  it("非対応形式（数値やオブジェクト単体）-> 0文字扱い", () => {
+    expect(extractToolResultChars(12345)).toBe(0);
+    expect(extractToolResultChars({ foo: "bar" })).toBe(0);
+  });
+
+  it("配列中にtext以外のtypeブロックが混ざっていても無視して合算する", () => {
+    const content = [
+      { type: "text", text: "abcd" },
+      { type: "image", source: {} },
+    ];
+    expect(extractToolResultChars(content)).toBe(4);
+  });
+
+  it("空配列 -> 0文字", () => {
+    expect(extractToolResultChars([])).toBe(0);
+  });
+});
+
+// ─── extractToolUseIdMap ──────────────────────────────────────────────────
+
+describe("extractToolUseIdMap", () => {
+  it("assistant行のcontent[]内のtool_useブロックからid->nameを抽出する", () => {
+    const obj = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "toolu_1", name: "Read", input: {} },
+          { type: "tool_use", id: "toolu_2", name: "Bash", input: {} },
+        ],
+      },
+    };
+    const map = extractToolUseIdMap(obj);
+    expect(map.get("toolu_1")).toBe("Read");
+    expect(map.get("toolu_2")).toBe("Bash");
+  });
+
+  it("assistant行でない場合は空Mapを返す", () => {
+    const map = extractToolUseIdMap({ type: "user", message: { content: [] } });
+    expect(map.size).toBe(0);
+  });
+
+  it("contentが配列でない場合は空Mapを返す", () => {
+    const map = extractToolUseIdMap({ type: "assistant", message: { content: "plain" } });
+    expect(map.size).toBe(0);
+  });
+
+  it("tool_use以外のブロックは無視する", () => {
+    const obj = {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "hi" }] },
+    };
+    const map = extractToolUseIdMap(obj);
+    expect(map.size).toBe(0);
+  });
+
+  it("Agent/Skill/mcp__以外のツール（例: Read）も対象に含まれる（除外ロジックを持たない）", () => {
+    const obj = {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "toolu_grep", name: "Grep", input: {} }] },
+    };
+    const map = extractToolUseIdMap(obj);
+    expect(map.get("toolu_grep")).toBe("Grep");
+  });
+});
+
+// ─── toToolResultRecords ──────────────────────────────────────────────────
+
+describe("toToolResultRecords", () => {
+  it("既知のtool_use_idに対応するtoolNameでtool_resultレコードを生成する", () => {
+    const toolUseIdMap = new Map([["toolu_1", "Read"]]);
+    const obj = {
+      type: "user",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "toolu_1", content: "a".repeat(40) },
+        ],
+      },
+    };
+    const results = toToolResultRecords(obj, toolUseIdMap);
+    expect(results).toHaveLength(1);
+    expect(results[0].toolName).toBe("Read");
+    expect(results[0].toolUseId).toBe("toolu_1");
+    expect(results[0].tokensApprox).toBe(10); // ceil(40/4)
+    expect(results[0].sessionId).toBe("s1");
+  });
+
+  it("未知のtool_use_idの場合はtoolName: 'unknown'になる", () => {
+    const toolUseIdMap = new Map();
+    const obj = {
+      type: "user",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "toolu_unknown", content: "abcd" }],
+      },
+    };
+    const results = toToolResultRecords(obj, toolUseIdMap);
+    expect(results).toHaveLength(1);
+    expect(results[0].toolName).toBe("unknown");
+  });
+
+  it("tool_resultブロックが無い場合は空配列を返す", () => {
+    const obj = {
+      type: "user",
+      message: { content: [{ type: "text", text: "hi" }] },
+    };
+    expect(toToolResultRecords(obj, new Map())).toEqual([]);
+  });
+
+  it("複数のtool_resultブロックがある場合、複数レコードを返す", () => {
+    const toolUseIdMap = new Map([
+      ["toolu_1", "Read"],
+      ["toolu_2", "Bash"],
+    ]);
+    const obj = {
+      type: "user",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "toolu_1", content: "abcd" },
+          { type: "tool_result", tool_use_id: "toolu_2", content: "efgh" },
+        ],
+      },
+    };
+    const results = toToolResultRecords(obj, toolUseIdMap);
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.toolName)).toEqual(["Read", "Bash"]);
+  });
+
+  it("user行でない場合は空配列を返す", () => {
+    const obj = {
+      type: "assistant",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "abcd" }] },
+    };
+    expect(toToolResultRecords(obj, new Map())).toEqual([]);
+  });
+
+  it("contentが配列でない場合は空配列を返す", () => {
+    const obj = { type: "user", message: { content: "plain string" } };
+    expect(toToolResultRecords(obj, new Map())).toEqual([]);
+  });
+});
+
+// ─── loadRecords 統合: toolResultRecords ──────────────────────────────────
+
+describe("loadRecords - toolResultRecords", () => {
+  let originalEnv;
+
+  beforeEach(() => {
+    originalEnv = process.env.CLAUDE_LOGS_DIR;
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.CLAUDE_LOGS_DIR;
+    else process.env.CLAUDE_LOGS_DIR = originalEnv;
+  });
+
+  it("Read tool_use -> 対応するtool_resultが読み込まれ、toolResultRecordsにtoolName: 'Read'として反映される", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-toolresult-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const toolUseLine = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [{ type: "tool_use", id: "toolu_read1", name: "Read", input: { file_path: "/tmp/x" } }],
+      },
+    });
+    const toolResultLine = JSON.stringify({
+      type: "user",
+      timestamp: "2026-06-28T00:00:01.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "toolu_read1", content: "x".repeat(400) }],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), toolUseLine + "\n" + toolResultLine + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolResultRecords } = await loadRecords();
+      expect(toolResultRecords).toHaveLength(1);
+      expect(toolResultRecords[0].toolName).toBe("Read");
+      expect(toolResultRecords[0].tokensApprox).toBe(100); // ceil(400/4)
+      expect(toolResultRecords[0].sessionId).toBe("s1");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loadRecords() の戻り値に toolResultRecords フィールドが配列として存在する（tool_resultが無いログでも []）", async () => {
+    const tmpDir = makeTmpLogDir();
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const result = await loadRecords();
+      expect(Array.isArray(result.toolResultRecords)).toBe(true);
+      expect(result.toolResultRecords).toEqual([]);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("既存のtoToolUseRecords関連の挙動（Agent/Skillのみ抽出）は変わらない（回帰）", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "parser-regression-test-"));
+    const projectDir = path.join(tmpDir, "project1");
+    fs.mkdirSync(projectDir, { recursive: true });
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      sessionId: "s1",
+      cwd: "/tmp",
+      message: {
+        model: "claude-haiku-4-5-20251001",
+        content: [
+          { type: "tool_use", id: "toolu_bash", name: "Bash", input: { command: "ls" } },
+          { type: "tool_use", id: "toolu_agent", name: "Agent", input: { subagent_type: "Explore" } },
+        ],
+      },
+    });
+    fs.writeFileSync(path.join(projectDir, "session.jsonl"), line + "\n");
+
+    try {
+      process.env.CLAUDE_LOGS_DIR = tmpDir;
+      const { toolUseRecords } = await loadRecords();
+      expect(toolUseRecords).toHaveLength(1);
+      expect(toolUseRecords[0].toolName).toBe("Agent");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

@@ -59,6 +59,7 @@ export interface SessionCost {
   avgContextPerMsg: number; // Σ(cacheRead + input) / messages = 1ターンの実コンテキストサイズ proxy
   topModel: { model: string; cost: number } | null;
   compactionCount: number; // 自動コンテキスト圧縮（compaction）の発生回数
+  toolResultTokensApprox?: number; // tool_result（Read/Bash/Grep等）累積の近似トークン数。常に近似値（isApprox=true）。
 }
 
 export interface OverheadFile {
@@ -123,6 +124,14 @@ export interface McpServerUsage {
   serverName: string;
   calls: number;
   sessions: number;
+}
+
+// tool_result（Read/Bash/Grep等）累積のツール種別ごとの近似トークン集計。
+// 「見えないコンテキスト肥大」の主因ツールを特定するための内訳。常に近似値（isApprox=true）。
+export interface ToolResultUsage {
+  toolName: string; // ツール名（既知のtool_use_idに突き合わせられない場合は "unknown"）
+  tokensApprox: number; // 近似トークン数の合計（Math.ceil(文字数/4)）
+  isApprox: true;
 }
 
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
@@ -210,6 +219,7 @@ export interface Summary {
   bySession: SessionCost[];
   byTool: ToolUsage[];
   byMcpServer: McpServerUsage[];
+  toolResultBreakdown?: ToolResultUsage[];
 }
 
 export interface Activity {
@@ -311,6 +321,18 @@ export function isOutputHeavySession(
   threshold = OUTPUT_HEAVY_SESSION_THRESHOLD
 ): boolean {
   return sessionOutputRatio(s) > threshold;
+}
+
+// セッションの tool_result（Read/Bash/Grep等）累積近似トークン数がこの値超で
+// 「見えないコンテキスト肥大」候補とみなす既定閾値。
+export const TOOL_RESULT_BLOAT_THRESHOLD = 50_000;
+
+/** セッションが tool_result 累積によるコンテキスト肥大（subagent委譲推奨）かどうかを返す。 */
+export function isToolResultHeavySession(
+  s: SessionCost,
+  threshold = TOOL_RESULT_BLOAT_THRESHOLD
+): boolean {
+  return (s.toolResultTokensApprox ?? 0) > threshold;
 }
 
 export interface DateRange {
@@ -507,6 +529,12 @@ function buildPeriodSummary(
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
+    // toolResultBreakdown は日次内訳が無いため、cacheStats と同様コスト比でスケール近似する。
+    // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
+    toolResultBreakdown: s.toolResultBreakdown?.map((t) => ({
+      ...t,
+      tokensApprox: t.tokensApprox * costRatio,
+    })),
   };
 }
 
@@ -730,6 +758,12 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
+    // toolResultBreakdown は日次内訳が無いため、cacheStats と同様コスト比でスケール近似する。
+    // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
+    toolResultBreakdown: s.toolResultBreakdown?.map((t) => ({
+      ...t,
+      tokensApprox: t.tokensApprox * costRatio,
+    })),
   };
 }
 

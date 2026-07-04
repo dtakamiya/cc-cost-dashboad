@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, sessionOutputRatio, isOutputHeavySession, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, sessionOutputRatio, isOutputHeavySession, isToolResultHeavySession, TOOL_RESULT_BLOAT_THRESHOLD, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -703,5 +703,28 @@ describe("isOutputHeavySession", () => {
     const s = { ...sess("/proj", 10, 1000), input: 50, output: 50, cacheCreate: 0, cacheRead: 0 };
     expect(isOutputHeavySession(s, 0.4)).toBe(true);
     expect(isOutputHeavySession(s, 0.6)).toBe(false);
+  });
+});
+
+describe("isToolResultHeavySession", () => {
+  it("toolResultTokensApproxが既定閾値超でtrueを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: TOOL_RESULT_BLOAT_THRESHOLD + 1 };
+    expect(isToolResultHeavySession(s)).toBe(true);
+  });
+
+  it("toolResultTokensApproxが既定閾値以下でfalseを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: TOOL_RESULT_BLOAT_THRESHOLD };
+    expect(isToolResultHeavySession(s)).toBe(false);
+  });
+
+  it("toolResultTokensApproxが未定義の場合はfalseを返す（後方互換）", () => {
+    const s = sess("/proj", 10, 1000);
+    expect(isToolResultHeavySession(s)).toBe(false);
+  });
+
+  it("カスタム閾値を尊重する", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: 100 };
+    expect(isToolResultHeavySession(s, 50)).toBe(true);
+    expect(isToolResultHeavySession(s, 200)).toBe(false);
   });
 });

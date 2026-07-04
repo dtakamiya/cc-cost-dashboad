@@ -302,6 +302,54 @@ function computeSessions(records, compactions = [], { limit } = {}) {
 }
 
 /**
+ * tool_result レコード配列をツール種別（Read/Bash/Grep/unknown等）ごとに集計する
+ * （tokensApprox 降順）。
+ * @param {object[]} toolResultRecords - tool_result レコード配列（{ toolName, sessionId, tokensApprox }）
+ * @returns {object[]} ツール別サマリ（tokensApprox 降順）
+ */
+export function computeToolResultUsage(toolResultRecords = []) {
+  if (!toolResultRecords.length) return [];
+
+  const map = new Map(); // toolName -> { toolName, tokensApprox, calls, sessions: Set }
+
+  for (const r of toolResultRecords) {
+    let entry = map.get(r.toolName);
+    if (!entry) {
+      entry = { toolName: r.toolName, tokensApprox: 0, calls: 0, sessions: new Set() };
+      map.set(r.toolName, entry);
+    }
+    entry.tokensApprox += r.tokensApprox || 0;
+    entry.calls += 1;
+    if (r.sessionId !== "(unknown)") entry.sessions.add(r.sessionId);
+  }
+
+  return [...map.values()]
+    .map((entry) => ({ ...entry, sessions: entry.sessions.size }))
+    .sort((a, b) => b.tokensApprox - a.tokensApprox);
+}
+
+/**
+ * セッション別サマリ配列に、tool_result 累積近似トークン数（toolResultTokensApprox）を
+ * イミュータブルにマージする。sessionId が "(unknown)" の tool_result レコードは除外する。
+ * @param {object[]} sessions - computeSessions() の戻り値（セッション別サマリ配列）
+ * @param {object[]} toolResultRecords - tool_result レコード配列
+ * @returns {object[]} toolResultTokensApprox を追加した新しいセッション別サマリ配列
+ */
+export function mergeToolResultTokensIntoSessions(sessions, toolResultRecords = []) {
+  const bySession = new Map(); // sessionId -> 合算tokensApprox
+
+  for (const r of toolResultRecords) {
+    if (r.sessionId === "(unknown)") continue;
+    bySession.set(r.sessionId, (bySession.get(r.sessionId) || 0) + (r.tokensApprox || 0));
+  }
+
+  return sessions.map((s) => ({
+    ...s,
+    toolResultTokensApprox: bySession.get(s.sessionId) || 0,
+  }));
+}
+
+/**
  * セッション内アイドルギャップによるキャッシュ失効（無駄な再書き込み）を検出・定量化する。
  * 同一セッション内で連続レコード間のギャップが直前レコードのTTL（cache1hならCACHE_1H_TTL_MS、
  * それ以外はCACHE_5M_TTL_MS）を超えると、次のメッセージでプロンプトキャッシュが失効し、
@@ -464,12 +512,13 @@ export function filterRecordsByPeriod(records, period) {
 /**
  * 正規化レコード配列からダッシュボード用サマリを生成する。
  * @param {object[]} records - 正規化レコード配列
- * @param {{ sessionLimit?: number, compactions?: object[], toolUseRecords?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
+ * @param {{ sessionLimit?: number, compactions?: object[], toolUseRecords?: object[], toolResultRecords?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
  *   compactions 省略時はセッションの compactionCount が全て 0 になる。
  *   toolUseRecords 省略時は byTool・byMcpServer が [] になる。
+ *   toolResultRecords 省略時は toolResultBreakdown が [] になり、bySession[].toolResultTokensApprox は全て 0 になる。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
-export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [], toolUseRecords = [] } = {}) {
+export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [], toolUseRecords = [], toolResultRecords = [] } = {}) {
   let totalCost = 0;
   let totalTokens = 0;
   const tokenSplit = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
@@ -700,11 +749,17 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     blocks: computeBlocks(records),
     projection: computeProjection(records),
     activity: computeActivity(records),
-    bySession: computeSessions(records, compactions, { limit: sessionLimit }),
+    // tool_result 累積近似トークン（toolResultTokensApprox）はtotalCost/totalTokens/tokenSplit/costSplit
+    // には一切加算しない（二重計上禁止）。あくまでセッション別の「見えないコンテキスト肥大」内訳の可視化用。
+    bySession: mergeToolResultTokensIntoSessions(
+      computeSessions(records, compactions, { limit: sessionLimit }),
+      toolResultRecords
+    ),
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
     modelSwitch: computeModelSwitchStats(records),
     byTool: computeToolUsage(toolUseRecords),
     byMcpServer: computeMcpUsage(toolUseRecords),
+    toolResultBreakdown: computeToolResultUsage(toolResultRecords),
   };
 }

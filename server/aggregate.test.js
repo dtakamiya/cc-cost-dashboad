@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1293,5 +1293,165 @@ describe("aggregate thinking トークン内訳", () => {
     ]);
     expect(s.cacheStats.create1hTokens).toBe(1000);
     expect(s.drivers).toBeDefined();
+  });
+});
+
+// ─── computeToolResultUsage ───────────────────────────────────────────────
+
+const toolResultRec = (over = {}) => ({
+  ts: "2026-06-15T10:00:00.000Z",
+  sessionId: "s1",
+  cwd: "/home/u/proj",
+  toolUseId: "toolu_1",
+  toolName: "Read",
+  tokensApprox: 100,
+  ...over,
+});
+
+describe("computeToolResultUsage", () => {
+  it("空配列 -> []", () => {
+    expect(computeToolResultUsage([])).toEqual([]);
+  });
+
+  it("複数種別が別々に集計される", () => {
+    const records = [
+      toolResultRec({ toolName: "Read", tokensApprox: 100, sessionId: "s1" }),
+      toolResultRec({ toolName: "Bash", tokensApprox: 50, sessionId: "s1" }),
+      toolResultRec({ toolName: "Read", tokensApprox: 200, sessionId: "s2" }),
+    ];
+    const result = computeToolResultUsage(records);
+    expect(result).toHaveLength(2);
+    const readEntry = result.find((r) => r.toolName === "Read");
+    const bashEntry = result.find((r) => r.toolName === "Bash");
+    expect(readEntry.tokensApprox).toBe(300);
+    expect(readEntry.calls).toBe(2);
+    expect(readEntry.sessions).toBe(2);
+    expect(bashEntry.tokensApprox).toBe(50);
+    expect(bashEntry.calls).toBe(1);
+  });
+
+  it("unknownツール名も通常のツール名同様に集計される", () => {
+    const records = [
+      toolResultRec({ toolName: "unknown", tokensApprox: 10 }),
+      toolResultRec({ toolName: "unknown", tokensApprox: 20 }),
+    ];
+    const result = computeToolResultUsage(records);
+    expect(result).toHaveLength(1);
+    expect(result[0].toolName).toBe("unknown");
+    expect(result[0].tokensApprox).toBe(30);
+  });
+
+  it("tokensApprox降順でソートされる", () => {
+    const records = [
+      toolResultRec({ toolName: "Grep", tokensApprox: 10 }),
+      toolResultRec({ toolName: "Read", tokensApprox: 500 }),
+      toolResultRec({ toolName: "Bash", tokensApprox: 100 }),
+    ];
+    const result = computeToolResultUsage(records);
+    expect(result.map((r) => r.toolName)).toEqual(["Read", "Bash", "Grep"]);
+  });
+
+  it("sessionIdが(unknown)のレコードはsessions集計から除外される（tokensApproxには含む）", () => {
+    const records = [
+      toolResultRec({ toolName: "Read", tokensApprox: 100, sessionId: "s1" }),
+      toolResultRec({ toolName: "Read", tokensApprox: 50, sessionId: "(unknown)" }),
+    ];
+    const result = computeToolResultUsage(records);
+    expect(result[0].tokensApprox).toBe(150);
+    expect(result[0].sessions).toBe(1);
+  });
+});
+
+// ─── mergeToolResultTokensIntoSessions ────────────────────────────────────
+
+describe("mergeToolResultTokensIntoSessions", () => {
+  it("該当セッションにtoolResultTokensApproxが正しく合算される", () => {
+    const sessions = [
+      { sessionId: "s1", cost: 1, tokens: 100 },
+      { sessionId: "s2", cost: 2, tokens: 200 },
+    ];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", tokensApprox: 300 }),
+      toolResultRec({ sessionId: "s1", tokensApprox: 200 }),
+      toolResultRec({ sessionId: "s2", tokensApprox: 50 }),
+    ];
+    const merged = mergeToolResultTokensIntoSessions(sessions, toolResultRecords);
+    const s1 = merged.find((s) => s.sessionId === "s1");
+    const s2 = merged.find((s) => s.sessionId === "s2");
+    expect(s1.toolResultTokensApprox).toBe(500);
+    expect(s2.toolResultTokensApprox).toBe(50);
+  });
+
+  it('sessionIdが"(unknown)"のtoolResultレコードは除外される', () => {
+    const sessions = [{ sessionId: "s1", cost: 1, tokens: 100 }];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "(unknown)", tokensApprox: 999 }),
+    ];
+    const merged = mergeToolResultTokensIntoSessions(sessions, toolResultRecords);
+    expect(merged[0].toolResultTokensApprox).toBe(0);
+  });
+
+  it("該当するtoolResultレコードが無いセッションは0になる", () => {
+    const sessions = [{ sessionId: "s1", cost: 1, tokens: 100 }];
+    const merged = mergeToolResultTokensIntoSessions(sessions, []);
+    expect(merged[0].toolResultTokensApprox).toBe(0);
+  });
+
+  it("元のsessions配列やその要素を破壊的に変更しない（イミュータブル）", () => {
+    const sessions = [{ sessionId: "s1", cost: 1, tokens: 100 }];
+    const toolResultRecords = [toolResultRec({ sessionId: "s1", tokensApprox: 100 })];
+    mergeToolResultTokensIntoSessions(sessions, toolResultRecords);
+    expect(sessions[0].toolResultTokensApprox).toBeUndefined();
+  });
+});
+
+// ─── aggregate(): toolResultBreakdown / bySession[].toolResultTokensApprox ─
+
+describe("aggregate() toolResultBreakdown", () => {
+  it("toolResultRecords オプションを渡すと toolResultBreakdown が戻り値に含まれる", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", toolName: "Read", tokensApprox: 100 }),
+    ];
+    const result = aggregate(records, { toolResultRecords });
+    expect(result.toolResultBreakdown).toBeDefined();
+    expect(result.toolResultBreakdown).toHaveLength(1);
+    expect(result.toolResultBreakdown[0].toolName).toBe("Read");
+    expect(result.toolResultBreakdown[0].tokensApprox).toBe(100);
+  });
+
+  it("toolResultRecords 未指定時は toolResultBreakdown が []", () => {
+    const result = aggregate([rec({ sessionId: "s1" })]);
+    expect(result.toolResultBreakdown).toEqual([]);
+  });
+
+  it("totalCost・totalTokens・tokenSplit・costSplitにtoolResultのトークンが加算されない（二重計上防止）", () => {
+    const records = [rec({ sessionId: "s1", output: 1000 })];
+    const withoutToolResult = aggregate(records);
+    const withToolResult = aggregate(records, {
+      toolResultRecords: [toolResultRec({ sessionId: "s1", tokensApprox: 999999 })],
+    });
+    expect(withToolResult.totals.cost).toBeCloseTo(withoutToolResult.totals.cost, 10);
+    expect(withToolResult.totals.tokens).toBe(withoutToolResult.totals.tokens);
+    expect(withToolResult.tokenSplit).toEqual(withoutToolResult.tokenSplit);
+    expect(withToolResult.costSplit).toEqual(withoutToolResult.costSplit);
+  });
+
+  it("bySession[].toolResultTokensApproxが正しく反映される", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", tokensApprox: 300 }),
+      toolResultRec({ sessionId: "s1", tokensApprox: 200 }),
+    ];
+    const result = aggregate(records, { toolResultRecords });
+    const s1 = result.bySession.find((s) => s.sessionId === "s1");
+    expect(s1.toolResultTokensApprox).toBe(500);
+  });
+
+  it("該当するtoolResultレコードが無いセッションはtoolResultTokensApproxが0", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const result = aggregate(records);
+    const s1 = result.bySession.find((s) => s.sessionId === "s1");
+    expect(s1.toolResultTokensApprox).toBe(0);
   });
 });

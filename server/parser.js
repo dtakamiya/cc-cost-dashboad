@@ -155,6 +155,78 @@ function toToolUseRecords(obj) {
 }
 
 /**
+ * tool_result の content（文字列または [{type:"text", text:"..."}] 等の配列）から
+ * 文字数を抽出する。null/undefined/非対応形式（数値・単体オブジェクト等）は 0 文字扱い。
+ * @param {unknown} content - tool_result ブロックの content
+ * @returns {number} 抽出した文字数（複数 text ブロックがあれば合算）
+ */
+export function extractToolResultChars(content) {
+  if (typeof content === "string") return content.length;
+  if (!Array.isArray(content)) return 0;
+
+  let totalChars = 0;
+  for (const block of content) {
+    if (!block || block.type !== "text") continue;
+    totalChars += typeof block.text === "string" ? block.text.length : 0;
+  }
+  return totalChars;
+}
+
+/**
+ * assistant 行の message.content[] から tool_use ブロックの id -> name 対応を抽出する。
+ * toToolUseRecords と異なり Agent/Skill/mcp__ に限定せず全ツール種別を対象とする
+ * （tool_result 突き合わせ専用）。
+ * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
+ * @returns {Map<string, string>} tool_use_id -> toolName の対応
+ */
+export function extractToolUseIdMap(obj) {
+  const map = new Map();
+  if (!obj || obj.type !== "assistant") return map;
+  const msg = obj.message || obj;
+  const content = msg.content;
+  if (!Array.isArray(content)) return map;
+
+  for (const block of content) {
+    if (!block || block.type !== "tool_use") continue;
+    if (typeof block.id !== "string" || typeof block.name !== "string") continue;
+    map.set(block.id, block.name);
+  }
+  return map;
+}
+
+/**
+ * user 行の message.content[] から tool_result ブロックを検出し、近似トークン数を
+ * 算出した正規化レコードの配列として返す。tool_use_id が toolUseIdMap に無い場合は
+ * toolName: "unknown" として記録する。
+ * @param {object} obj - JSONL の 1 行をパースしたオブジェクト
+ * @param {Map<string, string>} toolUseIdMap - tool_use_id -> toolName の対応（先行する assistant 行から構築）
+ * @returns {object[]} tool_result 正規化レコードの配列（0件の場合は []）
+ */
+export function toToolResultRecords(obj, toolUseIdMap) {
+  if (!obj || obj.type !== "user") return [];
+  const msg = obj.message || obj;
+  const content = msg.content;
+  if (!Array.isArray(content)) return [];
+
+  const results = [];
+  for (const block of content) {
+    if (!block || block.type !== "tool_result") continue;
+    const toolUseId = block.tool_use_id || null;
+    const toolName = (toolUseId && toolUseIdMap.get(toolUseId)) || "unknown";
+    const chars = extractToolResultChars(block.content);
+    results.push({
+      ts: obj.timestamp || null,
+      sessionId: obj.sessionId || "(unknown)",
+      cwd: obj.cwd || "(unknown)",
+      toolUseId,
+      toolName,
+      tokensApprox: Math.ceil(chars / 4),
+    });
+  }
+  return results;
+}
+
+/**
  * コンテキスト圧縮（compaction）イベントの行をマーカーに変換する。
  * `isCompactSummary: true` または `type: "summary"` かつ sessionId を持つ行が対象。
  * ts は将来の期間別フィルタ対応向けに保持する（現状の集計では未使用）。
@@ -173,12 +245,14 @@ function toCompactionMarker(obj) {
  * 行の末尾に改行がない（書き込み途中の可能性がある）部分行は消費せず、offset を進めない。
  * @param {string} file - 読み込み対象ファイルの絶対パス
  * @param {number} startOffset - 読み込み開始バイトオフセット
- * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], parsedLines: number, parseErrors: number, newOffset: number, readFailed: boolean }>}
+ * @param {Map<string, string>} toolUseIdMap - tool_use_id -> toolName の対応。呼び出し中に破壊的に更新される
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], toolResultRecords: object[], parsedLines: number, parseErrors: number, newOffset: number, readFailed: boolean }>}
  */
-async function readFileFromOffset(file, startOffset) {
+async function readFileFromOffset(file, startOffset, toolUseIdMap) {
   const records = [];
   const compactions = [];
   const toolUseRecords = [];
+  const toolResultRecords = [];
   let parsedLines = 0;
   let parseErrors = 0;
   let bytesConsumed = startOffset;
@@ -218,6 +292,13 @@ async function readFileFromOffset(file, startOffset) {
         const compaction = toCompactionMarker(obj);
         if (compaction) compactions.push(compaction);
         toolUseRecords.push(...toToolUseRecords(obj));
+
+        // tool_use_id -> toolName の対応は tool_result より時系列で先に出現するため、
+        // 呼び出し元から渡された toolUseIdMap を更新しながら、同じマップで突き合わせる。
+        for (const [id, name] of extractToolUseIdMap(obj)) {
+          toolUseIdMap.set(id, name);
+        }
+        toolResultRecords.push(...toToolResultRecords(obj, toolUseIdMap));
       }
     }
   } catch {
@@ -225,7 +306,7 @@ async function readFileFromOffset(file, startOffset) {
   }
   // buffer に残った内容（改行なしの末尾未完了行）は消費しない＝ offset を進めない
 
-  return { records, compactions, toolUseRecords, parsedLines, parseErrors, newOffset: bytesConsumed, readFailed };
+  return { records, compactions, toolUseRecords, toolResultRecords, parsedLines, parseErrors, newOffset: bytesConsumed, readFailed };
 }
 
 /**
@@ -234,14 +315,16 @@ async function readFileFromOffset(file, startOffset) {
  * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
  * @param {Map<string, {offset: number, mtimeMs: number, dev: number, ino: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
- * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number, truncationDetected: boolean }>}
+ * @param {Map<string, string>} [toolUseIdMap] - tool_use_id -> toolName の対応。呼び出し元がループを跨いで保持し、呼び出し中に破壊的に更新される
+ * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], toolResultRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number, truncationDetected: boolean }>}
  */
-export async function loadRecords(offsetState = new Map()) {
+export async function loadRecords(offsetState = new Map(), toolUseIdMap = new Map()) {
   const projectsDir = process.env.CLAUDE_LOGS_DIR || DEFAULT_PROJECTS_DIR;
   const files = findJsonlFiles(projectsDir);
   const records = [];
   const compactions = [];
   const toolUseRecords = [];
+  const toolResultRecords = [];
   let parsedLines = 0;
   let parseErrors = 0;
   let unreadableFiles = 0;
@@ -277,6 +360,7 @@ export async function loadRecords(offsetState = new Map()) {
   }
   if (truncationDetected) {
     offsetState.clear(); // 他ファイル分も含め、今回は全件0から読み直す
+    toolUseIdMap.clear(); // 全件読み直しに伴い、tool_use_id対応も再構築する
   }
 
   for (const file of files) {
@@ -289,7 +373,7 @@ export async function loadRecords(offsetState = new Map()) {
     const cached = offsetState.get(file);
     const startOffset = cached ? cached.offset : 0;
 
-    const result = await readFileFromOffset(file, startOffset);
+    const result = await readFileFromOffset(file, startOffset, toolUseIdMap);
     if (result.readFailed) {
       unreadableFiles++;
       continue;
@@ -298,6 +382,7 @@ export async function loadRecords(offsetState = new Map()) {
     records.push(...result.records);
     compactions.push(...result.compactions);
     toolUseRecords.push(...result.toolUseRecords);
+    toolResultRecords.push(...result.toolResultRecords);
     parsedLines += result.parsedLines;
     parseErrors += result.parseErrors;
 
@@ -306,5 +391,5 @@ export async function loadRecords(offsetState = new Map()) {
 
   const skippedLines = parsedLines - records.length;
 
-  return { records, compactions, toolUseRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected };
+  return { records, compactions, toolUseRecords, toolResultRecords, fileCount: files.length, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected };
 }
