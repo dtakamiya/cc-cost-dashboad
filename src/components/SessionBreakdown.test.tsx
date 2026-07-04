@@ -173,7 +173,34 @@ describe("SessionBreakdown", () => {
       expect(screen.getByText(/ターンデータなし/)).toBeInTheDocument();
     });
     const detailCell = screen.getByText(/ターンデータなし/).closest("td");
-    expect(detailCell).toHaveAttribute("colspan", "7");
+    const headerCells = screen.getAllByRole("columnheader");
+    expect(detailCell).toHaveAttribute("colspan", String(headerCells.length));
+  });
+
+  it("出力比率列が表示される", () => {
+    const s = makeSummary([makeSession({ input: 100, output: 900, cacheCreate: 0, cacheRead: 0 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("出力比率")).toBeInTheDocument();
+    expect(screen.getByText("90.0%")).toBeInTheDocument();
+  });
+
+  it("出力比率が閾値超のセッションにバッジが表示される", () => {
+    const s = makeSummary([makeSession({ input: 100, output: 900, cacheCreate: 0, cacheRead: 0 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("output高")).toBeInTheDocument();
+  });
+
+  it("出力比率が閾値以下のセッションにはバッジが表示されない", () => {
+    const s = makeSummary([makeSession({ input: 900, output: 100, cacheCreate: 0, cacheRead: 0 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.queryByText("output高")).not.toBeInTheDocument();
+  });
+
+  it("出力トークンが0のセッションでも表示が崩れない", () => {
+    const s = makeSummary([makeSession({ input: 100, output: 0, cacheCreate: 0, cacheRead: 0 })]);
+    render(<SessionBreakdown s={s} />);
+    expect(screen.getByText("0.0%")).toBeInTheDocument();
+    expect(screen.queryByText("output高")).not.toBeInTheDocument();
   });
 
   it("16件以上のセッションがある場合「さらに表示」ボタンが表示される", () => {

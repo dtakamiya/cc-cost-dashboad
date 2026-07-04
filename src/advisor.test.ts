@@ -649,3 +649,99 @@ describe("rankFilesByImpact", () => {
     expect(fileItems[0].detail).toContain("毎セッション冒頭");
   });
 });
+
+describe("diff-output-advice", () => {
+  it("出力比率が高い上位セッションが存在する場合にdiff出力アドバイスを提示する", () => {
+    const s = baseSummary({
+      bySession: [
+        session({
+          sessionId: "output-heavy-1",
+          cwd: "/home/u/projX",
+          cost: 10,
+          output: 900,
+          input: 100,
+          cacheCreate: 0,
+          cacheRead: 0,
+        }),
+      ],
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "diff-output-advice");
+    expect(item).toBeDefined();
+    expect(item!.detail).toContain("projX");
+    expect(item!.action).toContain("diff");
+  });
+
+  it("該当セッションが無い場合はRecommendationを生成しない", () => {
+    const s = baseSummary({
+      bySession: [
+        session({
+          sessionId: "balanced",
+          cost: 10,
+          output: 100,
+          input: 900,
+          cacheCreate: 0,
+          cacheRead: 0,
+        }),
+      ],
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "diff-output-advice");
+    expect(item).toBeUndefined();
+  });
+
+  it("出力トークンが全セッションでゼロの場合にゼロ除算エラーやNaNのestMonthlySavingsを出さない", () => {
+    const s = baseSummary({
+      bySession: [
+        session({ sessionId: "zero-1", cost: 0, output: 0, input: 0, cacheCreate: 0, cacheRead: 0 }),
+      ],
+    });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "diff-output-advice");
+    expect(item).toBeUndefined();
+    for (const it of r.items) {
+      expect(Number.isNaN(it.estMonthlySavings)).toBe(false);
+    }
+  });
+
+  it("推定月間節約額が正の値であること", () => {
+    const s = baseSummary({
+      bySession: [
+        session({
+          sessionId: "output-heavy-2",
+          cwd: "/home/u/projY",
+          cost: 20,
+          output: 900,
+          input: 100,
+          cacheCreate: 0,
+          cacheRead: 0,
+        }),
+      ],
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "diff-output-advice");
+    expect(item).toBeDefined();
+    expect(item!.estMonthlySavings).toBeGreaterThan(0);
+  });
+
+  it("既存のoutput-heavyルールと同時に出ても両方独立して存在すること（idの重複がない）", () => {
+    const s = baseSummary({
+      drivers: { ...baseSummary().drivers, outputCostRatio: OUTPUT_COST_RATIO_THRESHOLD + 0.2 },
+      bySession: [
+        session({
+          sessionId: "output-heavy-3",
+          cwd: "/home/u/projZ",
+          cost: 15,
+          output: 900,
+          input: 100,
+          cacheCreate: 0,
+          cacheRead: 0,
+        }),
+      ],
+    });
+    const r = buildRecommendations(s);
+    const outputHeavy = r.items.find((i) => i.id === "output-heavy");
+    const diffAdvice = r.items.find((i) => i.id === "diff-output-advice");
+    expect(outputHeavy).toBeDefined();
+    expect(diffAdvice).toBeDefined();
+    const ids = r.items.map((i) => i.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

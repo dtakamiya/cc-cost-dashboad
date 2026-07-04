@@ -3,12 +3,14 @@ import type { Summary, SessionCost, SessionTurn } from "../api";
 import {
   isBloatedSession,
   isFrequentlyCompactedSession,
+  isOutputHeavySession,
+  sessionOutputRatio,
   fetchSessionTurns,
   filterSessions,
   sessionEfficiencyScore,
   sessionEfficiencyColor,
 } from "../api";
-import { usd, compact } from "../format";
+import { usd, compact, pct } from "../format";
 import { buildClearCommand } from "../clearCommand";
 import { Icon } from "./icons/Icon";
 import { SessionCostCurve } from "./SessionCostCurve";
@@ -256,6 +258,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
               {efficiencySort === "desc" && " ▼"}
             </th>
             <th>圧縮</th>
+            <th>出力比率</th>
             <th>期間</th>
           </tr>
         </thead>
@@ -265,6 +268,8 @@ export function SessionBreakdown({ s }: { s: Summary }) {
             const isExpanded = expandedId === sess.sessionId;
             const efficiencyScore = sessionEfficiencyScore(sess);
             const frequentlyCompacted = isFrequentlyCompactedSession(sess);
+            const outputHeavy = isOutputHeavySession(sess);
+            const outputRatio = sessionOutputRatio(sess);
             return (
               <>
                 <tr
@@ -320,12 +325,26 @@ export function SessionBreakdown({ s }: { s: Summary }) {
                     {sess.compactionCount}
                     {frequentlyCompacted && <span className="badge">多発</span>}
                   </td>
+                  <td
+                    style={{
+                      color: outputHeavy ? "var(--danger)" : undefined,
+                      fontWeight: outputHeavy ? "bold" : undefined,
+                    }}
+                    title={
+                      outputHeavy
+                        ? "出力（生成）トークンの比率が高いセッションです。diff（差分）形式での出力を指示すると削減できます。"
+                        : undefined
+                    }
+                  >
+                    {pct(outputRatio)}
+                    {outputHeavy && <span className="badge">output高</span>}
+                  </td>
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{periodLabel(sess)}</td>
                 </tr>
                 {isExpanded && (
                   <tr key={`${sess.sessionId}-turns`}>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       style={{
                         padding: 0,
                         background: "var(--surface, #f9fafb)",
