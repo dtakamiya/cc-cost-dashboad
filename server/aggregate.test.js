@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, computeToolResultOutliers, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1493,5 +1493,90 @@ describe("aggregate() toolResultBreakdown", () => {
     const result = aggregate(records, { toolResultRecords, sessionLimit: 1 });
     expect(result.bySession).toHaveLength(1);
     expect(result.bySession[0].sessionId).toBe("s2");
+  });
+});
+
+// ─── computeToolResultOutliers ────────────────────────────────────────────
+
+describe("computeToolResultOutliers", () => {
+  it("空配列なら overCount:0 の空サマリを返す", () => {
+    const result = computeToolResultOutliers([], { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result).toEqual({
+      overCount: 0,
+      maxTokensApprox: 0,
+      totalOverTokensApprox: 0,
+      byTool: [],
+      sampleSessions: [],
+      isApprox: true,
+    });
+  });
+
+  it("bashCap丁度(5000)は超過扱いしない、5001は超過扱いする（境界値）", () => {
+    const records = [
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS, sessionId: "s1" }),
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 1, sessionId: "s2" }),
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result.overCount).toBe(1);
+    expect(result.maxTokensApprox).toBe(BASH_OUTPUT_CAP_TOKENS + 1);
+  });
+
+  it("mcp__fooは8000丁度で非超過、8001で超過（mcpCap閾値の境界値）", () => {
+    const records = [
+      toolResultRec({ toolName: "mcp__foo", tokensApprox: MCP_OUTPUT_CAP_TOKENS, sessionId: "s1" }),
+      toolResultRec({ toolName: "mcp__foo", tokensApprox: MCP_OUTPUT_CAP_TOKENS + 1, sessionId: "s2" }),
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result.overCount).toBe(1);
+    expect(result.maxTokensApprox).toBe(MCP_OUTPUT_CAP_TOKENS + 1);
+  });
+
+  it("mcp__*はmcpCap、Bash（や他ツール）はbashCapで別々の閾値が適用される", () => {
+    const records = [
+      // bashCapを超えるがmcpCap未満（mcp__ツールなら非超過になるはずの値）
+      toolResultRec({ toolName: "mcp__foo", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s1" }),
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s2" }),
+      toolResultRec({ toolName: "Read", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s3" }),
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    // mcp__foo は mcpCap(8000) 未満なので超過なし。Bash/Read は bashCap(5000) 超なので超過。
+    expect(result.overCount).toBe(2);
+    const toolNames = result.byTool.map((t) => t.toolName);
+    expect(toolNames).not.toContain("mcp__foo");
+    expect(toolNames).toEqual(expect.arrayContaining(["Bash", "Read"]));
+  });
+
+  it("byToolはツール別にoverCountとmaxTokensApproxを正しく集計し降順ソートされる", () => {
+    const records = [
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s1" }),
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 500, sessionId: "s2" }),
+      toolResultRec({ toolName: "Read", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 9000, sessionId: "s3" }),
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result.byTool).toEqual([
+      { toolName: "Read", overCount: 1, maxTokensApprox: BASH_OUTPUT_CAP_TOKENS + 9000 },
+      { toolName: "Bash", overCount: 2, maxTokensApprox: BASH_OUTPUT_CAP_TOKENS + 500 },
+    ]);
+  });
+
+  it("sampleSessionsはtokensApprox降順で並び、sessionIdが(unknown)のレコードは除外される", () => {
+    const records = [
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s1" }),
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 9000, sessionId: "(unknown)" }),
+      toolResultRec({ toolName: "Read", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 500, sessionId: "s2" }),
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result.sampleSessions.map((s) => s.sessionId)).toEqual(["s2", "s1"]);
+    expect(result.sampleSessions[0].tokensApprox).toBe(BASH_OUTPUT_CAP_TOKENS + 500);
+  });
+
+  it("totalOverTokensApproxは超過レコードのみの合算になる", () => {
+    const records = [
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS, sessionId: "s1" }), // 非超過
+      toolResultRec({ toolName: "Bash", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 100, sessionId: "s2" }), // 超過
+      toolResultRec({ toolName: "Read", tokensApprox: BASH_OUTPUT_CAP_TOKENS + 200, sessionId: "s3" }), // 超過
+    ];
+    const result = computeToolResultOutliers(records, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
+    expect(result.totalOverTokensApprox).toBe((BASH_OUTPUT_CAP_TOKENS + 100) + (BASH_OUTPUT_CAP_TOKENS + 200));
   });
 });

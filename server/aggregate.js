@@ -328,6 +328,65 @@ export function computeToolResultUsage(toolResultRecords = []) {
     .sort((a, b) => b.tokensApprox - a.tokensApprox);
 }
 
+// MCP系（mcp__*）tool_result の推奨上限（トークン近似）。MAX_MCP_OUTPUT_TOKENS 設定の目安値。
+export const MCP_OUTPUT_CAP_TOKENS = 8000;
+// Bash系（Bash含む非mcpツール全般）tool_result の推奨上限（トークン近似）。
+// BASH_MAX_OUTPUT_LENGTH（文字数上限）の既定目安 20,000文字 ÷ 4 ≒ 5,000トークン。
+export const BASH_OUTPUT_CAP_TOKENS = 5000;
+
+const SAMPLE_SESSION_LIMIT = 5;
+
+/**
+ * 個別 tool_result レコードから上限超過分布を算出する。
+ * mcp__ プレフィックスのツールは mcpCap、それ以外（Bash含む全て）は bashCap を閾値として適用する。
+ * 超過判定は厳密に tokensApprox > cap（cap 丁度は非超過）。
+ * @param {object[]} records - tool_result レコード配列（{ toolName, sessionId, tokensApprox }）
+ * @param {{ mcpCap: number, bashCap: number }} caps - MCP系/Bash系それぞれの上限トークン数
+ * @returns {{ overCount: number, maxTokensApprox: number, totalOverTokensApprox: number,
+ *   byTool: Array<{ toolName: string, overCount: number, maxTokensApprox: number }>,
+ *   sampleSessions: Array<{ sessionId: string, toolName: string, tokensApprox: number }>,
+ *   isApprox: true }}
+ */
+export function computeToolResultOutliers(records, { mcpCap, bashCap }) {
+  if (!records.length) {
+    return { overCount: 0, maxTokensApprox: 0, totalOverTokensApprox: 0, byTool: [], sampleSessions: [], isApprox: true };
+  }
+
+  const byToolMap = new Map(); // toolName -> { toolName, overCount, maxTokensApprox }
+  const sessionSamples = []; // { sessionId, toolName, tokensApprox }（sessionId !== "(unknown)" のみ）
+  let overCount = 0;
+  let maxTokensApprox = 0;
+  let totalOverTokensApprox = 0;
+
+  for (const r of records) {
+    const tokensApprox = r.tokensApprox || 0;
+    const cap = r.toolName.startsWith("mcp__") ? mcpCap : bashCap;
+    if (tokensApprox <= cap) continue;
+
+    overCount++;
+    totalOverTokensApprox += tokensApprox;
+    if (tokensApprox > maxTokensApprox) maxTokensApprox = tokensApprox;
+
+    const entry = byToolMap.get(r.toolName) || { toolName: r.toolName, overCount: 0, maxTokensApprox: 0 };
+    byToolMap.set(r.toolName, {
+      toolName: r.toolName,
+      overCount: entry.overCount + 1,
+      maxTokensApprox: Math.max(entry.maxTokensApprox, tokensApprox),
+    });
+
+    if (r.sessionId !== "(unknown)") {
+      sessionSamples.push({ sessionId: r.sessionId, toolName: r.toolName, tokensApprox });
+    }
+  }
+
+  const byTool = [...byToolMap.values()].sort((a, b) => b.maxTokensApprox - a.maxTokensApprox);
+  const sampleSessions = sessionSamples
+    .sort((a, b) => b.tokensApprox - a.tokensApprox)
+    .slice(0, SAMPLE_SESSION_LIMIT);
+
+  return { overCount, maxTokensApprox, totalOverTokensApprox, byTool, sampleSessions, isApprox: true };
+}
+
 /**
  * セッション別サマリ配列に、tool_result 累積近似トークン数（toolResultTokensApprox）を
  * イミュータブルにマージする。sessionId が "(unknown)" の tool_result レコードは除外する。

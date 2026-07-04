@@ -452,6 +452,23 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
     });
   }
 
+  // 5i. 個別tool_resultの上限超過 → MAX_MCP_OUTPUT_TOKENS/BASH_MAX_OUTPUT_LENGTH設定（medium, 定性）
+  // 5g.のtool-result-bloatはセッション累積合計・subagent委譲の話だが、こちらは「1件の巨大な
+  // tool_result」が上限超過していることに着目し、env設定による上限そのものの導入を促す。
+  const outliers = s.toolResultOutliers;
+  if (outliers && outliers.overCount > 0) {
+    const topTools = outliers.byTool.map((t) => t.toolName).slice(0, 3).join(", ");
+    items.push({
+      id: "tool-output-cap",
+      priority: "medium",
+      title: "上限を超える巨大なツール出力（tool_result）がある",
+      shortTitle: `ツール出力の上限超過（${outliers.overCount}件）`,
+      detail: `${outliers.overCount} 件の tool_result が推奨上限を超過（最大 約 ${outliers.maxTokensApprox.toLocaleString()} トークン、該当ツール: ${topTools} ほか、近似値）。1件の巨大な出力がそのままコンテキストに残り続け、以降のターンでも再送され続ける。`,
+      action: "settings.json に MAX_MCP_OUTPUT_TOKENS=8000 と BASH_MAX_OUTPUT_LENGTH=20000 を設定し、個別ツール出力の上限を強制する。",
+      estMonthlySavings: 0,
+    });
+  }
+
   // 6. 価格未登録モデル（low, 情報）
   if (s.warnings.fallbackModels.length > 0) {
     items.push({
