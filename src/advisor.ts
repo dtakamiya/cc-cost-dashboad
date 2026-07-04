@@ -234,15 +234,15 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
   // 4.の"output-heavy"は全体傾向のみを示すため、こちらは個別セッション名+diffアクションを提示する。
   const outputHeavySessions = s.bySession.filter((sess) => isOutputHeavySession(sess));
   if (outputHeavySessions.length > 0) {
+    const outputRate = safeRate(s.costSplit.output, s.tokenSplit.output);
     const savings = outputHeavySessions.reduce((sum, sess) => {
-      const outputRate = safeRate(s.costSplit.output, s.tokenSplit.output);
       return sum + sess.output * outputRate * DIFF_OUTPUT_SAVABLE_FRACTION * monthlyFactor;
     }, 0);
     if (savings > 0) {
-      const top = [...outputHeavySessions]
+      const topSessions = [...outputHeavySessions]
         .sort((a, b) => b.output - a.output)
         .slice(0, DIFF_OUTPUT_TOP_SESSION_LIMIT);
-      const cwds = [...new Set(top.map((sess) => shortCwd(sess.cwd)))].join(", ");
+      const cwds = [...new Set(topSessions.map((sess) => shortCwd(sess.cwd)))].join(", ");
       items.push({
         id: "diff-output-advice",
         priority: "medium",
