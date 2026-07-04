@@ -280,6 +280,28 @@ describe("filterSummary cacheStats", () => {
   });
 });
 
+describe("filterSummary toolResultBreakdown", () => {
+  it("7d は toolResultBreakdown を tokenRatio でスケールする", () => {
+    const s: Summary = {
+      ...summary(),
+      toolResultBreakdown: [
+        { toolName: "Read", tokensApprox: 1000, isApprox: true },
+        { toolName: "Bash", tokensApprox: 500, isApprox: true },
+      ],
+    };
+    const filtered = filterSummary(s, "7d");
+    // 7d の総トークン = 20_000、全期間 = 100_000 → 比 0.2
+    const ratio = 0.2;
+    expect(filtered.toolResultBreakdown![0]).toEqual({ toolName: "Read", tokensApprox: 1000 * ratio, isApprox: true });
+    expect(filtered.toolResultBreakdown![1]).toEqual({ toolName: "Bash", tokensApprox: 500 * ratio, isApprox: true });
+  });
+
+  it("toolResultBreakdown が undefined の場合、フィルタ後も undefined のままになる", () => {
+    const filtered = filterSummary(summary(), "7d");
+    expect(filtered.toolResultBreakdown).toBeUndefined();
+  });
+});
+
 describe("filterSummary subagentStats", () => {
   it("7d は daily から正確に再合算する（costRatio 近似ではない）", () => {
     const filtered = filterSummary(summary(), "7d");
@@ -415,6 +437,24 @@ describe("filterSummaryByProject", () => {
     const s = { ...summaryWithProjects(), subagentStats: undefined };
     const result = filterSummaryByProject(s, "/home/u/projA");
     expect(result.subagentStats).toBeUndefined();
+  });
+
+  it("toolResultBreakdown を tokenRatio でスケールする", () => {
+    const s: Summary = {
+      ...summaryWithProjects(),
+      toolResultBreakdown: [
+        { toolName: "Read", tokensApprox: 1000, isApprox: true },
+      ],
+    };
+    const result = filterSummaryByProject(s, "/home/u/projA");
+    // totals.tokens(全体)=150_000、projA分のtotalTokens=130_000 → 比 130/150
+    const ratio = 130_000 / 150_000;
+    expect(result.toolResultBreakdown![0].tokensApprox).toBeCloseTo(1000 * ratio, 5);
+  });
+
+  it("toolResultBreakdown が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.toolResultBreakdown).toBeUndefined();
   });
 });
 

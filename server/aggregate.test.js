@@ -1454,4 +1454,34 @@ describe("aggregate() toolResultBreakdown", () => {
     const s1 = result.bySession.find((s) => s.sessionId === "s1");
     expect(s1.toolResultTokensApprox).toBe(0);
   });
+
+  it("sessionLimitでコスト上位から漏れる低コストセッションでも、tool_result肥大セッションはbySessionに追加で残る", () => {
+    // s1: 低コスト・tool_result肥大（閾値超）、s2: 高コスト・tool_resultなし。sessionLimit=1。
+    const records = [
+      rec({ sessionId: "s1", input: 100 }),
+      rec({ sessionId: "s2", input: 1_000_000 }),
+    ];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", tokensApprox: 60_000 }), // TOOL_RESULT_BLOAT_THRESHOLD(50_000)超
+    ];
+    const result = aggregate(records, { toolResultRecords, sessionLimit: 1 });
+    // コスト上位1件(s2)に加え、tool_result肥大のs1が救済されるため2件になる。
+    expect(result.bySession).toHaveLength(2);
+    expect(result.bySession.map((s) => s.sessionId)).toEqual(expect.arrayContaining(["s1", "s2"]));
+    const s1 = result.bySession.find((s) => s.sessionId === "s1");
+    expect(s1.toolResultTokensApprox).toBe(60_000);
+  });
+
+  it("tool_result肥大でも閾値未満のセッションはsessionLimitで通常通り除外される", () => {
+    const records = [
+      rec({ sessionId: "s1", input: 100 }),
+      rec({ sessionId: "s2", input: 1_000_000 }),
+    ];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", tokensApprox: 1000 }), // 閾値未満
+    ];
+    const result = aggregate(records, { toolResultRecords, sessionLimit: 1 });
+    expect(result.bySession).toHaveLength(1);
+    expect(result.bySession[0].sessionId).toBe("s2");
+  });
 });

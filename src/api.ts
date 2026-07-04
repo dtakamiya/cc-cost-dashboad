@@ -428,6 +428,17 @@ export function filterPreviousPeriod(s: Summary, period: Period): Summary | null
 }
 
 /**
+ * toolResultBreakdown（トークン量の内訳）を tokenRatio でスケールする。
+ * トークン量の近似値であるため、コスト比ではなくトークン比でスケールするのが実態に近い。
+ */
+function scaleToolResultBreakdown(
+  breakdown: ToolResultUsage[] | undefined,
+  tokenRatio: number
+): ToolResultUsage[] | undefined {
+  return breakdown?.map((t) => ({ ...t, tokensApprox: t.tokensApprox * tokenRatio }));
+}
+
+/**
  * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
  * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
  */
@@ -480,6 +491,7 @@ function buildPeriodSummary(
   const totalTokens = filteredDaily.reduce((sum, d) => sum + (d.tokenTotal ?? 0), 0);
   // cacheStats は日次に内訳が無いため、coldStartCost と同様コスト比でスケール近似する。
   const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
+  const tokenRatio = s.totals.tokens > 0 ? totalTokens / s.totals.tokens : 0;
 
   // topDay を filteredDaily から再計算（トークン基準）
   let topDay: { date: string; cost: number; tokens: number } | null = null;
@@ -529,12 +541,10 @@ function buildPeriodSummary(
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
-    // toolResultBreakdown は日次内訳が無いため、cacheStats と同様コスト比でスケール近似する。
+    // toolResultBreakdown は日次内訳が無いため、トークン量に応じた tokenRatio でスケール近似する
+    // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
-    toolResultBreakdown: s.toolResultBreakdown?.map((t) => ({
-      ...t,
-      tokensApprox: t.tokensApprox * costRatio,
-    })),
+    toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
   };
 }
 
@@ -706,6 +716,7 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
   const totalTokens = filteredDaily.reduce((sum, d) => sum + d.tokenTotal, 0);
   const totalMessages = filteredSessions.reduce((sum, sess) => sum + sess.messages, 0);
   const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
+  const tokenRatio = s.totals.tokens > 0 ? totalTokens / s.totals.tokens : 0;
 
   // models をフィルタ後 daily から再集計
   const costByModel = new Map<string, number>();
@@ -758,12 +769,10 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
-    // toolResultBreakdown は日次内訳が無いため、cacheStats と同様コスト比でスケール近似する。
+    // toolResultBreakdown は日次内訳が無いため、トークン量に応じた tokenRatio でスケール近似する
+    // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
-    toolResultBreakdown: s.toolResultBreakdown?.map((t) => ({
-      ...t,
-      tokensApprox: t.tokensApprox * costRatio,
-    })),
+    toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
   };
 }
 

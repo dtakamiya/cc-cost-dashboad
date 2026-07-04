@@ -146,9 +146,13 @@ app.get("/api/summary", async (req, res) => {
     }
 
     const filteredRecords = filterRecordsByPeriod(recordsCache, parsed.period);
-    // compactions は period 絞り込み対象外（YAGNI: セッション別の圧縮回数は全期間の実態を示せば十分なため、
-    // 現状は日付ベースの絞り込みロジックを別途作らずそのまま渡す）。
-    const periodSummary = aggregate(filteredRecords, { compactions: compactionsCache });
+    // compactions/toolUseRecords/toolResultRecords は period 絞り込み対象外（YAGNI: セッション別の圧縮回数や
+    // ツール利用状況は全期間の実態を示せば十分なため、現状は日付ベースの絞り込みロジックを別途作らずそのまま渡す）。
+    const periodSummary = aggregate(filteredRecords, {
+      compactions: compactionsCache,
+      toolUseRecords: toolUseRecordsCache,
+      toolResultRecords: toolResultRecordsCache,
+    });
     // blocks/projection/activity は全期間依存コンポーネント用のため、常に cache（全期間集計）の値を使う
     periodSummary.blocks = cache.blocks;
     periodSummary.projection = cache.projection;

@@ -349,6 +349,29 @@ export function mergeToolResultTokensIntoSessions(sessions, toolResultRecords = 
   }));
 }
 
+// tool_result 累積近似トークンがこの値超のセッションは、コスト順位に関わらず bySession に残す。
+// src/api.ts の TOOL_RESULT_BLOAT_THRESHOLD と同値（フロントの isToolResultHeavySession 判定と揃える）。
+export const TOOL_RESULT_BLOAT_THRESHOLD = 50_000;
+
+/**
+ * コスト降順の上位 limit 件に加え、tool_result 肥大セッション（低コストでも見えないコンテキスト肥大の
+ * 主因になり得るセッション）を重複なく追加した配列を返す。コスト降順は維持する。
+ * @param {object[]} sessions - toolResultTokensApprox マージ済みのセッション別サマリ配列（コスト降順）
+ * @param {number} limit - コスト上位件数
+ * @returns {object[]} 表示用セッション配列（コスト降順、tool_result肥大セッションを追加で含む）
+ */
+function selectSessionsForDisplay(sessions, limit) {
+  if (limit === undefined) return sessions;
+
+  const top = sessions.slice(0, limit);
+  const topIds = new Set(top.map((s) => s.sessionId));
+  const bloated = sessions.filter(
+    (s) => !topIds.has(s.sessionId) && (s.toolResultTokensApprox || 0) > TOOL_RESULT_BLOAT_THRESHOLD
+  );
+
+  return [...top, ...bloated];
+}
+
 /**
  * セッション内アイドルギャップによるキャッシュ失効（無駄な再書き込み）を検出・定量化する。
  * 同一セッション内で連続レコード間のギャップが直前レコードのTTL（cache1hならCACHE_1H_TTL_MS、
@@ -751,9 +774,12 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     activity: computeActivity(records),
     // tool_result 累積近似トークン（toolResultTokensApprox）はtotalCost/totalTokens/tokenSplit/costSplit
     // には一切加算しない（二重計上禁止）。あくまでセッション別の「見えないコンテキスト肥大」内訳の可視化用。
-    bySession: mergeToolResultTokensIntoSessions(
-      computeSessions(records, compactions, { limit: sessionLimit }),
-      toolResultRecords
+    // sessionLimit によるコスト降順の絞り込みは、tool_result のマージ後に行う。さらに、コスト上位から
+    // 漏れた低コスト・tool_result肥大セッションも selectSessionsForDisplay で追加救済する
+    // （コストが低くても tool_result 蓄積がコンテキスト肥大の主因になり得るため）。
+    bySession: selectSessionsForDisplay(
+      mergeToolResultTokensIntoSessions(computeSessions(records, compactions), toolResultRecords),
+      sessionLimit
     ),
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
