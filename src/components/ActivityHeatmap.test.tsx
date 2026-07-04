@@ -41,6 +41,7 @@ const baseSummary: Summary = {
   },
   bySession: [],
   byTool: [],
+  byMcpServer: [],
 };
 
 describe("ActivityHeatmap", () => {

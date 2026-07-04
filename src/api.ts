@@ -115,6 +115,14 @@ export interface ToolUsage {
   sessions: number; // ユニークセッション数
 }
 
+// MCP ツール（mcp__<server>__<tool>）呼び出しのサーバー単位集計。
+// gh/aws/gcloud 等の CLI 代替が可能なサーバーを見極める判断材料として使う。
+export interface McpServerUsage {
+  serverName: string;
+  calls: number;
+  sessions: number;
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -177,6 +185,7 @@ export interface Summary {
   activity: Activity;
   bySession: SessionCost[];
   byTool: ToolUsage[];
+  byMcpServer: McpServerUsage[];
 }
 
 export interface Activity {

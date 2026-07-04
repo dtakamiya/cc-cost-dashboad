@@ -31,6 +31,7 @@ function makeSummary(overrides: Partial<Summary> = {}): Summary {
     activity: { matrix: [], max: 0, total: 0, peak: null },
     bySession: [],
     byTool: [],
+    byMcpServer: [],
     ...overrides,
   };
 }

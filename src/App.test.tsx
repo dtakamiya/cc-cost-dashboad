@@ -64,6 +64,7 @@ const minimalSummary: api.Summary = {
   activity: { matrix: [], max: 0, total: 0, peak: null },
   bySession: [],
   byTool: [],
+  byMcpServer: [],
 };
 
 describe("App - 自動更新エラー表示", () => {

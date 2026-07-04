@@ -41,6 +41,7 @@ const minimalSummary: Summary = {
   activity: { matrix: [], max: 0, total: 0, peak: null },
   bySession: [],
   byTool: [],
+  byMcpServer: [],
 };
 
 describe("BillingBlocks", () => {

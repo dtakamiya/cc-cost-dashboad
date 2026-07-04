@@ -202,6 +202,33 @@ export function computeToolUsage(toolUseRecords = []) {
 }
 
 /**
+ * mcp__ プレフィックスの tool_use レコード配列を MCP サーバー単位で集計する（calls 降順）。
+ * @param {object[]} toolUseRecords - tool_use レコード配列（serverName を持つもののみ対象）
+ * @returns {object[]} サーバー別サマリ（calls 降順）
+ */
+export function computeMcpUsage(toolUseRecords = []) {
+  if (!toolUseRecords.length) return [];
+
+  const map = new Map(); // serverName -> { serverName, calls, sessions: Set }
+
+  for (const r of toolUseRecords) {
+    if (!r.serverName) continue;
+
+    let entry = map.get(r.serverName);
+    if (!entry) {
+      entry = { serverName: r.serverName, calls: 0, sessions: new Set() };
+      map.set(r.serverName, entry);
+    }
+    entry.calls += 1;
+    if (r.sessionId !== "(unknown)") entry.sessions.add(r.sessionId);
+  }
+
+  return [...map.values()]
+    .map((entry) => ({ ...entry, sessions: entry.sessions.size }))
+    .sort((a, b) => b.calls - a.calls);
+}
+
+/**
  * レコード配列からセッション別サマリを生成する（コスト降順）。
  * avgContextPerMsg = Σ(cacheRead + input) / messages を 1 ターンの実コンテキストサイズの proxy とする。
  * @param {object[]} records - 正規化レコード配列
@@ -439,7 +466,7 @@ export function filterRecordsByPeriod(records, period) {
  * @param {object[]} records - 正規化レコード配列
  * @param {{ sessionLimit?: number, compactions?: object[], toolUseRecords?: object[] }} [options] - sessionLimit 省略時は bySession を 30 件に制限する。
  *   compactions 省略時はセッションの compactionCount が全て 0 になる。
- *   toolUseRecords 省略時は byTool が [] になる。
+ *   toolUseRecords 省略時は byTool・byMcpServer が [] になる。
  * @returns {object} ダッシュボード表示用の集計サマリ
  */
 export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compactions = [], toolUseRecords = [] } = {}) {
@@ -658,5 +685,6 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     cacheGapStats: computeCacheGapStats(records),
     modelSwitch: computeModelSwitchStats(records),
     byTool: computeToolUsage(toolUseRecords),
+    byMcpServer: computeMcpUsage(toolUseRecords),
   };
 }

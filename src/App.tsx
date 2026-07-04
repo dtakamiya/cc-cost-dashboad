@@ -21,6 +21,7 @@ import { BudgetProjection } from "./components/BudgetProjection";
 import { ProjectBreakdown } from "./components/ProjectBreakdown";
 import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ToolBreakdown } from "./components/ToolBreakdown";
+import { McpServerBreakdown } from "./components/McpServerBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
 import { ContextBudget } from "./components/ContextBudget";
@@ -311,6 +312,7 @@ export default function App() {
           <section id="section-project" ref={projectRef}>
             <ProjectBreakdown s={displayData} />
             <ToolBreakdown s={displayData} />
+            <McpServerBreakdown s={displayData} />
           </section>
           <section id="section-session" ref={sessionRef}>
             <SessionBreakdown s={displayData} />
