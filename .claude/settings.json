@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(cat .env*)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=\"$(jq -r '.tool_input.command // \"\"')\"; case \"$cmd\" in *' rm -rf /'*) echo 'Blocked: destructive command requires manual confirmation' >&2; exit 2;; esac; case \"$cmd\" in *push*) case \"$cmd\" in *'--force'*|*' -f'*|*' -f') case \"$cmd\" in *'origin main'*|*'origin master'*) echo 'Blocked: force push to main/master requires manual confirmation' >&2; exit 2;; esac;; esac;; esac"
+          }
+        ]
+      }
+    ]
+  }
+}
