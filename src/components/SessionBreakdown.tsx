@@ -11,6 +11,7 @@ import {
 import { usd, compact } from "../format";
 import { buildClearCommand } from "../clearCommand";
 import { Icon } from "./icons/Icon";
+import { SessionCostCurve } from "./SessionCostCurve";
 
 function projectName(cwd: string): string {
   return cwd.split(/[\\/]+/).filter(Boolean).pop() ?? cwd;
@@ -331,6 +332,7 @@ export function SessionBreakdown({ s }: { s: Summary }) {
                         borderBottom: "1px solid var(--border, #e5e7eb)",
                       }}
                     >
+                      <SessionCostCurve turns={turnsData} loading={turnsLoading} />
                       <TurnsDetail turns={turnsData} loading={turnsLoading} />
                     </td>
                   </tr>
