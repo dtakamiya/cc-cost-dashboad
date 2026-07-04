@@ -282,10 +282,12 @@ export default function App() {
               { id: 'summary', label: '概要' },
               { id: 'drivers', label: 'コストドライバー' },
               { id: 'project', label: 'プロジェクト' },
+              ...(displayData.toolResultOutliers && displayData.toolResultOutliers.overCount > 0
+                ? [{ id: 'toolOutput' as const, label: 'ツール出力上限' }]
+                : []),
               { id: 'session', label: 'セッション' },
               { id: 'contextBudget', label: 'コンテキスト予算' },
               { id: 'optimization', label: '最適化' },
-              { id: 'toolOutput', label: 'ツール出力上限' },
             ]}
             activeSection={activeSection}
             onSectionClick={handleSectionClick}
