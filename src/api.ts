@@ -123,6 +123,17 @@ export interface McpServerUsage {
   sessions: number;
 }
 
+// MCPサーバ1件あたりの常時オーバーヘッド推定。
+// MCPツール定義は config（command/args）から静的取得できず実行時依存のため、
+// 現状 source は常に "estimated"（保守的な既定値）。"measured" は将来の実測拡張用、
+// "unknown" は推定不能な場合（estimatedTokens は null）に備えたフォールバック。
+export interface McpServerOverhead {
+  name: string;
+  toolCount: number | null;
+  estimatedTokens: number | null;
+  source: "measured" | "estimated" | "unknown";
+}
+
 export interface Summary {
   generatedAt: string;
   totals: {
@@ -163,7 +174,7 @@ export interface Summary {
     }>;
     personalSkills: OverheadFile[];
     projectPlugins: Array<{ name: string; projectPaths: string[] }>;
-    mcpServers: string[];
+    mcpServers: McpServerOverhead[];
     totalAlwaysTokens: number;
     totalInvokeTokens: number;
     totalEstimatedTokens: number;

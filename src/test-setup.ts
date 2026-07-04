@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { cleanup } from "@testing-library/react";
+
+// globals: true では @testing-library/react の自動 cleanup が有効化されないため、
+// 各テスト後に明示的にアンマウントして DOM のテスト間汚染（残留ノードの多重マッチ）を防ぐ。
+afterEach(() => {
+  cleanup();
+});
 
 const localStorageMock = (() => {
   let store: Record<string, string> = {};

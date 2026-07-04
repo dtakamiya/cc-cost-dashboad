@@ -117,16 +117,70 @@ describe("OverheadAnalysis", () => {
         globalPlugins: [],
         personalSkills: [],
         projectPlugins: [],
-        mcpServers: ["github", "filesystem"],
+        mcpServers: [
+          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+          { name: "filesystem", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+        ],
         totalAlwaysTokens: 0,
         totalInvokeTokens: 0,
         totalEstimatedTokens: 0,
       },
     });
     render(<OverheadAnalysis s={s} />);
-    // mcpServers は join(", ") で1要素になるため getByText(/github/) でマッチ
     expect(screen.getByText(/github/)).toBeInTheDocument();
     expect(screen.getByText(/filesystem/)).toBeInTheDocument();
+  });
+
+  it("mcpServers がある場合サーバ別の推定トークン・月間コストが表示される", () => {
+    const s = makeSummary({
+      totals: {
+        cost: 10,
+        tokens: 100_000,
+        sessions: 5,
+        messages: 50,
+        from: "2026-06-01",
+        to: "2026-06-28",
+      },
+      tokenSplit: { input: 40_000, output: 20_000, cacheCreate: 20_000, cacheRead: 20_000 },
+      costSplit: { input: 0.2, output: 0.4, cacheWrite: 0.1, cacheRead: 0.02 },
+      overhead: {
+        claudeMd: null,
+        atRefs: [],
+        globalPlugins: [],
+        personalSkills: [],
+        projectPlugins: [],
+        mcpServers: [
+          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+        ],
+        totalAlwaysTokens: 0,
+        totalInvokeTokens: 0,
+        totalEstimatedTokens: 0,
+      },
+    });
+    render(<OverheadAnalysis s={s} />);
+    expect(screen.getByText(/github/)).toBeInTheDocument();
+    expect(screen.getAllByText(/1,500|~1.5k/).length).toBeGreaterThan(0);
+  });
+
+  it("source:'unknown'（estimatedTokens null）のサーバは推定不可と明示される", () => {
+    const s = makeSummary({
+      overhead: {
+        claudeMd: null,
+        atRefs: [],
+        globalPlugins: [],
+        personalSkills: [],
+        projectPlugins: [],
+        mcpServers: [
+          { name: "mystery-server", toolCount: null, estimatedTokens: null, source: "unknown" },
+        ],
+        totalAlwaysTokens: 0,
+        totalInvokeTokens: 0,
+        totalEstimatedTokens: 0,
+      },
+    });
+    render(<OverheadAnalysis s={s} />);
+    expect(screen.getByText(/mystery-server/)).toBeInTheDocument();
+    expect(screen.getAllByText(/推定不可/).length).toBeGreaterThan(0);
   });
 
   it("システムプロンプト baseline の合計トークンが表示される", () => {

@@ -178,9 +178,16 @@ function projectScopedPlugins() {
   return result;
 }
 
-// 静的に定義された MCP サーバ名を列挙。
+// MCP サーバのツール定義トークンの保守的な既定推定値。
+// MCPツール定義は config（command/args のみ）から静的に取得できず実行時依存のため、
+// 実測せず一律この定数で見積もる（過小評価より過大評価を許容する保守的な値）。
+export const DEFAULT_MCP_SERVER_TOKENS = 1500;
+
+// 静的に定義された MCP サーバ名を列挙し、各サーバのオーバーヘッドを保守的に推定する。
 // ~/.claude.json のトップレベル mcpServers と ~/.claude/settings.json の mcpServers をマージ。
-// ツール定義のトークンは実行時依存のため静的計測しない。差分の主因候補として名前のみ提示。
+// ツール定義のトークンは実行時（サーバ起動後のtools/list応答）依存のため静的計測できない。
+// そのため toolCount は常に null、estimatedTokens は DEFAULT_MCP_SERVER_TOKENS、
+// source は "estimated" を返す（実測できたケースが増えたら "measured" を返す拡張余地を残す）。
 // （アプリ管理のコネクタ由来 MCP はファイルに現れないため列挙対象外）
 function listMcpServers() {
   const names = new Set();
@@ -195,7 +202,12 @@ function listMcpServers() {
       for (const k of Object.keys(data.mcpServers || {})) names.add(k);
     } catch {}
   }
-  return [...names];
+  return [...names].map((name) => ({
+    name,
+    toolCount: null,
+    estimatedTokens: DEFAULT_MCP_SERVER_TOKENS,
+    source: "estimated",
+  }));
 }
 
 export function analyzeOverhead() {
@@ -260,7 +272,7 @@ export function analyzeOverhead() {
   // プロジェクトスコープのプラグイン（参考情報）
   result.projectPlugins = projectScopedPlugins();
 
-  // MCP サーバ（静的計測対象外。名前のみ）
+  // MCP サーバ（実行時依存のため静的計測対象外。名前ごとに保守的な既定値で推定）
   result.mcpServers = listMcpServers();
 
   result.totalAlwaysTokens = always;
