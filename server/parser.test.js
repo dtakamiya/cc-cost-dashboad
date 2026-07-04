@@ -910,4 +910,40 @@ describe("loadRecords - 切り詰め検知フラグ", () => {
     expect(third.truncationDetected).toBe(false);
     expect(third.records).toHaveLength(1);
   });
+
+  it("同一パスでファイルが削除→再作成され、devまたはinoが変わった場合、truncationDetected が true になる", async () => {
+    fs.writeFileSync(logFile, VALID_LINE + "\n");
+
+    const offsetState = new Map();
+    const first = await loadRecords(offsetState);
+    expect(first.truncationDetected).toBe(false);
+
+    const cachedEntry = offsetState.get(logFile);
+
+    // 同一パスへの削除→再作成をシミュレートする。
+    // 新ファイルが偶然、前回より大きいサイズ・新しい mtime を持つケースを想定するため、
+    // stat の dev/ino だけを差し替えたオブジェクトを返すようモックする
+    // （実ファイル操作でも inode は変わるが、ファイルシステム依存のため確実性を担保する）。
+    fs.writeFileSync(logFile, VALID_LINE + "\n" + VALID_LINE + "\n");
+    const realStat = fs.statSync(logFile);
+    const originalStatSync = fs.statSync.bind(fs);
+    const statSyncSpy = vi.spyOn(fs, "statSync").mockImplementation((p, ...args) => {
+      if (p === logFile) {
+        return {
+          ...realStat,
+          mtimeMs: cachedEntry.mtimeMs + 60_000,
+          dev: cachedEntry.dev,
+          ino: cachedEntry.ino + 1,
+        };
+      }
+      return originalStatSync(p, ...args);
+    });
+
+    try {
+      const second = await loadRecords(offsetState);
+      expect(second.truncationDetected).toBe(true);
+    } finally {
+      statSyncSpy.mockRestore();
+    }
+  });
 });

@@ -183,7 +183,7 @@ async function readFileFromOffset(file, startOffset) {
  * offsetState を渡すと、前回読み込み済みのバイトオフセット以降のみを差分読み込みする。
  * offsetState は呼び出し元で保持し、このループを跨いで再利用することで差分（tail）読み込みを実現する。
  * 壊れた行や対象外行はスキップし、その数をカウントする。
- * @param {Map<string, {offset: number, mtimeMs: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
+ * @param {Map<string, {offset: number, mtimeMs: number, dev: number, ino: number}>} [offsetState] - ファイルパス毎の読み込み済みオフセット。呼び出し中に破壊的に更新される
  * @returns {Promise<{ records: object[], compactions: object[], toolUseRecords: object[], fileCount: number, parsedLines: number, parseErrors: number, skippedLines: number, unreadableFiles: number, truncationDetected: boolean }>}
  */
 export async function loadRecords(offsetState = new Map()) {
@@ -211,7 +211,16 @@ export async function loadRecords(offsetState = new Map()) {
   }
   for (const [file, stat] of stats) {
     const cached = offsetState.get(file);
-    if (cached && (stat.size < cached.offset || stat.mtimeMs < cached.mtimeMs)) {
+    if (
+      cached &&
+      (stat.size < cached.offset ||
+        stat.mtimeMs < cached.mtimeMs ||
+        stat.dev !== cached.dev ||
+        stat.ino !== cached.ino)
+    ) {
+      // サイズ縮小・mtime後退に加え、dev/ino の変化（同一パスでの削除→再作成によるファイル差し替え）も検知する。
+      // 差し替え後のファイルがたまたま前回より大きいサイズ・新しい mtime を持っていても、
+      // 別ファイルである以上は先頭から読み直す必要がある。
       truncationDetected = true;
       break;
     }
@@ -242,7 +251,7 @@ export async function loadRecords(offsetState = new Map()) {
     parsedLines += result.parsedLines;
     parseErrors += result.parseErrors;
 
-    offsetState.set(file, { offset: result.newOffset, mtimeMs: stat.mtimeMs });
+    offsetState.set(file, { offset: result.newOffset, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino });
   }
 
   const skippedLines = parsedLines - records.length;
