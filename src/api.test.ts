@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, sessionOutputRatio, isOutputHeavySession, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, sessionOutputRatio, isOutputHeavySession, isToolResultHeavySession, TOOL_RESULT_BLOAT_THRESHOLD, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -280,6 +280,28 @@ describe("filterSummary cacheStats", () => {
   });
 });
 
+describe("filterSummary toolResultBreakdown", () => {
+  it("7d は toolResultBreakdown を tokenRatio でスケールする", () => {
+    const s: Summary = {
+      ...summary(),
+      toolResultBreakdown: [
+        { toolName: "Read", tokensApprox: 1000, isApprox: true },
+        { toolName: "Bash", tokensApprox: 500, isApprox: true },
+      ],
+    };
+    const filtered = filterSummary(s, "7d");
+    // 7d の総トークン = 20_000、全期間 = 100_000 → 比 0.2
+    const ratio = 0.2;
+    expect(filtered.toolResultBreakdown![0]).toEqual({ toolName: "Read", tokensApprox: 1000 * ratio, isApprox: true });
+    expect(filtered.toolResultBreakdown![1]).toEqual({ toolName: "Bash", tokensApprox: 500 * ratio, isApprox: true });
+  });
+
+  it("toolResultBreakdown が undefined の場合、フィルタ後も undefined のままになる", () => {
+    const filtered = filterSummary(summary(), "7d");
+    expect(filtered.toolResultBreakdown).toBeUndefined();
+  });
+});
+
 describe("filterSummary subagentStats", () => {
   it("7d は daily から正確に再合算する（costRatio 近似ではない）", () => {
     const filtered = filterSummary(summary(), "7d");
@@ -415,6 +437,24 @@ describe("filterSummaryByProject", () => {
     const s = { ...summaryWithProjects(), subagentStats: undefined };
     const result = filterSummaryByProject(s, "/home/u/projA");
     expect(result.subagentStats).toBeUndefined();
+  });
+
+  it("toolResultBreakdown を tokenRatio でスケールする", () => {
+    const s: Summary = {
+      ...summaryWithProjects(),
+      toolResultBreakdown: [
+        { toolName: "Read", tokensApprox: 1000, isApprox: true },
+      ],
+    };
+    const result = filterSummaryByProject(s, "/home/u/projA");
+    // totals.tokens(全体)=150_000、projA分のtotalTokens=130_000 → 比 130/150
+    const ratio = 130_000 / 150_000;
+    expect(result.toolResultBreakdown![0].tokensApprox).toBeCloseTo(1000 * ratio, 5);
+  });
+
+  it("toolResultBreakdown が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.toolResultBreakdown).toBeUndefined();
   });
 });
 
@@ -703,5 +743,28 @@ describe("isOutputHeavySession", () => {
     const s = { ...sess("/proj", 10, 1000), input: 50, output: 50, cacheCreate: 0, cacheRead: 0 };
     expect(isOutputHeavySession(s, 0.4)).toBe(true);
     expect(isOutputHeavySession(s, 0.6)).toBe(false);
+  });
+});
+
+describe("isToolResultHeavySession", () => {
+  it("toolResultTokensApproxが既定閾値超でtrueを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: TOOL_RESULT_BLOAT_THRESHOLD + 1 };
+    expect(isToolResultHeavySession(s)).toBe(true);
+  });
+
+  it("toolResultTokensApproxが既定閾値以下でfalseを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: TOOL_RESULT_BLOAT_THRESHOLD };
+    expect(isToolResultHeavySession(s)).toBe(false);
+  });
+
+  it("toolResultTokensApproxが未定義の場合はfalseを返す（後方互換）", () => {
+    const s = sess("/proj", 10, 1000);
+    expect(isToolResultHeavySession(s)).toBe(false);
+  });
+
+  it("カスタム閾値を尊重する", () => {
+    const s = { ...sess("/proj", 10, 1000), toolResultTokensApprox: 100 };
+    expect(isToolResultHeavySession(s, 50)).toBe(true);
+    expect(isToolResultHeavySession(s, 200)).toBe(false);
   });
 });

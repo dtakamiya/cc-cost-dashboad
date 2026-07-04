@@ -828,3 +828,35 @@ describe("buildRecommendations - thinking（推論）トークン比率", () => 
     expect(r.items.find((i) => i.id === "thinking-heavy")).toBeUndefined();
   });
 });
+
+describe("buildRecommendations - tool-result-bloat", () => {
+  it("tool_result肥大セッションが存在する場合、subagent委譲を促す提案が出る", () => {
+    const s = baseSummary({
+      bySession: [session({ toolResultTokensApprox: 60_000 })],
+    });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "tool-result-bloat");
+    expect(item).toBeDefined();
+    expect(item?.priority).toBe("medium");
+    expect(item?.action).toMatch(/subagent|Explore/);
+  });
+
+  it("肥大セッションが存在しない場合、提案は出ない", () => {
+    const s = baseSummary({
+      bySession: [session({ toolResultTokensApprox: 100 })],
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "tool-result-bloat")).toBeUndefined();
+  });
+
+  it("bySessionが空の場合、提案は出ない", () => {
+    const r = buildRecommendations(baseSummary({ bySession: [] }));
+    expect(r.items.find((i) => i.id === "tool-result-bloat")).toBeUndefined();
+  });
+
+  it("toolResultTokensApproxが未定義のセッションのみの場合、提案は出ない（後方互換）", () => {
+    const s = baseSummary({ bySession: [session({})] });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "tool-result-bloat")).toBeUndefined();
+  });
+});

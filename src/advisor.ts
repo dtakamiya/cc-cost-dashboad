@@ -1,4 +1,4 @@
-import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, type BillingMode, type Summary } from "./api";
+import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, isToolResultHeavySession, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -408,6 +408,24 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       shortTitle: `thinking比率過大（推定 ${(th.outputShare * 100).toFixed(0)}%）`,
       detail: `output トークンのうち約 ${(th.outputShare * 100).toFixed(0)}%（推定 約 ${th.approxTokens.toLocaleString()} トークン）がextended thinking（推論、outputに既に含まれる内訳）と推定される。`,
       action: "MAX_THINKING_TOKENS を引き下げる、またはadaptive thinkingを活用し、複雑な推論が不要なタスクでは無効化を検討する。",
+      estMonthlySavings: 0,
+    });
+  }
+
+  // 5g. tool_result（Read/Bash/Grep等）累積によるコンテキスト肥大 → subagent委譲（medium, 定性）
+  // ツール実行結果は user 行に格納され、実行のたびにコンテキストへ蓄積・再送される。
+  // 累積が閾値を超えるセッションは、大きなファイル読み込み等をsubagentに委譲することで
+  // メインコンテキストの肥大を避けられる可能性が高い。金額換算は困難なため0のまま。
+  const toolResultHeavySessions = s.bySession.filter((sess) => isToolResultHeavySession(sess));
+  if (toolResultHeavySessions.length > 0) {
+    const cwds = [...new Set(toolResultHeavySessions.map((sess) => shortCwd(sess.cwd)))].slice(0, 3).join(", ");
+    items.push({
+      id: "tool-result-bloat",
+      priority: "medium",
+      title: "ツール実行結果の累積がコンテキストを肥大させている",
+      shortTitle: `ツール結果の肥大（${toolResultHeavySessions.length}件）`,
+      detail: `${toolResultHeavySessions.length} 件のセッションで Read/Bash/Grep 等のツール結果累積が大きい（${cwds} ほか、近似値）。`,
+      action: "大きなファイル読み込みや大量出力を伴う調査は subagent（Explore等）に委譲し、メインコンテキストへの再送を避ける。",
       estMonthlySavings: 0,
     });
   }

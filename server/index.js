@@ -20,7 +20,9 @@ let cache = null; // 直近の集計結果をメモリ保持
 let recordsCache = null; // ターン詳細取得用の生レコードキャッシュ（累積）
 let compactionsCache = null; // コンテキスト圧縮マーカーの累積キャッシュ（recordsCache と同様に差分読み込みで蓄積）
 let toolUseRecordsCache = null; // tool_use レコード配列（recordsCache と同様に差分読み込みで蓄積）
+let toolResultRecordsCache = null; // tool_result レコード配列（recordsCache と同様に差分読み込みで蓄積）
 let offsetState = new Map(); // ファイルパス毎の読み込み済みバイトオフセット（差分読み込み用）
+let toolUseIdMap = new Map(); // tool_use_id -> toolName の対応（tool_result 突き合わせ用。loadRecords 呼び出しを跨いで保持）
 
 // summary.source の累積カウンタ（差分読み込みでも UI 上「壊れて見えない」よう、リロード毎の値ではなく総計を保持する）
 const cumulativeSource = {
@@ -46,12 +48,13 @@ async function rebuild() {
   if (rebuildInFlight) return rebuildInFlight;
 
   rebuildInFlight = (async () => {
-    const { records, compactions = [], toolUseRecords = [], fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected = false } = await loadRecords(offsetState);
+    const { records, compactions = [], toolUseRecords = [], toolResultRecords = [], fileCount, parsedLines, parseErrors, skippedLines, unreadableFiles, truncationDetected = false } = await loadRecords(offsetState, toolUseIdMap);
     if (truncationDetected) {
       // ファイル切り詰め・ローテーションを検知した場合、過去データとの重複を避けるためキャッシュを再初期化する
       recordsCache = null;
       compactionsCache = null;
       toolUseRecordsCache = null;
+      toolResultRecordsCache = null;
     }
     if (recordsCache) {
       // concat は毎回 recordsCache 全件をコピーし直すため、差分読み込みの効果を打ち消してしまう。
@@ -70,6 +73,11 @@ async function rebuild() {
     } else {
       toolUseRecordsCache = toolUseRecords;
     }
+    if (toolResultRecordsCache) {
+      for (const t of toolResultRecords) toolResultRecordsCache.push(t);
+    } else {
+      toolResultRecordsCache = toolResultRecords;
+    }
 
     cumulativeSource.fileCount = fileCount; // fileCount は累積ではなく現在の総ファイル数のスナップショット
     cumulativeSource.parsedLines += parsedLines;
@@ -77,7 +85,7 @@ async function rebuild() {
     cumulativeSource.skippedLines += skippedLines;
     cumulativeSource.unreadableFiles += unreadableFiles;
 
-    const summary = aggregate(recordsCache, { compactions: compactionsCache, toolUseRecords: toolUseRecordsCache });
+    const summary = aggregate(recordsCache, { compactions: compactionsCache, toolUseRecords: toolUseRecordsCache, toolResultRecords: toolResultRecordsCache });
     summary.source = { ...cumulativeSource };
     summary.overhead = analyzeOverhead();
     cache = summary;
@@ -138,9 +146,13 @@ app.get("/api/summary", async (req, res) => {
     }
 
     const filteredRecords = filterRecordsByPeriod(recordsCache, parsed.period);
-    // compactions は period 絞り込み対象外（YAGNI: セッション別の圧縮回数は全期間の実態を示せば十分なため、
-    // 現状は日付ベースの絞り込みロジックを別途作らずそのまま渡す）。
-    const periodSummary = aggregate(filteredRecords, { compactions: compactionsCache });
+    // compactions/toolUseRecords/toolResultRecords は period 絞り込み対象外（YAGNI: セッション別の圧縮回数や
+    // ツール利用状況は全期間の実態を示せば十分なため、現状は日付ベースの絞り込みロジックを別途作らずそのまま渡す）。
+    const periodSummary = aggregate(filteredRecords, {
+      compactions: compactionsCache,
+      toolUseRecords: toolUseRecordsCache,
+      toolResultRecords: toolResultRecordsCache,
+    });
     // blocks/projection/activity は全期間依存コンポーネント用のため、常に cache（全期間集計）の値を使う
     periodSummary.blocks = cache.blocks;
     periodSummary.projection = cache.projection;

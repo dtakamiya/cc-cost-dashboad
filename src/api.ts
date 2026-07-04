@@ -59,6 +59,7 @@ export interface SessionCost {
   avgContextPerMsg: number; // Σ(cacheRead + input) / messages = 1ターンの実コンテキストサイズ proxy
   topModel: { model: string; cost: number } | null;
   compactionCount: number; // 自動コンテキスト圧縮（compaction）の発生回数
+  toolResultTokensApprox?: number; // tool_result（Read/Bash/Grep等）累積の近似トークン数。常に近似値（isApprox=true）。
 }
 
 export interface OverheadFile {
@@ -123,6 +124,14 @@ export interface McpServerUsage {
   serverName: string;
   calls: number;
   sessions: number;
+}
+
+// tool_result（Read/Bash/Grep等）累積のツール種別ごとの近似トークン集計。
+// 「見えないコンテキスト肥大」の主因ツールを特定するための内訳。常に近似値（isApprox=true）。
+export interface ToolResultUsage {
+  toolName: string; // ツール名（既知のtool_use_idに突き合わせられない場合は "unknown"）
+  tokensApprox: number; // 近似トークン数の合計（Math.ceil(文字数/4)）
+  isApprox: true;
 }
 
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
@@ -210,6 +219,7 @@ export interface Summary {
   bySession: SessionCost[];
   byTool: ToolUsage[];
   byMcpServer: McpServerUsage[];
+  toolResultBreakdown?: ToolResultUsage[];
 }
 
 export interface Activity {
@@ -313,6 +323,18 @@ export function isOutputHeavySession(
   return sessionOutputRatio(s) > threshold;
 }
 
+// セッションの tool_result（Read/Bash/Grep等）累積近似トークン数がこの値超で
+// 「見えないコンテキスト肥大」候補とみなす既定閾値。
+export const TOOL_RESULT_BLOAT_THRESHOLD = 50_000;
+
+/** セッションが tool_result 累積によるコンテキスト肥大（subagent委譲推奨）かどうかを返す。 */
+export function isToolResultHeavySession(
+  s: SessionCost,
+  threshold = TOOL_RESULT_BLOAT_THRESHOLD
+): boolean {
+  return (s.toolResultTokensApprox ?? 0) > threshold;
+}
+
 export interface DateRange {
   from: string; // YYYY-MM-DD
   to: string;   // YYYY-MM-DD
@@ -406,6 +428,17 @@ export function filterPreviousPeriod(s: Summary, period: Period): Summary | null
 }
 
 /**
+ * toolResultBreakdown（トークン量の内訳）を tokenRatio でスケールする。
+ * トークン量の近似値であるため、コスト比ではなくトークン比でスケールするのが実態に近い。
+ */
+function scaleToolResultBreakdown(
+  breakdown: ToolResultUsage[] | undefined,
+  tokenRatio: number
+): ToolResultUsage[] | undefined {
+  return breakdown?.map((t) => ({ ...t, tokensApprox: t.tokensApprox * tokenRatio }));
+}
+
+/**
  * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
  * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
  */
@@ -458,6 +491,7 @@ function buildPeriodSummary(
   const totalTokens = filteredDaily.reduce((sum, d) => sum + (d.tokenTotal ?? 0), 0);
   // cacheStats は日次に内訳が無いため、coldStartCost と同様コスト比でスケール近似する。
   const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
+  const tokenRatio = s.totals.tokens > 0 ? totalTokens / s.totals.tokens : 0;
 
   // topDay を filteredDaily から再計算（トークン基準）
   let topDay: { date: string; cost: number; tokens: number } | null = null;
@@ -507,6 +541,10 @@ function buildPeriodSummary(
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
+    // toolResultBreakdown は日次内訳が無いため、トークン量に応じた tokenRatio でスケール近似する
+    // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
+    // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
+    toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
   };
 }
 
@@ -678,6 +716,7 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
   const totalTokens = filteredDaily.reduce((sum, d) => sum + d.tokenTotal, 0);
   const totalMessages = filteredSessions.reduce((sum, sess) => sum + sess.messages, 0);
   const costRatio = s.totals.cost > 0 ? totalCost / s.totals.cost : 0;
+  const tokenRatio = s.totals.tokens > 0 ? totalTokens / s.totals.tokens : 0;
 
   // models をフィルタ後 daily から再集計
   const costByModel = new Map<string, number>();
@@ -730,6 +769,10 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
       roiNet: s.cacheStats.roiNet * costRatio,
     },
     subagentStats: s.subagentStats && sumSubagentStats(filteredDaily),
+    // toolResultBreakdown は日次内訳が無いため、トークン量に応じた tokenRatio でスケール近似する
+    // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
+    // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
+    toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
   };
 }
 
