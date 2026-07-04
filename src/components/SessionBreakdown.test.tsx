@@ -170,9 +170,9 @@ describe("SessionBreakdown", () => {
     const expandBtn = screen.getByRole("button", { name: "詳細を展開" });
     fireEvent.click(expandBtn);
     await waitFor(() => {
-      expect(screen.getAllByText(/ターンデータなし/).length).toBeGreaterThan(0);
+      expect(screen.getByText(/ターンデータなし/)).toBeInTheDocument();
     });
-    const detailCell = screen.getAllByText(/ターンデータなし/)[0].closest("td");
+    const detailCell = screen.getByText(/ターンデータなし/).closest("td");
     expect(detailCell).toHaveAttribute("colspan", "7");
   });
 

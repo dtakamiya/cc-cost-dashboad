@@ -575,14 +575,12 @@ export const SPIKE_RATIO_THRESHOLD = 3;
 /** セッション内ターン配列から累積コスト曲線を計算する。傾きが急増したターンには isSpike=true を付与する。 */
 export function computeCumulativeCostCurve(turns: SessionTurn[]): CumulativeCostPoint[] {
   let cumulativeCost = 0;
-  let costSoFar = 0;
 
   return turns.map((t, i) => {
-    const avgSoFar = i > 0 ? costSoFar / i : 0;
+    const avgSoFar = i > 0 ? cumulativeCost / i : 0;
     const isSpike = i > 0 && avgSoFar > 0 && t.cost > avgSoFar * SPIKE_RATIO_THRESHOLD;
 
     cumulativeCost += t.cost;
-    costSoFar += t.cost;
 
     return {
       turnIndex: i + 1,
