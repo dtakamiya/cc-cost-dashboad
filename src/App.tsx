@@ -23,6 +23,7 @@ import { ProjectBreakdown } from "./components/ProjectBreakdown";
 import { SessionBreakdown } from "./components/SessionBreakdown";
 import { ToolBreakdown } from "./components/ToolBreakdown";
 import { ToolResultBreakdown } from "./components/ToolResultBreakdown";
+import { ToolResultOutliers } from "./components/ToolResultOutliers";
 import { McpServerBreakdown } from "./components/McpServerBreakdown";
 import { ActivityHeatmap } from "./components/ActivityHeatmap";
 import { SectionNav, type SectionId } from "./components/SectionNav";
@@ -56,6 +57,7 @@ export default function App() {
   const sessionRef = useRef<HTMLDivElement>(null);
   const contextBudgetRef = useRef<HTMLDivElement>(null);
   const optimizationRef = useRef<HTMLDivElement>(null);
+  const toolOutputRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLElement>(null);
 
   const sectionRefs = useMemo<Record<SectionId, React.RefObject<HTMLDivElement>>>(
@@ -66,6 +68,7 @@ export default function App() {
       session: sessionRef,
       contextBudget: contextBudgetRef,
       optimization: optimizationRef,
+      toolOutput: toolOutputRef,
     }),
     []
   );
@@ -279,6 +282,9 @@ export default function App() {
               { id: 'summary', label: '概要' },
               { id: 'drivers', label: 'コストドライバー' },
               { id: 'project', label: 'プロジェクト' },
+              ...(displayData.toolResultOutliers && displayData.toolResultOutliers.overCount > 0
+                ? [{ id: 'toolOutput' as const, label: 'ツール出力上限' }]
+                : []),
               { id: 'session', label: 'セッション' },
               { id: 'contextBudget', label: 'コンテキスト予算' },
               { id: 'optimization', label: '最適化' },
@@ -317,6 +323,9 @@ export default function App() {
             <ToolBreakdown s={displayData} />
             <ToolResultBreakdown s={displayData} />
             <McpServerBreakdown s={displayData} />
+          </section>
+          <section id="section-toolOutput" ref={toolOutputRef}>
+            <ToolResultOutliers s={displayData} />
           </section>
           <section id="section-session" ref={sessionRef}>
             <SessionBreakdown s={displayData} />

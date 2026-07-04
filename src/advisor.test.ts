@@ -885,3 +885,61 @@ describe("buildRecommendations - proactive-compact-threshold", () => {
     expect(r.items.find((i) => i.id === "proactive-compact-threshold")).toBeUndefined();
   });
 });
+
+describe("buildRecommendations - tool-output-cap", () => {
+  it("toolResultOutliers.overCountが正のとき、MAX_MCP_OUTPUT_TOKENS/BASH_MAX_OUTPUT_LENGTHのアクションを提示する", () => {
+    const s = baseSummary({
+      toolResultOutliers: {
+        overCount: 2,
+        maxTokensApprox: 12_000,
+        totalOverTokensApprox: 20_000,
+        byTool: [{ toolName: "Bash", overCount: 2, maxTokensApprox: 12_000 }],
+        sampleSessions: [{ sessionId: "s1", toolName: "Bash", tokensApprox: 12_000 }],
+        isApprox: true,
+      },
+    });
+    const r = buildRecommendations(s);
+    const item = r.items.find((i) => i.id === "tool-output-cap");
+    expect(item).toBeDefined();
+    expect(item?.action).toMatch(/MAX_MCP_OUTPUT_TOKENS/);
+    expect(item?.action).toMatch(/BASH_MAX_OUTPUT_LENGTH/);
+  });
+
+  it("toolResultOutliersが未指定のとき、tool-output-capは出ない", () => {
+    const r = buildRecommendations(baseSummary({ toolResultOutliers: undefined }));
+    expect(r.items.find((i) => i.id === "tool-output-cap")).toBeUndefined();
+  });
+
+  it("toolResultOutliers.overCountが0のとき、tool-output-capは出ない", () => {
+    const s = baseSummary({
+      toolResultOutliers: {
+        overCount: 0,
+        maxTokensApprox: 0,
+        totalOverTokensApprox: 0,
+        byTool: [],
+        sampleSessions: [],
+        isApprox: true,
+      },
+    });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "tool-output-cap")).toBeUndefined();
+  });
+
+  it("tool-result-bloatとtool-output-capの両方が発火する場合、idが重複せず両方存在する", () => {
+    const s = baseSummary({
+      bySession: [session({ toolResultTokensApprox: 60_000 })],
+      toolResultOutliers: {
+        overCount: 1,
+        maxTokensApprox: 9_000,
+        totalOverTokensApprox: 9_000,
+        byTool: [{ toolName: "mcp__foo", overCount: 1, maxTokensApprox: 9_000 }],
+        sampleSessions: [{ sessionId: "s1", toolName: "mcp__foo", tokensApprox: 9_000 }],
+        isApprox: true,
+      },
+    });
+    const r = buildRecommendations(s);
+    const ids = r.items.map((i) => i.id);
+    expect(ids.filter((id) => id === "tool-result-bloat")).toHaveLength(1);
+    expect(ids.filter((id) => id === "tool-output-cap")).toHaveLength(1);
+  });
+});

@@ -134,6 +134,18 @@ export interface ToolResultUsage {
   isApprox: true;
 }
 
+// 個別tool_resultレコードの上限超過分布。MCP系（mcp__*）とBash系（それ以外全て）で
+// 別々の推奨上限（MAX_MCP_OUTPUT_TOKENS / BASH_MAX_OUTPUT_LENGTH相当）を適用した集計。
+// 常に近似値（isApprox=true）。
+export interface ToolResultOutliers {
+  overCount: number; // 上限超過レコード件数
+  maxTokensApprox: number; // 超過レコード中の最大近似トークン数
+  totalOverTokensApprox: number; // 超過レコードのみの近似トークン数合算
+  byTool: Array<{ toolName: string; overCount: number; maxTokensApprox: number }>; // 超過があったツールのみ、maxTokensApprox降順
+  sampleSessions: Array<{ sessionId: string; toolName: string; tokensApprox: number }>; // tokensApprox降順で上位数件
+  isApprox: true;
+}
+
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
 // MCPツール定義は config（command/args）から静的取得できず実行時依存のため、
 // 現状 source は常に "estimated"（保守的な既定値）。"measured" は将来の実測拡張用、
@@ -220,6 +232,7 @@ export interface Summary {
   byTool: ToolUsage[];
   byMcpServer: McpServerUsage[];
   toolResultBreakdown?: ToolResultUsage[];
+  toolResultOutliers?: ToolResultOutliers;
 }
 
 export interface Activity {
