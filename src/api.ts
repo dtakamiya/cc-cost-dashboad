@@ -283,6 +283,23 @@ export function sessionEfficiencyColor(score: number | null): string {
   return "var(--danger)";
 }
 
+// セッションの出力トークン比率がこの値超で「output高」とみなす既定閾値。
+export const OUTPUT_HEAVY_SESSION_THRESHOLD = 0.4;
+
+/** セッションの出力トークン比率（output / (input + output + cacheCreate + cacheRead)）を返す。分母が0なら0。 */
+export function sessionOutputRatio(s: SessionCost): number {
+  const total = s.input + s.output + s.cacheCreate + s.cacheRead;
+  return total > 0 ? s.output / total : 0;
+}
+
+/** セッションが出力（output）過多かどうかを返す。 */
+export function isOutputHeavySession(
+  s: SessionCost,
+  threshold = OUTPUT_HEAVY_SESSION_THRESHOLD
+): boolean {
+  return sessionOutputRatio(s) > threshold;
+}
+
 export interface DateRange {
   from: string; // YYYY-MM-DD
   to: string;   // YYYY-MM-DD

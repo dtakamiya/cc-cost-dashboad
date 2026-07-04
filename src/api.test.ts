@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
+import { filterSummary, filterSummaryByProject, filterPreviousPeriod, isDateRange, fetchPricing, subscribeToUpdates, fetchHourly, fetchSummary, sessionEfficiencyScore, sessionEfficiencyColor, isFrequentlyCompactedSession, sessionOutputRatio, isOutputHeavySession, type Summary, type DailyCost, type Pricing, type SessionCost, type HourlyData, type DateRange } from "./api";
 
 // 今日から daysAgo 日前の YYYY-MM-DD。
 function ymdAgo(daysAgo: number): string {
@@ -668,5 +668,40 @@ describe("fetchHourly API function", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
 
     await expect(fetchHourly()).rejects.toThrow("hourly fetch failed");
+  });
+});
+
+describe("sessionOutputRatio", () => {
+  it("出力トークンゼロの場合は0を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 100, output: 0, cacheCreate: 0, cacheRead: 0 };
+    expect(sessionOutputRatio(s)).toBe(0);
+  });
+
+  it("input/output/cacheCreate/cacheReadの合計に対するoutput比率を返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 100, output: 300, cacheCreate: 300, cacheRead: 300 };
+    expect(sessionOutputRatio(s)).toBeCloseTo(0.3, 5);
+  });
+
+  it("全項目がゼロの場合は0を返す（ゼロ除算しない）", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 0, output: 0, cacheCreate: 0, cacheRead: 0 };
+    expect(sessionOutputRatio(s)).toBe(0);
+  });
+});
+
+describe("isOutputHeavySession", () => {
+  it("出力比率が閾値超でtrueを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 0, output: 50, cacheCreate: 0, cacheRead: 50 };
+    expect(isOutputHeavySession(s)).toBe(true);
+  });
+
+  it("出力比率が閾値以下でfalseを返す", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 70, output: 30, cacheCreate: 0, cacheRead: 0 };
+    expect(isOutputHeavySession(s)).toBe(false);
+  });
+
+  it("カスタム閾値を尊重する", () => {
+    const s = { ...sess("/proj", 10, 1000), input: 50, output: 50, cacheCreate: 0, cacheRead: 0 };
+    expect(isOutputHeavySession(s, 0.4)).toBe(true);
+    expect(isOutputHeavySession(s, 0.6)).toBe(false);
   });
 });

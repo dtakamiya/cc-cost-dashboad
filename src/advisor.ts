@@ -1,4 +1,4 @@
-import { isBloatedSession, isFrequentlyCompactedSession, type BillingMode, type Summary } from "./api";
+import { isBloatedSession, isFrequentlyCompactedSession, isOutputHeavySession, type BillingMode, type Summary } from "./api";
 
 // 最適化アドバイザー: 期間フィルタ済みの Summary を入力に、優先度順＋推定月間節約額付きの
 // 具体的アクション一覧を生成する純粋関数群。サーバー集計は変更せず既存データのみ再利用する。
@@ -61,6 +61,8 @@ export const MCP_OVERHEAD_TOKEN_THRESHOLD = 3000; // MCPサーバ推定トーク
 const BLOAT_SAVABLE_FRACTION = 0.5; // 肥大化セッションの再送文脈のうち /clear で避けられる割合
 const MODEL_SHIFT_FRACTION = 0.3; // 高単価モデルから安価モデルへ振り替えられる割合
 const OUTPUT_REDUCTION_FRACTION = 0.2; // 出力長見直しで削減できる割合
+const DIFF_OUTPUT_SAVABLE_FRACTION = 0.3; // diff出力に寄せることで削減できる出力トークンの割合
+const DIFF_OUTPUT_TOP_SESSION_LIMIT = 3; // diff出力アドバイスで名指しする上位セッション数
 const MCP_DISABLE_FRACTION = 0.5; // 全MCP無効化は非現実的なため、未使用分のみ無効化できると仮定する割合
 
 const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -226,6 +228,31 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       action: "出力長の上限指定・簡潔な指示・effort 設定の見直しで生成量を抑える。",
       estMonthlySavings: savings,
     });
+  }
+
+  // 4b. 出力（output）過多な個別セッション → diff出力を促す（medium, 定量）
+  // 4.の"output-heavy"は全体傾向のみを示すため、こちらは個別セッション名+diffアクションを提示する。
+  const outputHeavySessions = s.bySession.filter((sess) => isOutputHeavySession(sess));
+  if (outputHeavySessions.length > 0) {
+    const outputRate = safeRate(s.costSplit.output, s.tokenSplit.output);
+    const savings = outputHeavySessions.reduce((sum, sess) => {
+      return sum + sess.output * outputRate * DIFF_OUTPUT_SAVABLE_FRACTION * monthlyFactor;
+    }, 0);
+    if (savings > 0) {
+      const topSessions = [...outputHeavySessions]
+        .sort((a, b) => b.output - a.output)
+        .slice(0, DIFF_OUTPUT_TOP_SESSION_LIMIT);
+      const cwds = [...new Set(topSessions.map((sess) => shortCwd(sess.cwd)))].join(", ");
+      items.push({
+        id: "diff-output-advice",
+        priority: "medium",
+        title: "特定セッションで出力（生成）トークンが集中している",
+        shortTitle: `出力集中セッション（${outputHeavySessions.length}件）`,
+        detail: `${outputHeavySessions.length} 件のセッションで出力トークン比率が高い（${cwds} ほか）。`,
+        action: "全文書き直しではなく diff（差分）形式での出力を指示し、生成トークン量を抑える。",
+        estMonthlySavings: savings,
+      });
+    }
   }
 
   // 5. キャッシュ効率低下（low, 定性）
