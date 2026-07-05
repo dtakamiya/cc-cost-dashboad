@@ -621,6 +621,59 @@ export function computeModelSwitchStats(records) {
 }
 
 /**
+ * モデル切替・アイドルギャップのどちらにも該当しない「原因不明のキャッシュ再作成」を検出する。
+ * computeModelSwitchStats / computeCacheGapStats と同一のペアを二重計上しないよう、
+ * 分類の優先順位（1: モデル切替 → 2: アイドルギャップ → 3: 不明）で排他的に振り分ける。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ bustCount: number, reCreateTokens: number, reCreateCost: number, affectedSessions: string[] }}
+ */
+export function detectUnexplainedCacheBusts(records) {
+  const bySession = new Map();
+
+  for (const r of records) {
+    if (r.sessionId === "(unknown)" || !r.ts || r.isSidechain) continue;
+    if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
+    bySession.get(r.sessionId).push(r);
+  }
+
+  let bustCount = 0;
+  let reCreateTokens = 0;
+  let reCreateCost = 0;
+  const affectedSessions = new Set();
+
+  for (const [sessionId, recs] of bySession) {
+    const sorted = [...recs].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const cur = sorted[i];
+      if (!(cur.cacheCreate > 0 && cur.cacheCreate >= cur.cacheRead)) continue;
+
+      // 1. モデル切替に帰属
+      if (cur.model !== prev.model) continue;
+
+      // 2. アイドルギャップに帰属
+      const gapMs = new Date(cur.ts) - new Date(prev.ts);
+      const ttlMs = prev.cache1h ? CACHE_1H_TTL_MS : CACHE_5M_TTL_MS;
+      if (gapMs > ttlMs) continue;
+
+      // 3. 原因不明
+      bustCount++;
+      reCreateTokens += cur.cacheCreate;
+      reCreateCost += costOf(cur.model, cur).cacheWrite;
+      affectedSessions.add(sessionId);
+    }
+  }
+
+  return {
+    bustCount,
+    reCreateTokens,
+    reCreateCost,
+    affectedSessions: [...affectedSessions],
+  };
+}
+
+/**
  * レコード配列から曜日(0=日)×時間帯(0-23) のトークン使用量行列とピークを生成する。
  * ローカル時刻基準（サーバー = ユーザーのマシン）。
  * @param {object[]} records - 正規化レコード配列
@@ -935,6 +988,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
     modelSwitch: computeModelSwitchStats(records),
+    unexplainedCacheBust: detectUnexplainedCacheBusts(records),
     byTool: computeToolUsage(toolUseRecords),
     byMcpServer: computeMcpUsage(toolUseRecords),
     toolResultBreakdown: computeToolResultUsage(toolResultRecords),
