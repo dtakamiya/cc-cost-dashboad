@@ -8,6 +8,7 @@ import {
   OUTPUT_COST_RATIO_THRESHOLD,
   IDLE_REWRITE_COST_THRESHOLD,
   MODEL_SWITCH_REWRITE_COST_THRESHOLD,
+  UNEXPLAINED_CACHE_BUST_COST_THRESHOLD,
   MCP_OVERHEAD_TOKEN_THRESHOLD,
   DUPLICATE_READ_TOKEN_THRESHOLD,
 } from "./advisor";
@@ -445,6 +446,50 @@ describe("buildRecommendations - model-switch-cost", () => {
       },
     });
     const item = buildRecommendations(s, "subscription").items.find((i) => i.id === "model-switch-cost");
+    expect(item).toBeUndefined();
+  });
+});
+
+describe("buildRecommendations - unexplained-cache-bust", () => {
+  it("原因不明バストの超過コストが閾値超でアドバイスを追加する", () => {
+    const s = baseSummary({
+      unexplainedCacheBust: {
+        bustCount: 3,
+        reCreateTokens: 50_000,
+        reCreateCost: UNEXPLAINED_CACHE_BUST_COST_THRESHOLD + 1,
+        affectedSessions: ["s1", "s2"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "unexplained-cache-bust");
+    expect(item).toBeDefined();
+    expect(item!.priority).toBe("medium");
+  });
+
+  it("閾値以下ではアドバイスを追加しない", () => {
+    const s = baseSummary({
+      unexplainedCacheBust: {
+        bustCount: 3,
+        reCreateTokens: 10,
+        reCreateCost: UNEXPLAINED_CACHE_BUST_COST_THRESHOLD,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "unexplained-cache-bust");
+    expect(item).toBeUndefined();
+  });
+
+  it("billingMode=subscription ではアドバイスを追加しない", () => {
+    const s = baseSummary({
+      unexplainedCacheBust: {
+        bustCount: 3,
+        reCreateTokens: 50_000,
+        reCreateCost: UNEXPLAINED_CACHE_BUST_COST_THRESHOLD + 1,
+        affectedSessions: ["s1"],
+      },
+    });
+    const item = buildRecommendations(s, "subscription").items.find(
+      (i) => i.id === "unexplained-cache-bust"
+    );
     expect(item).toBeUndefined();
   });
 });

@@ -12,6 +12,9 @@ export function CacheEfficiency({ s }: { s: Summary }) {
   // 古い API レスポンス（cacheStats 未提供）でもダッシュボード全体を巻き込まないよう描画をスキップ。
   if (!cs) return null;
   const gs = s.cacheGapStats;
+  const ms = s.modelSwitch;
+  const ub = s.unexplainedCacheBust;
+  const hasBustBreakdown = Boolean(gs) && Boolean(ms) && Boolean(ub);
   const roiPositive = cs.roiNet >= 0;
   const roiColor = roiPositive ? "var(--green, #22c55e)" : "var(--red, #ef4444)";
   const totalCreate = cs.create1hTokens + cs.create5mTokens;
@@ -116,6 +119,73 @@ export function CacheEfficiency({ s }: { s: Summary }) {
                   <td style={{ textAlign: "right", color: "var(--red, #ef4444)" }}>
                     −{usd(gs.reWriteCost)}
                   </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {ub && ub.bustCount > 0 && (
+          <div className="driver">
+            <div className="driver-title">原因不明のキャッシュ再作成</div>
+            <div className="driver-body" style={{ color: "var(--yellow, #eab308)" }}>
+              {ub.bustCount} 回
+            </div>
+            <div className="driver-hint">
+              モデル切替・アイドルギャップのいずれにも該当しないキャッシュ再作成。
+              セッション途中のMCP/設定変更やツール構成の変化が原因の可能性がある。
+            </div>
+            <table className="tbl" style={{ marginTop: 10 }}>
+              <tbody>
+                <tr>
+                  <td>発生回数</td>
+                  <td style={{ textAlign: "right" }}>{ub.bustCount} 回</td>
+                </tr>
+                <tr>
+                  <td>再作成トークン</td>
+                  <td style={{ textAlign: "right" }}>{tok(ub.reCreateTokens)}</td>
+                </tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>推定超過コスト</td>
+                  <td style={{ textAlign: "right", color: "var(--red, #ef4444)" }}>
+                    −{usd(ub.reCreateCost)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {hasBustBreakdown && (
+          <div className="driver">
+            <div className="driver-title">バスト原因の内訳</div>
+            <div className="driver-hint">
+              キャッシュ再作成コストの発生要因を、判明している原因（モデル切替・アイドル失効）と
+              原因不明に分けて内訳表示する。
+            </div>
+            <table className="tbl" style={{ marginTop: 10 }}>
+              <thead>
+                <tr>
+                  <th>原因</th>
+                  <th style={{ textAlign: "right" }}>発生回数</th>
+                  <th style={{ textAlign: "right" }}>超過コスト</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>モデル切替</td>
+                  <td style={{ textAlign: "right" }}>{ms ? ms.switchCount : 0} 回</td>
+                  <td style={{ textAlign: "right" }}>{usd(ms ? ms.reCreateCost : 0)}</td>
+                </tr>
+                <tr>
+                  <td>アイドル失効</td>
+                  <td style={{ textAlign: "right" }}>{gs ? gs.expiredGapCount : 0} 回</td>
+                  <td style={{ textAlign: "right" }}>{usd(gs ? gs.reWriteCost : 0)}</td>
+                </tr>
+                <tr>
+                  <td>原因不明</td>
+                  <td style={{ textAlign: "right" }}>{ub ? ub.bustCount : 0} 回</td>
+                  <td style={{ textAlign: "right" }}>{usd(ub ? ub.reCreateCost : 0)}</td>
                 </tr>
               </tbody>
             </table>

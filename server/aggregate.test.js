@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, enrichMcpServers, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, detectUnexplainedCacheBusts, computeToolUsage, computeMcpUsage, enrichMcpServers, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -998,6 +998,214 @@ describe("aggregate() modelSwitch", () => {
     expect(result.modelSwitch).toBeDefined();
     expect(result.modelSwitch.switchCount).toBe(1);
     expect(result.modelSwitch.affectedSessions).toEqual(["s1"]);
+  });
+});
+
+describe("detectUnexplainedCacheBusts", () => {
+  it("モデル切替に該当する再作成は不明に計上しない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.reCreateCost).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("アイドルギャップに該当する再作成は不明に計上しない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.reCreateCost).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("モデル同一・ギャップTTL内の再作成を不明として計上する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const cur = { sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 500, cacheRead: 100 };
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec(cur),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    const expectedCost = costOf(cur.model, cur).cacheWrite;
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.reCreateCost).toBeCloseTo(expectedCost, 10);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("cacheReadがcacheCreate以上のペアは計上しない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 500 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("cacheCreate=0のペアは計上しない", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 0, cacheRead: 0 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("複数セッションを独立に集計しaffectedSessionsに重複なく格納する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const t2 = t0 + 2000;
+    const records = [
+      rec({ sessionId: "a", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "a", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "a", ts: new Date(t2).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "b", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "b", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(3);
+    expect(stats.affectedSessions).toEqual(["a", "b"]);
+  });
+
+  it("sessionId=(unknown) / ts欠落 / isSidechain のレコードを除外する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const t2 = t0 + 2000;
+    const records = [
+      rec({ sessionId: "(unknown)", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "(unknown)", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: null, model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: true }),
+      rec({ sessionId: "s1", ts: new Date(t2).toISOString(), model: "claude-opus-4-8", isSidechain: true, cacheCreate: 100, cacheRead: 0 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("ts未ソート入力でも昇順評価する", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 100, cacheRead: 0 }),
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(100);
+  });
+
+  it("モデル切替とアイドルの両方に該当するペアは二重計上されず不明=0", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + CACHE_5M_TTL_MS + 1;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-sonnet-4-5", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(0);
+    expect(stats.reCreateTokens).toBe(0);
+    expect(stats.affectedSessions).toEqual([]);
+  });
+
+  it("main→sidechain→mainの並びで、sidechain込みの実時系列ではTTL内だが、sidechain除去後だとTTL超過になるケースは不明として計上する（computeCacheGapStatsと整合）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const tSide = t0 + 1000; // main1からsidechainまでは短いギャップ
+    const t1 = t0 + CACHE_5M_TTL_MS + 1; // main1からmain2まではTTL超過（sidechain除去後だとこちらが直前になる）
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(tSide).toISOString(), model: "claude-haiku-4-5", isSidechain: true }),
+      rec({
+        sessionId: "s1",
+        ts: new Date(t1).toISOString(),
+        model: "claude-opus-4-8",
+        isSidechain: false,
+        cacheCreate: 500,
+        cacheRead: 100,
+      }),
+    ];
+
+    // computeCacheGapStats は sidechain込みの実時系列で隣接ペアを見るため、
+    // main2の直前はsidechain(tSide)であり、gap = t1 - tSide はTTL以下 → アイドル失効ではない。
+    const gapStats = computeCacheGapStats(records);
+    expect(gapStats.expiredGapCount).toBe(0);
+
+    // computeModelSwitchStats はsidechain除外・main同士で比較するため、opus→opusでモデル切替もなし。
+    const switchStats = computeModelSwitchStats(records);
+    expect(switchStats.switchCount).toBe(0);
+
+    // どちらにも該当しないため、原因不明として計上されるべき。
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("main→sidechain→mainの並びで、sidechain込みの実時系列でもTTL超過ならアイドルギャップとして計上しない（computeCacheGapStatsと整合）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const tSide = t0 + CACHE_5M_TTL_MS + 1; // main1からsidechainまでの時点で既にTTL超過
+    const t1 = tSide + 1000; // sidechainからmain2までは短いギャップ
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(tSide).toISOString(), model: "claude-haiku-4-5", isSidechain: true }),
+      rec({
+        sessionId: "s1",
+        ts: new Date(t1).toISOString(),
+        model: "claude-opus-4-8",
+        isSidechain: false,
+        cacheCreate: 500,
+        cacheRead: 100,
+      }),
+    ];
+
+    // computeCacheGapStats: main1→sidechainの隣接ペアでTTL超過（expiredGapCountに計上）。
+    // main2の直前はsidechainであり、sidechain→main2はTTL内なのでmain2自体はアイドル超過ペアの対象外。
+    const gapStats = computeCacheGapStats(records);
+    expect(gapStats.expiredGapCount).toBe(1);
+
+    const switchStats = computeModelSwitchStats(records);
+    expect(switchStats.switchCount).toBe(0);
+
+    // main2 自体はアイドルギャップにもモデル切替にも該当しないため、原因不明として計上されるべき。
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+});
+
+describe("aggregate() unexplainedCacheBust", () => {
+  it("aggregate() の summary に unexplainedCacheBust が含まれる", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const t1 = t0 + 1000;
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8" }),
+      rec({ sessionId: "s1", ts: new Date(t1).toISOString(), model: "claude-opus-4-8", cacheCreate: 500, cacheRead: 100 }),
+    ];
+    const result = aggregate(records);
+    expect(result.unexplainedCacheBust).toBeDefined();
+    expect(result.unexplainedCacheBust.bustCount).toBe(1);
+    expect(result.unexplainedCacheBust.affectedSessions).toEqual(["s1"]);
   });
 });
 

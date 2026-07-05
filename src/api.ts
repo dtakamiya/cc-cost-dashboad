@@ -100,6 +100,14 @@ export interface ModelSwitchStats {
   affectedSessions: string[]; // 再作成コストが発生したセッションIDの重複なし配列
 }
 
+// モデル切替・アイドルギャップのどちらにも該当しない「原因不明のキャッシュ再作成」の集計。
+export interface UnexplainedCacheBust {
+  bustCount: number;        // 原因不明のキャッシュ再作成の発生回数
+  reCreateTokens: number;   // 再作成されたトークン数
+  reCreateCost: number;     // 再作成による超過コスト（USD）
+  affectedSessions: string[]; // 対象セッションIDの重複なし配列
+}
+
 // サブエージェント（isSidechain）委譲のトークン/コスト内訳。デリゲーションROI判断用。
 export interface SubagentStats {
   mainTokens: number;
@@ -236,6 +244,7 @@ export interface Summary {
   cacheStats?: CacheStats;
   cacheGapStats?: CacheGapStats;
   modelSwitch?: ModelSwitchStats;
+  unexplainedCacheBust?: UnexplainedCacheBust;
   subagentStats?: SubagentStats;
   thinking?: ThinkingStats;
   source?: {

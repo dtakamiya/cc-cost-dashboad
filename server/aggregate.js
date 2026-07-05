@@ -621,6 +621,75 @@ export function computeModelSwitchStats(records) {
 }
 
 /**
+ * モデル切替・アイドルギャップのどちらにも該当しない「原因不明のキャッシュ再作成」を検出する。
+ * computeModelSwitchStats / computeCacheGapStats と同一のペアを二重計上しないよう、
+ * 分類の優先順位（1: モデル切替 → 2: アイドルギャップ → 3: 不明）で排他的に振り分ける。
+ * @param {object[]} records - 正規化レコード配列
+ * @returns {{ bustCount: number, reCreateTokens: number, reCreateCost: number, affectedSessions: string[] }}
+ */
+export function detectUnexplainedCacheBusts(records) {
+  const bySession = new Map();
+
+  // computeCacheGapStats と同じ母集団（isSidechainを除外しない）でグルーピングする。
+  // ギャップ判定はsidechain込みの実時系列の直前レコードを参照する必要があるため。
+  for (const r of records) {
+    if (r.sessionId === "(unknown)" || !r.ts) continue;
+    if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
+    bySession.get(r.sessionId).push(r);
+  }
+
+  let bustCount = 0;
+  let reCreateTokens = 0;
+  let reCreateCost = 0;
+  const affectedSessions = new Set();
+
+  for (const [sessionId, recs] of bySession) {
+    const sorted = [...recs].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+
+    let prevNonSidechain = null;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i];
+
+      if (cur.isSidechain) continue;
+
+      const prevInTimeline = i > 0 ? sorted[i - 1] : null;
+
+      if (
+        prevNonSidechain !== null &&
+        cur.cacheCreate > 0 &&
+        cur.cacheCreate >= cur.cacheRead
+      ) {
+        // 1. モデル切替に帰属（computeModelSwitchStatsと同じ基準: 直前の非sidechainレコード）
+        const isModelSwitch = cur.model !== prevNonSidechain.model;
+
+        // 2. アイドルギャップに帰属（computeCacheGapStatsと同じ基準: sidechain込みの実時系列の直前レコード）
+        const gapMs = prevInTimeline ? new Date(cur.ts) - new Date(prevInTimeline.ts) : 0;
+        const ttlMs = prevInTimeline?.cache1h ? CACHE_1H_TTL_MS : CACHE_5M_TTL_MS;
+        const isIdleGap = prevInTimeline !== null && gapMs > ttlMs;
+
+        if (!isModelSwitch && !isIdleGap) {
+          // 3. 原因不明
+          bustCount++;
+          reCreateTokens += cur.cacheCreate;
+          reCreateCost += costOf(cur.model, cur).cacheWrite;
+          affectedSessions.add(sessionId);
+        }
+      }
+
+      prevNonSidechain = cur;
+    }
+  }
+
+  return {
+    bustCount,
+    reCreateTokens,
+    reCreateCost,
+    affectedSessions: [...affectedSessions],
+  };
+}
+
+/**
  * レコード配列から曜日(0=日)×時間帯(0-23) のトークン使用量行列とピークを生成する。
  * ローカル時刻基準（サーバー = ユーザーのマシン）。
  * @param {object[]} records - 正規化レコード配列
@@ -935,6 +1004,7 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     hourly: computeHourly(records),
     cacheGapStats: computeCacheGapStats(records),
     modelSwitch: computeModelSwitchStats(records),
+    unexplainedCacheBust: detectUnexplainedCacheBusts(records),
     byTool: computeToolUsage(toolUseRecords),
     byMcpServer: computeMcpUsage(toolUseRecords),
     toolResultBreakdown: computeToolResultUsage(toolResultRecords),

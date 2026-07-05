@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { CacheEfficiency } from "./CacheEfficiency";
-import type { Summary, CacheStats, CacheGapStats } from "../api";
+import type { Summary, CacheStats, CacheGapStats, ModelSwitchStats, UnexplainedCacheBust } from "../api";
 
 function makeSummary(overrides: Partial<Summary> = {}): Summary {
   return {
@@ -109,5 +109,69 @@ describe("CacheEfficiency", () => {
     expect(screen.getByText("アイドル失効による再書き込み")).toBeInTheDocument();
     expect(screen.getAllByText("4 回")).toHaveLength(2);
     expect(screen.getByText((_, el) => el?.textContent === "−$0.13")).toBeInTheDocument();
+  });
+
+  it("unexplainedCacheBust 未提供時は不明パネルを表示しない", () => {
+    const s = makeSummary({ cacheStats: defaultCacheStats, unexplainedCacheBust: undefined });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.queryByText("原因不明のキャッシュ再作成")).not.toBeInTheDocument();
+  });
+
+  it("bustCount > 0 のとき件数と超過コストを表示する", () => {
+    const bust: UnexplainedCacheBust = {
+      bustCount: 2,
+      reCreateTokens: 8000,
+      reCreateCost: 0.05,
+      affectedSessions: ["s1"],
+    };
+    const s = makeSummary({ cacheStats: defaultCacheStats, unexplainedCacheBust: bust });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.getByText("原因不明のキャッシュ再作成")).toBeInTheDocument();
+    expect(screen.getAllByText("2 回")).toHaveLength(2);
+    expect(screen.getByText((_, el) => el?.textContent === "−$0.05")).toBeInTheDocument();
+  });
+
+  it("モデル切替/アイドル/不明の3内訳を表示する", () => {
+    const gapStats: CacheGapStats = {
+      expiredGapCount: 3,
+      reWriteTokens: 1000,
+      reWriteCost: 0.02,
+      affectedSessions: ["s1"],
+    };
+    const modelSwitch: ModelSwitchStats = {
+      switchCount: 2,
+      reCreateTokens: 500,
+      reCreateCost: 0.01,
+      affectedSessions: ["s1"],
+    };
+    const bust: UnexplainedCacheBust = {
+      bustCount: 4,
+      reCreateTokens: 2000,
+      reCreateCost: 0.03,
+      affectedSessions: ["s1", "s2"],
+    };
+    const s = makeSummary({
+      cacheStats: defaultCacheStats,
+      cacheGapStats: gapStats,
+      modelSwitch,
+      unexplainedCacheBust: bust,
+    });
+    render(<CacheEfficiency s={s} />);
+    expect(screen.getByText("バスト原因の内訳")).toBeInTheDocument();
+
+    const modelSwitchRow = screen.getByText("モデル切替").closest("tr");
+    expect(modelSwitchRow).not.toBeNull();
+    expect(modelSwitchRow).toHaveTextContent("2 回");
+    expect(modelSwitchRow).toHaveTextContent("$0.01");
+
+    const idleRow = screen.getByText("アイドル失効").closest("tr");
+    expect(idleRow).not.toBeNull();
+    expect(idleRow).toHaveTextContent("3 回");
+    expect(idleRow).toHaveTextContent("$0.02");
+
+    const unknownRow = screen.getByText("原因不明").closest("tr");
+    expect(unknownRow).not.toBeNull();
+    expect(unknownRow).toHaveTextContent("4 回");
+    expect(unknownRow).toHaveTextContent("$0.03");
   });
 });
