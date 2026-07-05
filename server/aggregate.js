@@ -630,8 +630,10 @@ export function computeModelSwitchStats(records) {
 export function detectUnexplainedCacheBusts(records) {
   const bySession = new Map();
 
+  // computeCacheGapStats と同じ母集団（isSidechainを除外しない）でグルーピングする。
+  // ギャップ判定はsidechain込みの実時系列の直前レコードを参照する必要があるため。
   for (const r of records) {
-    if (r.sessionId === "(unknown)" || !r.ts || r.isSidechain) continue;
+    if (r.sessionId === "(unknown)" || !r.ts) continue;
     if (!bySession.has(r.sessionId)) bySession.set(r.sessionId, []);
     bySession.get(r.sessionId).push(r);
   }
@@ -644,24 +646,38 @@ export function detectUnexplainedCacheBusts(records) {
   for (const [sessionId, recs] of bySession) {
     const sorted = [...recs].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
 
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
+    let prevNonSidechain = null;
+
+    for (let i = 0; i < sorted.length; i++) {
       const cur = sorted[i];
-      if (!(cur.cacheCreate > 0 && cur.cacheCreate >= cur.cacheRead)) continue;
 
-      // 1. モデル切替に帰属
-      if (cur.model !== prev.model) continue;
+      if (cur.isSidechain) continue;
 
-      // 2. アイドルギャップに帰属
-      const gapMs = new Date(cur.ts) - new Date(prev.ts);
-      const ttlMs = prev.cache1h ? CACHE_1H_TTL_MS : CACHE_5M_TTL_MS;
-      if (gapMs > ttlMs) continue;
+      const prevInTimeline = i > 0 ? sorted[i - 1] : null;
 
-      // 3. 原因不明
-      bustCount++;
-      reCreateTokens += cur.cacheCreate;
-      reCreateCost += costOf(cur.model, cur).cacheWrite;
-      affectedSessions.add(sessionId);
+      if (
+        prevNonSidechain !== null &&
+        cur.cacheCreate > 0 &&
+        cur.cacheCreate >= cur.cacheRead
+      ) {
+        // 1. モデル切替に帰属（computeModelSwitchStatsと同じ基準: 直前の非sidechainレコード）
+        const isModelSwitch = cur.model !== prevNonSidechain.model;
+
+        // 2. アイドルギャップに帰属（computeCacheGapStatsと同じ基準: sidechain込みの実時系列の直前レコード）
+        const gapMs = prevInTimeline ? new Date(cur.ts) - new Date(prevInTimeline.ts) : 0;
+        const ttlMs = prevInTimeline?.cache1h ? CACHE_1H_TTL_MS : CACHE_5M_TTL_MS;
+        const isIdleGap = prevInTimeline !== null && gapMs > ttlMs;
+
+        if (!isModelSwitch && !isIdleGap) {
+          // 3. 原因不明
+          bustCount++;
+          reCreateTokens += cur.cacheCreate;
+          reCreateCost += costOf(cur.model, cur).cacheWrite;
+          affectedSessions.add(sessionId);
+        }
+      }
+
+      prevNonSidechain = cur;
     }
   }
 

@@ -158,8 +158,20 @@ describe("CacheEfficiency", () => {
     });
     render(<CacheEfficiency s={s} />);
     expect(screen.getByText("バスト原因の内訳")).toBeInTheDocument();
-    expect(screen.getByText("モデル切替")).toBeInTheDocument();
-    expect(screen.getByText("アイドル失効")).toBeInTheDocument();
-    expect(screen.getByText("原因不明")).toBeInTheDocument();
+
+    const modelSwitchRow = screen.getByText("モデル切替").closest("tr");
+    expect(modelSwitchRow).not.toBeNull();
+    expect(modelSwitchRow).toHaveTextContent("2 回");
+    expect(modelSwitchRow).toHaveTextContent("$0.01");
+
+    const idleRow = screen.getByText("アイドル失効").closest("tr");
+    expect(idleRow).not.toBeNull();
+    expect(idleRow).toHaveTextContent("3 回");
+    expect(idleRow).toHaveTextContent("$0.02");
+
+    const unknownRow = screen.getByText("原因不明").closest("tr");
+    expect(unknownRow).not.toBeNull();
+    expect(unknownRow).toHaveTextContent("4 回");
+    expect(unknownRow).toHaveTextContent("$0.03");
   });
 });

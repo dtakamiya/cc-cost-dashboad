@@ -1127,6 +1127,71 @@ describe("detectUnexplainedCacheBusts", () => {
     expect(stats.reCreateTokens).toBe(0);
     expect(stats.affectedSessions).toEqual([]);
   });
+
+  it("main→sidechain→mainの並びで、sidechain込みの実時系列ではTTL内だが、sidechain除去後だとTTL超過になるケースは不明として計上する（computeCacheGapStatsと整合）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const tSide = t0 + 1000; // main1からsidechainまでは短いギャップ
+    const t1 = t0 + CACHE_5M_TTL_MS + 1; // main1からmain2まではTTL超過（sidechain除去後だとこちらが直前になる）
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(tSide).toISOString(), model: "claude-haiku-4-5", isSidechain: true }),
+      rec({
+        sessionId: "s1",
+        ts: new Date(t1).toISOString(),
+        model: "claude-opus-4-8",
+        isSidechain: false,
+        cacheCreate: 500,
+        cacheRead: 100,
+      }),
+    ];
+
+    // computeCacheGapStats は sidechain込みの実時系列で隣接ペアを見るため、
+    // main2の直前はsidechain(tSide)であり、gap = t1 - tSide はTTL以下 → アイドル失効ではない。
+    const gapStats = computeCacheGapStats(records);
+    expect(gapStats.expiredGapCount).toBe(0);
+
+    // computeModelSwitchStats はsidechain除外・main同士で比較するため、opus→opusでモデル切替もなし。
+    const switchStats = computeModelSwitchStats(records);
+    expect(switchStats.switchCount).toBe(0);
+
+    // どちらにも該当しないため、原因不明として計上されるべき。
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
+
+  it("main→sidechain→mainの並びで、sidechain込みの実時系列でもTTL超過ならアイドルギャップとして計上しない（computeCacheGapStatsと整合）", () => {
+    const t0 = new Date("2026-06-15T10:00:00.000Z").getTime();
+    const tSide = t0 + CACHE_5M_TTL_MS + 1; // main1からsidechainまでの時点で既にTTL超過
+    const t1 = tSide + 1000; // sidechainからmain2までは短いギャップ
+    const records = [
+      rec({ sessionId: "s1", ts: new Date(t0).toISOString(), model: "claude-opus-4-8", isSidechain: false }),
+      rec({ sessionId: "s1", ts: new Date(tSide).toISOString(), model: "claude-haiku-4-5", isSidechain: true }),
+      rec({
+        sessionId: "s1",
+        ts: new Date(t1).toISOString(),
+        model: "claude-opus-4-8",
+        isSidechain: false,
+        cacheCreate: 500,
+        cacheRead: 100,
+      }),
+    ];
+
+    // computeCacheGapStats: main1→sidechainの隣接ペアでTTL超過（expiredGapCountに計上）。
+    // main2の直前はsidechainであり、sidechain→main2はTTL内なのでmain2自体はアイドル超過ペアの対象外。
+    const gapStats = computeCacheGapStats(records);
+    expect(gapStats.expiredGapCount).toBe(1);
+
+    const switchStats = computeModelSwitchStats(records);
+    expect(switchStats.switchCount).toBe(0);
+
+    // main2 自体はアイドルギャップにもモデル切替にも該当しないため、原因不明として計上されるべき。
+    const stats = detectUnexplainedCacheBusts(records);
+    expect(stats.bustCount).toBe(1);
+    expect(stats.reCreateTokens).toBe(500);
+    expect(stats.affectedSessions).toEqual(["s1"]);
+  });
 });
 
 describe("aggregate() unexplainedCacheBust", () => {

@@ -400,7 +400,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
     }
   }
 
-  // 5e-2. 定義済みだが直近未使用のMCPサーバー → 無効化候補を名指し（medium, 定量）
+  // 5f-2. 定義済みだが直近未使用のMCPサーバー → 無効化候補を名指し（medium, 定量）
   // computeMcpUsageとの突合（enrichMcpServers、server/aggregate.js）により付与された
   // callCountが0のサーバーを「直近未使用」とみなし、名指しで無効化を提案する。
   // mcp-overhead（総量ベース）とは独立に判定するため、両ルールが同時に発火し得る。
@@ -438,7 +438,7 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
     });
   }
 
-  // 5f. extended thinking（推論）トークンがoutputの大部分を占める（medium, 定性）
+  // 5k. extended thinking（推論）トークンがoutputの大部分を占める（medium, 定性）
   // thinkingはoutputに既に含まれる内訳であり、二重の追加コストではない。あくまで
   // 「見えないコスト」の比率が高いことへの注意喚起であり、節約額は定量化しない（0のまま）。
   const th = s.thinking;
