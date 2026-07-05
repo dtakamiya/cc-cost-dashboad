@@ -118,8 +118,8 @@ describe("OverheadAnalysis", () => {
         personalSkills: [],
         projectPlugins: [],
         mcpServers: [
-          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated" },
-          { name: "filesystem", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+          { name: "filesystem", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
         ],
         totalAlwaysTokens: 0,
         totalInvokeTokens: 0,
@@ -150,7 +150,7 @@ describe("OverheadAnalysis", () => {
         personalSkills: [],
         projectPlugins: [],
         mcpServers: [
-          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+          { name: "github", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
         ],
         totalAlwaysTokens: 0,
         totalInvokeTokens: 0,
@@ -171,7 +171,7 @@ describe("OverheadAnalysis", () => {
         personalSkills: [],
         projectPlugins: [],
         mcpServers: [
-          { name: "mystery-server", toolCount: null, estimatedTokens: null, source: "unknown" },
+          { name: "mystery-server", toolCount: null, estimatedTokens: null, source: "unknown", callCount: 0, lastUsed: null },
         ],
         totalAlwaysTokens: 0,
         totalInvokeTokens: 0,

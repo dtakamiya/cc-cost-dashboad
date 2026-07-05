@@ -41,6 +41,7 @@ vi.mock("./aggregate.js", () => ({
   computeDuplicateReads: vi.fn().mockReturnValue({
     totalDuplicateReads: 0, totalDuplicateTokensApprox: 0, byFile: [], isApprox: true,
   }),
+  enrichMcpServers: vi.fn((mcpServers) => mcpServers),
   MCP_OUTPUT_CAP_TOKENS: 8000,
   BASH_OUTPUT_CAP_TOKENS: 5000,
 }));
@@ -104,6 +105,7 @@ beforeEach(async () => {
     computeDuplicateReads: vi.fn().mockReturnValue({
       totalDuplicateReads: 0, totalDuplicateTokensApprox: 0, byFile: [], isApprox: true,
     }),
+    enrichMcpServers: vi.fn((mcpServers) => mcpServers),
     MCP_OUTPUT_CAP_TOKENS: 8000,
     BASH_OUTPUT_CAP_TOKENS: 5000,
   }));

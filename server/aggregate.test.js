@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, computeToolUsage, computeMcpUsage, enrichMcpServers, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1149,7 +1149,12 @@ describe("computeMcpUsage", () => {
     ];
     const result = computeMcpUsage(toolUseRecords);
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ serverName: "ccd_session", calls: 3, sessions: 1 });
+    expect(result[0]).toEqual({
+      serverName: "ccd_session",
+      calls: 3,
+      sessions: 1,
+      lastUsed: "2026-06-15T10:00:00.000Z",
+    });
   });
 
   it("複数セッションにまたがる呼び出しで sessions のユニーク数が正しい", () => {
@@ -1189,6 +1194,34 @@ describe("computeMcpUsage", () => {
     expect(result[1].calls).toBe(1);
   });
 
+  it("同一serverNameの複数レコードで最大のtsがlastUsedになる", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: "2026-06-10T10:00:00.000Z" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: "2026-06-15T10:00:00.000Z" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: "2026-06-12T10:00:00.000Z" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result[0].lastUsed).toBe("2026-06-15T10:00:00.000Z");
+  });
+
+  it("tsが欠損したレコードが混在してもlastUsedが壊れない", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: "2026-06-10T10:00:00.000Z" }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: undefined }),
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: "2026-06-12T10:00:00.000Z" }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result[0].lastUsed).toBe("2026-06-12T10:00:00.000Z");
+  });
+
+  it("全レコードでtsが欠損している場合はlastUsedがnull", () => {
+    const toolUseRecords = [
+      mcpUseRec({ serverName: "ccd_session", sessionId: "s1", ts: undefined }),
+    ];
+    const result = computeMcpUsage(toolUseRecords);
+    expect(result[0].lastUsed).toBeNull();
+  });
+
   it("aggregate() の戻り値に byMcpServer が含まれ、toolUseRecords オプションで渡される", () => {
     const records = [rec({ sessionId: "s1" })];
     const toolUseRecords = [
@@ -1197,13 +1230,90 @@ describe("computeMcpUsage", () => {
     ];
     const result = aggregate(records, { toolUseRecords });
     expect(result.byMcpServer).toBeDefined();
-    expect(result.byMcpServer).toEqual([{ serverName: "ccd_session", calls: 2, sessions: 1 }]);
+    expect(result.byMcpServer).toEqual([
+      { serverName: "ccd_session", calls: 2, sessions: 1, lastUsed: "2026-06-15T10:00:00.000Z" },
+    ]);
   });
 
   it("toolUseRecords 未指定時は byMcpServer は []（回帰なし）", () => {
     const records = [rec({ sessionId: "s1" })];
     const result = aggregate(records);
     expect(result.byMcpServer).toEqual([]);
+  });
+});
+
+// ─── enrichMcpServers ────────────────────────────────────────────────────
+
+describe("enrichMcpServers", () => {
+  it("定義済みサーバーに利用実績のcallCountとlastUsedを付与する", () => {
+    const mcpServers = [
+      { name: "ccd_session", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+    ];
+    const byMcpServer = [
+      { serverName: "ccd_session", calls: 5, sessions: 2, lastUsed: "2026-06-15T10:00:00.000Z" },
+    ];
+    const result = enrichMcpServers(mcpServers, byMcpServer);
+    expect(result).toEqual([
+      {
+        name: "ccd_session",
+        toolCount: null,
+        estimatedTokens: 1500,
+        source: "estimated",
+        callCount: 5,
+        lastUsed: "2026-06-15T10:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("利用実績がないサーバーは callCount:0, lastUsed:null になる", () => {
+    const mcpServers = [
+      { name: "unused-server", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+    ];
+    const result = enrichMcpServers(mcpServers, []);
+    expect(result).toEqual([
+      {
+        name: "unused-server",
+        toolCount: null,
+        estimatedTokens: 1500,
+        source: "estimated",
+        callCount: 0,
+        lastUsed: null,
+      },
+    ]);
+  });
+
+  it("ログにのみ存在するサーバー（定義にない）は出力に含めずクラッシュしない", () => {
+    const mcpServers = [
+      { name: "ccd_session", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+    ];
+    const byMcpServer = [
+      { serverName: "ccd_session", calls: 5, sessions: 2, lastUsed: "2026-06-15T10:00:00.000Z" },
+      { serverName: "log-only-server", calls: 10, sessions: 3, lastUsed: "2026-06-16T10:00:00.000Z" },
+    ];
+    expect(() => enrichMcpServers(mcpServers, byMcpServer)).not.toThrow();
+    const result = enrichMcpServers(mcpServers, byMcpServer);
+    expect(result).toHaveLength(1);
+    expect(result.find((m) => m.name === "log-only-server")).toBeUndefined();
+  });
+
+  it("元の配列・オブジェクトを破壊しない（イミュータブル）", () => {
+    const mcpServers = [
+      { name: "ccd_session", toolCount: null, estimatedTokens: 1500, source: "estimated" },
+    ];
+    const byMcpServer = [
+      { serverName: "ccd_session", calls: 5, sessions: 2, lastUsed: "2026-06-15T10:00:00.000Z" },
+    ];
+    const mcpServersCopy = JSON.parse(JSON.stringify(mcpServers));
+    const byMcpServerCopy = JSON.parse(JSON.stringify(byMcpServer));
+    const result = enrichMcpServers(mcpServers, byMcpServer);
+    expect(mcpServers).toEqual(mcpServersCopy);
+    expect(byMcpServer).toEqual(byMcpServerCopy);
+    expect(result).not.toBe(mcpServers);
+    expect(result[0]).not.toBe(mcpServers[0]);
+  });
+
+  it("空配列入力 → [] を返す", () => {
+    expect(enrichMcpServers([], [])).toEqual([]);
   });
 });
 
