@@ -579,6 +579,24 @@ describe("buildRecommendations - mcp-unused-servers", () => {
     expect(item).toBeDefined();
     expect(item!.estMonthlySavings).toBe(0);
   });
+
+  it("未使用サーバーが上限件数(5件)を超える場合、名前列挙が先頭5件に切り詰められ「ほか」が付与される", () => {
+    const unusedNames = ["a", "b", "c", "d", "e", "f"];
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: unusedNames.map((name) =>
+          mcpServerOverhead({ name, estimatedTokens: 1500, callCount: 0, lastUsed: null })
+        ),
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeDefined();
+    expect(item!.detail).toContain("6 件");
+    expect(item!.detail).toContain("a, b, c, d, e ほか");
+    expect(item!.detail).not.toContain("f");
+    expect(item!.action).toContain("a, b, c, d, e ほか");
+  });
 });
 
 describe("calculateOverheadStatus", () => {

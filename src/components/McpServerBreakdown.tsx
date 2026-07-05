@@ -54,14 +54,16 @@ function McpServerBreakdownTooltip({ active, payload }: McpServerBreakdownToolti
 export function McpServerBreakdown({ s }: { s: Summary }) {
   const [mode, setMode] = useState<DisplayMode>("calls");
 
-  if (!s.byMcpServer || s.byMcpServer.length === 0) return null;
+  const byMcpServer = s.byMcpServer ?? [];
+  const definedServers = s.overhead?.mcpServers ?? [];
+  if (byMcpServer.length === 0 && definedServers.length === 0) return null;
 
   // 定義済みMCPサーバー（overhead.mcpServers、callCount/lastUsed突合済み）をサーバー名で引けるようにする。
   // ログにのみ存在し定義に無いサーバーは overhead.mcpServers に含まれないため undefined になる（想定内）。
-  const overheadByName = new Map((s.overhead?.mcpServers ?? []).map((m) => [m.name, m]));
+  const overheadByName = new Map(definedServers.map((m) => [m.name, m]));
 
   // 棒グラフは実際の呼び出し実績（byMcpServer）のみを対象にする（0件のサーバーを含めるとグラフが崩れるため）。
-  const data = s.byMcpServer.map((m: McpServerUsage) => {
+  const data = byMcpServer.map((m: McpServerUsage) => {
     const overheadEntry = overheadByName.get(m.serverName);
     return {
       key: m.serverName,
@@ -75,8 +77,8 @@ export function McpServerBreakdown({ s }: { s: Summary }) {
   });
 
   // テーブルは定義済みだが利用実績が一切無い（byMcpServerに現れない）サーバーも「未使用」として追加表示する。
-  const usageNames = new Set(s.byMcpServer.map((m) => m.serverName));
-  const neverUsedRows = (s.overhead?.mcpServers ?? [])
+  const usageNames = new Set(byMcpServer.map((m) => m.serverName));
+  const neverUsedRows = definedServers
     .filter((m) => !usageNames.has(m.name))
     .map((m) => ({
       key: m.name,
@@ -117,28 +119,30 @@ export function McpServerBreakdown({ s }: { s: Summary }) {
           </button>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={Math.max(160, data.length * 52)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 120, right: 56 }}>
-          <CartesianGrid horizontal={false} stroke="var(--grid)" />
-          <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
-          <YAxis type="category" dataKey="name" width={120} stroke="var(--axis)" tick={{ fontSize: 12 }} />
-          <Tooltip
-            content={<McpServerBreakdownTooltip />}
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
-          />
-          <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
-            {data.map((d, i) => (
-              <Cell key={d.key} fill={PALETTE[i % PALETTE.length]} />
-            ))}
-            <LabelList
-              dataKey={dataKey}
-              position="right"
-              formatter={fmt}
-              style={{ fill: "var(--muted)", fontSize: 11 }}
+      {data.length > 0 && (
+        <ResponsiveContainer width="100%" height={Math.max(160, data.length * 52)}>
+          <BarChart data={data} layout="vertical" margin={{ left: 120, right: 56 }}>
+            <CartesianGrid horizontal={false} stroke="var(--grid)" />
+            <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" width={120} stroke="var(--axis)" tick={{ fontSize: 12 }} />
+            <Tooltip
+              content={<McpServerBreakdownTooltip />}
+              cursor={{ fill: "rgba(255,255,255,0.04)" }}
             />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+            <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
+              {data.map((d, i) => (
+                <Cell key={d.key} fill={PALETTE[i % PALETTE.length]} />
+              ))}
+              <LabelList
+                dataKey={dataKey}
+                position="right"
+                formatter={fmt}
+                style={{ fill: "var(--muted)", fontSize: 11 }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
       <table className="tbl">
         <thead>
           <tr>

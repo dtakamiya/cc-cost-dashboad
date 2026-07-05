@@ -393,13 +393,14 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
       const unusedTokens = unusedServers.reduce((sum, m) => sum + (m.estimatedTokens ?? 0), 0);
       const savings = unusedTokens * cacheCreateRate * sessionFactor * monthlyFactor;
       const unusedNames = unusedServers.map((m) => m.name).slice(0, MCP_UNUSED_SERVER_NAME_LIMIT).join(", ");
+      const namesSuffix = unusedServers.length > MCP_UNUSED_SERVER_NAME_LIMIT ? " ほか" : "";
       items.push({
         id: "mcp-unused-servers",
         priority: "medium",
         title: "定義済みだが直近未使用のMCPサーバーがある",
         shortTitle: `未使用MCPサーバー（${unusedServers.length}件）`,
-        detail: `${unusedServers.length} 件の MCP サーバー（${unusedNames}）が定義されているが期間内の呼び出しが0回。推定 約 ${unusedTokens.toLocaleString()} トークンが無駄に常時注入されている可能性がある。`,
-        action: `未使用の MCP サーバー（${unusedNames}）の無効化を検討する。`,
+        detail: `${unusedServers.length} 件の MCP サーバー（${unusedNames}${namesSuffix}）が定義されているが期間内の呼び出しが0回。推定 約 ${unusedTokens.toLocaleString()} トークンが無駄に常時注入されている可能性がある。`,
+        action: `未使用の MCP サーバー（${unusedNames}${namesSuffix}）の無効化を検討する。`,
         estMonthlySavings: Math.max(0, savings),
       });
     }

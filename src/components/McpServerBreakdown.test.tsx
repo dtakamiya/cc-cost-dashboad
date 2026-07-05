@@ -143,6 +143,22 @@ describe("McpServerBreakdown", () => {
     expect(() => render(<McpServerBreakdown s={s} />)).not.toThrow();
   });
 
+  it("byMcpServerが空でもoverhead.mcpServersに定義済みサーバーがあれば未使用として表示する", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "unused-server", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+        ],
+      },
+    };
+    render(<McpServerBreakdown s={s} />);
+    expect(screen.getByText("unused-server")).toBeInTheDocument();
+    expect(screen.getByText("未使用")).toBeInTheDocument();
+  });
+
   it("定義済みだがログにのみ存在するサーバー名の不一致でもクラッシュしない", () => {
     const s: Summary = {
       ...minimalSummary,
