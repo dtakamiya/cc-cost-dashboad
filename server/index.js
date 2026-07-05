@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import { loadRecords } from "./parser.js";
-import { aggregate, filterRecordsByPeriod, computeToolResultOutliers, computeDuplicateReads, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeToolResultOutliers, computeDuplicateReads, enrichMcpServers, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { analyzeOverhead } from "./analyze.js";
 import { PRICING, CACHE_WRITE_5M_MULTIPLIER, CACHE_WRITE_1H_MULTIPLIER, CACHE_READ_MULTIPLIER, costOf } from "./pricing.js";
 
@@ -88,6 +88,9 @@ async function rebuild() {
     const summary = aggregate(recordsCache, { compactions: compactionsCache, toolUseRecords: toolUseRecordsCache, toolResultRecords: toolResultRecordsCache });
     summary.source = { ...cumulativeSource };
     summary.overhead = analyzeOverhead();
+    // 定義済みMCPサーバー（overhead.mcpServers）に実際の利用実績（byMcpServer）を突合し、
+    // callCount・lastUsedを付与する（未使用サーバーの名指し無効化候補提示に使う）。
+    summary.overhead.mcpServers = enrichMcpServers(summary.overhead.mcpServers, summary.byMcpServer);
     summary.toolResultOutliers = computeToolResultOutliers(toolResultRecordsCache, { mcpCap: MCP_OUTPUT_CAP_TOKENS, bashCap: BASH_OUTPUT_CAP_TOKENS });
     summary.duplicateReads = computeDuplicateReads(toolUseRecordsCache, toolResultRecordsCache);
     cache = summary;

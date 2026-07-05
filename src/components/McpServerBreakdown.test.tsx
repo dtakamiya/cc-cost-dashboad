@@ -43,8 +43,8 @@ describe("McpServerBreakdown", () => {
     const s: Summary = {
       ...minimalSummary,
       byMcpServer: [
-        { serverName: "ccd_session", calls: 50, sessions: 5 },
-        { serverName: "gh", calls: 3, sessions: 2 },
+        { serverName: "ccd_session", calls: 50, sessions: 5, lastUsed: "2026-06-30T00:00:00.000Z" },
+        { serverName: "gh", calls: 3, sessions: 2, lastUsed: "2026-06-29T00:00:00.000Z" },
       ],
     };
     render(<McpServerBreakdown s={s} />);
@@ -57,7 +57,7 @@ describe("McpServerBreakdown", () => {
     const s: Summary = {
       ...minimalSummary,
       byMcpServer: [
-        { serverName: "gh", calls: 2, sessions: 1 },
+        { serverName: "gh", calls: 2, sessions: 1, lastUsed: "2026-06-29T00:00:00.000Z" },
       ],
     };
     render(<McpServerBreakdown s={s} />);
@@ -68,10 +68,110 @@ describe("McpServerBreakdown", () => {
     const s: Summary = {
       ...minimalSummary,
       byMcpServer: [
-        { serverName: "ccd_session", calls: 100, sessions: 10 },
+        { serverName: "ccd_session", calls: 100, sessions: 10, lastUsed: "2026-06-30T00:00:00.000Z" },
       ],
     };
     render(<McpServerBreakdown s={s} />);
     expect(screen.queryByText(/CLI/)).not.toBeInTheDocument();
+  });
+
+  it("callCount:0の定義済みMCPサーバーに未使用バッジを表示する", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [
+        { serverName: "gh", calls: 5, sessions: 2, lastUsed: "2026-06-29T00:00:00.000Z" },
+      ],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "gh", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 5, lastUsed: "2026-06-29T00:00:00.000Z" },
+          { name: "unused-server", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+        ],
+      },
+    };
+    render(<McpServerBreakdown s={s} />);
+    expect(screen.getByText("未使用")).toBeInTheDocument();
+  });
+
+  it("callCountが0より大きい定義済みMCPサーバーには未使用バッジを表示しない", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [
+        { serverName: "gh", calls: 5, sessions: 2, lastUsed: "2026-06-29T00:00:00.000Z" },
+      ],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "gh", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 5, lastUsed: "2026-06-29T00:00:00.000Z" },
+        ],
+      },
+    };
+    render(<McpServerBreakdown s={s} />);
+    expect(screen.queryByText("未使用")).not.toBeInTheDocument();
+  });
+
+  it("lastUsedがある場合、最終使用日をYYYY-MM-DD形式で表示する", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [
+        { serverName: "gh", calls: 5, sessions: 2, lastUsed: "2026-06-29T10:00:00.000Z" },
+      ],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "gh", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 5, lastUsed: "2026-06-29T10:00:00.000Z" },
+        ],
+      },
+    };
+    render(<McpServerBreakdown s={s} />);
+    expect(screen.getByText("2026-06-29")).toBeInTheDocument();
+  });
+
+  it("lastUsedがnullの場合、未使用扱いのハイフン等が表示されクラッシュしない", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [
+        { serverName: "unused-server", calls: 0, sessions: 0, lastUsed: null },
+      ],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "unused-server", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+        ],
+      },
+    };
+    expect(() => render(<McpServerBreakdown s={s} />)).not.toThrow();
+  });
+
+  it("byMcpServerが空でもoverhead.mcpServersに定義済みサーバーがあれば未使用として表示する", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "unused-server", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+        ],
+      },
+    };
+    render(<McpServerBreakdown s={s} />);
+    expect(screen.getByText("unused-server")).toBeInTheDocument();
+    expect(screen.getByText("未使用")).toBeInTheDocument();
+  });
+
+  it("定義済みだがログにのみ存在するサーバー名の不一致でもクラッシュしない", () => {
+    const s: Summary = {
+      ...minimalSummary,
+      byMcpServer: [
+        { serverName: "log-only-server", calls: 3, sessions: 1, lastUsed: "2026-06-20T00:00:00.000Z" },
+      ],
+      overhead: {
+        ...minimalSummary.overhead,
+        mcpServers: [
+          { name: "defined-only-server", toolCount: null, estimatedTokens: 1500, source: "estimated", callCount: 0, lastUsed: null },
+        ],
+      },
+    };
+    expect(() => render(<McpServerBreakdown s={s} />)).not.toThrow();
   });
 });

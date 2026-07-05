@@ -54,15 +54,42 @@ function McpServerBreakdownTooltip({ active, payload }: McpServerBreakdownToolti
 export function McpServerBreakdown({ s }: { s: Summary }) {
   const [mode, setMode] = useState<DisplayMode>("calls");
 
-  if (!s.byMcpServer || s.byMcpServer.length === 0) return null;
+  const byMcpServer = s.byMcpServer ?? [];
+  const definedServers = s.overhead?.mcpServers ?? [];
+  if (byMcpServer.length === 0 && definedServers.length === 0) return null;
 
-  const data = s.byMcpServer.map((m: McpServerUsage) => ({
-    key: m.serverName,
-    name: m.serverName,
-    calls: m.calls,
-    sessions: m.sessions,
-    isLowUsage: m.calls < LOW_USAGE_CALLS_THRESHOLD,
-  }));
+  // 定義済みMCPサーバー（overhead.mcpServers、callCount/lastUsed突合済み）をサーバー名で引けるようにする。
+  // ログにのみ存在し定義に無いサーバーは overhead.mcpServers に含まれないため undefined になる（想定内）。
+  const overheadByName = new Map(definedServers.map((m) => [m.name, m]));
+
+  // 棒グラフは実際の呼び出し実績（byMcpServer）のみを対象にする（0件のサーバーを含めるとグラフが崩れるため）。
+  const data = byMcpServer.map((m: McpServerUsage) => {
+    const overheadEntry = overheadByName.get(m.serverName);
+    return {
+      key: m.serverName,
+      name: m.serverName,
+      calls: m.calls,
+      sessions: m.sessions,
+      isLowUsage: m.calls < LOW_USAGE_CALLS_THRESHOLD,
+      isUnused: overheadEntry?.callCount === 0,
+      lastUsed: overheadEntry?.lastUsed ?? m.lastUsed,
+    };
+  });
+
+  // テーブルは定義済みだが利用実績が一切無い（byMcpServerに現れない）サーバーも「未使用」として追加表示する。
+  const usageNames = new Set(byMcpServer.map((m) => m.serverName));
+  const neverUsedRows = definedServers
+    .filter((m) => !usageNames.has(m.name))
+    .map((m) => ({
+      key: m.name,
+      name: m.name,
+      calls: 0,
+      sessions: 0,
+      isLowUsage: true,
+      isUnused: m.callCount === 0,
+      lastUsed: m.lastUsed,
+    }));
+  const tableRows = [...data, ...neverUsedRows];
 
   const dataKey = mode === "sessions" ? "sessions" : "calls";
   const fmt = (value: number) => compact(value);
@@ -92,47 +119,52 @@ export function McpServerBreakdown({ s }: { s: Summary }) {
           </button>
         </div>
       </div>
-      <ResponsiveContainer width="100%" height={Math.max(160, data.length * 52)}>
-        <BarChart data={data} layout="vertical" margin={{ left: 120, right: 56 }}>
-          <CartesianGrid horizontal={false} stroke="var(--grid)" />
-          <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
-          <YAxis type="category" dataKey="name" width={120} stroke="var(--axis)" tick={{ fontSize: 12 }} />
-          <Tooltip
-            content={<McpServerBreakdownTooltip />}
-            cursor={{ fill: "rgba(255,255,255,0.04)" }}
-          />
-          <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
-            {data.map((d, i) => (
-              <Cell key={d.key} fill={PALETTE[i % PALETTE.length]} />
-            ))}
-            <LabelList
-              dataKey={dataKey}
-              position="right"
-              formatter={fmt}
-              style={{ fill: "var(--muted)", fontSize: 11 }}
+      {data.length > 0 && (
+        <ResponsiveContainer width="100%" height={Math.max(160, data.length * 52)}>
+          <BarChart data={data} layout="vertical" margin={{ left: 120, right: 56 }}>
+            <CartesianGrid horizontal={false} stroke="var(--grid)" />
+            <XAxis type="number" tickFormatter={fmt} stroke="var(--axis)" tick={{ fontSize: 11 }} />
+            <YAxis type="category" dataKey="name" width={120} stroke="var(--axis)" tick={{ fontSize: 12 }} />
+            <Tooltip
+              content={<McpServerBreakdownTooltip />}
+              cursor={{ fill: "rgba(255,255,255,0.04)" }}
             />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
+            <Bar dataKey={dataKey} radius={[0, 4, 4, 0]} barSize={20}>
+              {data.map((d, i) => (
+                <Cell key={d.key} fill={PALETTE[i % PALETTE.length]} />
+              ))}
+              <LabelList
+                dataKey={dataKey}
+                position="right"
+                formatter={fmt}
+                style={{ fill: "var(--muted)", fontSize: 11 }}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
       <table className="tbl">
         <thead>
           <tr>
             <th>MCPサーバー</th>
             <th>{mode === "sessions" ? "セッション数" : "呼び出し回数"}</th>
             <th>割合</th>
+            <th>最終使用日</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((d, i) => {
+          {tableRows.map((d, i) => {
             const value = mode === "sessions" ? d.sessions : d.calls;
             return (
               <tr key={d.key}>
                 <td>
                   <span className="dot" style={{ background: PALETTE[i % PALETTE.length] }} />
                   {d.name}
+                  {d.isUnused && <span className="badge">未使用</span>}
                 </td>
                 <td>{fmt(value)}</td>
                 <td>{total > 0 ? ((value / total) * 100).toFixed(1) + "%" : "—"}</td>
+                <td>{d.lastUsed ? d.lastUsed.slice(0, 10) : "—"}</td>
               </tr>
             );
           })}

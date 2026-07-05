@@ -11,7 +11,17 @@ import {
   MCP_OVERHEAD_TOKEN_THRESHOLD,
   DUPLICATE_READ_TOKEN_THRESHOLD,
 } from "./advisor";
-import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost } from "./api";
+import { BLOAT_CONTEXT_THRESHOLD, BLOAT_MIN_MESSAGES, type Summary, type SessionCost, type McpServerOverhead } from "./api";
+
+const mcpServerOverhead = (over: Partial<McpServerOverhead>): McpServerOverhead => ({
+  name: "server",
+  toolCount: null,
+  estimatedTokens: 1500,
+  source: "estimated",
+  callCount: 0,
+  lastUsed: null,
+  ...over,
+});
 
 const session = (over: Partial<SessionCost>): SessionCost => ({
   sessionId: "s1",
@@ -445,7 +455,7 @@ describe("buildRecommendations - mcp-overhead", () => {
       overhead: {
         ...baseSummary().overhead,
         mcpServers: [
-          { name: "github", toolCount: null, estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD + 1, source: "estimated" },
+          mcpServerOverhead({ name: "github", estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD + 1 }),
         ],
       },
     });
@@ -465,7 +475,7 @@ describe("buildRecommendations - mcp-overhead", () => {
       overhead: {
         ...baseSummary().overhead,
         mcpServers: [
-          { name: "github", toolCount: null, estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD, source: "estimated" },
+          mcpServerOverhead({ name: "github", estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD }),
         ],
       },
     });
@@ -478,13 +488,114 @@ describe("buildRecommendations - mcp-overhead", () => {
       overhead: {
         ...baseSummary().overhead,
         mcpServers: [
-          { name: "unknown-server", toolCount: null, estimatedTokens: null, source: "unknown" },
+          mcpServerOverhead({ name: "unknown-server", estimatedTokens: null, source: "unknown" }),
         ],
       },
     });
     expect(() => buildRecommendations(s)).not.toThrow();
     const item = buildRecommendations(s).items.find((i) => i.id === "mcp-overhead");
     expect(item).toBeUndefined();
+  });
+});
+
+describe("buildRecommendations - mcp-unused-servers", () => {
+  it("callCount:0のMCPサーバーを名指しし、mcp-unused-serversルールが発火する", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          mcpServerOverhead({ name: "unused-github", estimatedTokens: 1500, callCount: 0, lastUsed: null }),
+        ],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeDefined();
+    expect(item!.detail).toContain("unused-github");
+    expect(item!.estMonthlySavings).toBeGreaterThan(0);
+  });
+
+  it("全サーバーが使用中なら未使用ルールは発火しない", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          mcpServerOverhead({ name: "github", estimatedTokens: 1500, callCount: 10, lastUsed: "2026-06-20T00:00:00.000Z" }),
+        ],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeUndefined();
+  });
+
+  it("MCPサーバーが1件も無ければ未使用ルールは発火しない", () => {
+    const item = buildRecommendations(baseSummary()).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeUndefined();
+  });
+
+  it("未使用サーバーのestimatedTokens合計から月間節約額を算出する", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          mcpServerOverhead({ name: "unused-a", estimatedTokens: 1500, callCount: 0, lastUsed: null }),
+          mcpServerOverhead({ name: "unused-b", estimatedTokens: 1500, callCount: 0, lastUsed: null }),
+          mcpServerOverhead({ name: "used-c", estimatedTokens: 1500, callCount: 5, lastUsed: "2026-06-20T00:00:00.000Z" }),
+        ],
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeDefined();
+    expect(item!.detail).toContain("unused-a");
+    expect(item!.detail).toContain("unused-b");
+    expect(item!.detail).not.toContain("used-c");
+    expect(item!.estMonthlySavings).toBeGreaterThan(0);
+  });
+
+  it("mcp-overheadとmcp-unused-serversが同時に発火しうる（共存）", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          mcpServerOverhead({ name: "unused-a", estimatedTokens: MCP_OVERHEAD_TOKEN_THRESHOLD + 1, callCount: 0, lastUsed: null }),
+        ],
+      },
+    });
+    const items = buildRecommendations(s).items;
+    expect(items.find((i) => i.id === "mcp-overhead")).toBeDefined();
+    expect(items.find((i) => i.id === "mcp-unused-servers")).toBeDefined();
+  });
+
+  it("estimatedTokensがnullの未使用サーバーはnull扱いされクラッシュしない", () => {
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: [
+          mcpServerOverhead({ name: "unknown-unused", estimatedTokens: null, source: "unknown", callCount: 0, lastUsed: null }),
+        ],
+      },
+    });
+    expect(() => buildRecommendations(s)).not.toThrow();
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeDefined();
+    expect(item!.estMonthlySavings).toBe(0);
+  });
+
+  it("未使用サーバーが上限件数(5件)を超える場合、名前列挙が先頭5件に切り詰められ「ほか」が付与される", () => {
+    const unusedNames = ["a", "b", "c", "d", "e", "f"];
+    const s = baseSummary({
+      overhead: {
+        ...baseSummary().overhead,
+        mcpServers: unusedNames.map((name) =>
+          mcpServerOverhead({ name, estimatedTokens: 1500, callCount: 0, lastUsed: null })
+        ),
+      },
+    });
+    const item = buildRecommendations(s).items.find((i) => i.id === "mcp-unused-servers");
+    expect(item).toBeDefined();
+    expect(item!.detail).toContain("6 件");
+    expect(item!.detail).toContain("a, b, c, d, e ほか");
+    expect(item!.detail).not.toContain("f");
+    expect(item!.action).toContain("a, b, c, d, e ほか");
   });
 });
 

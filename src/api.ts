@@ -124,6 +124,7 @@ export interface McpServerUsage {
   serverName: string;
   calls: number;
   sessions: number;
+  lastUsed: string | null;
 }
 
 // tool_result（Read/Bash/Grep等）累積のツール種別ごとの近似トークン集計。
@@ -172,6 +173,8 @@ export interface McpServerOverhead {
   toolCount: number | null;
   estimatedTokens: number | null;
   source: "measured" | "estimated" | "unknown";
+  callCount: number; // 期間内の呼び出し回数（0 = 未使用候補）
+  lastUsed: string | null; // 最終使用日時（ISO文字列）。利用実績が無ければ null
 }
 
 // extended thinking（推論）トークンの近似内訳。

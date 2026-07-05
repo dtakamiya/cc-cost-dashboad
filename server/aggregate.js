@@ -203,29 +203,54 @@ export function computeToolUsage(toolUseRecords = []) {
 
 /**
  * mcp__ プレフィックスの tool_use レコード配列を MCP サーバー単位で集計する（calls 降順）。
+ * lastUsed は ts を持つレコードの最大値（ISO文字列比較で十分。欠落時は既存の lastUsed を維持）。
+ * ts を持つレコードが1件も無いサーバーは lastUsed: null になる。
  * @param {object[]} toolUseRecords - tool_use レコード配列（serverName を持つもののみ対象）
  * @returns {object[]} サーバー別サマリ（calls 降順）
  */
 export function computeMcpUsage(toolUseRecords = []) {
   if (!toolUseRecords.length) return [];
 
-  const map = new Map(); // serverName -> { serverName, calls, sessions: Set }
+  const map = new Map(); // serverName -> { serverName, calls, sessions: Set, lastUsed }
 
   for (const r of toolUseRecords) {
     if (!r.serverName) continue;
 
     let entry = map.get(r.serverName);
     if (!entry) {
-      entry = { serverName: r.serverName, calls: 0, sessions: new Set() };
+      entry = { serverName: r.serverName, calls: 0, sessions: new Set(), lastUsed: null };
       map.set(r.serverName, entry);
     }
     entry.calls += 1;
     if (r.sessionId !== "(unknown)") entry.sessions.add(r.sessionId);
+    if (r.ts && (!entry.lastUsed || r.ts > entry.lastUsed)) entry.lastUsed = r.ts;
   }
 
   return [...map.values()]
     .map((entry) => ({ ...entry, sessions: entry.sessions.size }))
     .sort((a, b) => b.calls - a.calls);
+}
+
+/**
+ * 定義済み MCP サーバー一覧（analyzeOverhead の overhead.mcpServers）に、実際の利用実績
+ * （computeMcpUsage の戻り値）を突合し、callCount・lastUsed を付与した新しい配列を返す。
+ * ログにのみ存在するサーバー（定義に無いもの）は無視する（クラッシュしない・出力にも含めない）。
+ * 元の mcpServers / byMcpServer 配列・要素は変更しない（イミュータブル）。
+ * @param {object[]} mcpServers - analyzeOverhead().mcpServers（定義済みサーバー一覧）
+ * @param {object[]} byMcpServer - computeMcpUsage() の戻り値（実際の利用実績）
+ * @returns {object[]} callCount・lastUsed を付与した新しい配列
+ */
+export function enrichMcpServers(mcpServers = [], byMcpServer = []) {
+  const usageByName = new Map(byMcpServer.map((u) => [u.serverName, u]));
+
+  return mcpServers.map((m) => {
+    const usage = usageByName.get(m.name);
+    return {
+      ...m,
+      callCount: usage ? usage.calls : 0,
+      lastUsed: usage ? usage.lastUsed : null,
+    };
+  });
 }
 
 /**
