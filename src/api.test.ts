@@ -330,6 +330,36 @@ describe("filterSummary exploration", () => {
     expect(filtered.exploration!.heavySessions[0].sessionId).toBe("sess-recent");
   });
 
+  it("期間内なら bySession の top30 表示外でも heavySessions に残す", () => {
+    const recentTopSessions = Array.from({ length: 30 }, (_, i) => ({
+      ...sess("/home/u/recent", 100 - i, 1000),
+      sessionId: `sess-top-${i}`,
+      lastTs: `${ymdAgo(1)}T00:00:00.000Z`,
+    }));
+    const recentHeavySession: SessionCost = {
+      ...sess("/home/u/recent", 1, 1000),
+      sessionId: "sess-heavy-outside-top30",
+      lastTs: `${ymdAgo(1)}T00:00:00.000Z`,
+    };
+    const s: Summary = {
+      ...summary(),
+      bySession: [...recentTopSessions, recentHeavySession],
+      exploration: {
+        heavySessions: [
+          { sessionId: "sess-heavy-outside-top30", cwd: "/home/u/recent", explorationTokensApprox: 10_000, totalToolResultTokensApprox: 12_000, explorationRatio: 10_000 / 12_000 },
+        ],
+        isApprox: true,
+      },
+    };
+
+    const filtered = filterSummary(s, "7d");
+
+    expect(filtered.bySession).toHaveLength(30);
+    expect(filtered.bySession.some((sess) => sess.sessionId === "sess-heavy-outside-top30")).toBe(false);
+    expect(filtered.exploration!.heavySessions).toHaveLength(1);
+    expect(filtered.exploration!.heavySessions[0].sessionId).toBe("sess-heavy-outside-top30");
+  });
+
   it("残ったセッションの explorationTokensApprox は tokenRatio でスケールされ、explorationRatio は不変になる", () => {
     const recentSession: SessionCost = { ...sess("/home/u/recent", 20, 20_000), sessionId: "sess-recent", lastTs: `${ymdAgo(1)}T00:00:00.000Z` };
     const s: Summary = {
@@ -526,6 +556,33 @@ describe("filterSummaryByProject", () => {
     const result = filterSummaryByProject(s, "/home/u/projA");
     expect(result.exploration!.heavySessions).toHaveLength(1);
     expect(result.exploration!.heavySessions[0].cwd).toBe("/home/u/projA");
+    // tokenRatio = 130_000 / 150_000
+    const ratio = 130_000 / 150_000;
+    expect(result.exploration!.heavySessions[0].explorationTokensApprox).toBeCloseTo(80_000 * ratio, 6);
+    expect(result.exploration!.heavySessions[0].totalToolResultTokensApprox).toBeCloseTo(100_000 * ratio, 6);
+    expect(result.exploration!.heavySessions[0].explorationRatio).toBeCloseTo(0.8, 10);
+  });
+
+  it("選択 cwd なら bySession の top30 表示外でも heavySessions に残す", () => {
+    const s: Summary = {
+      ...summaryWithProjects(),
+      bySession: [
+        sess("/home/u/projB", 50, 20_000),
+      ],
+      exploration: {
+        heavySessions: [
+          { sessionId: "sess-/home/u/projA-100", cwd: "/home/u/projA", explorationTokensApprox: 80_000, totalToolResultTokensApprox: 100_000, explorationRatio: 0.8 },
+          { sessionId: "sess-/home/u/projB-50", cwd: "/home/u/projB", explorationTokensApprox: 30_000, totalToolResultTokensApprox: 40_000, explorationRatio: 0.75 },
+        ],
+        isApprox: true,
+      },
+    };
+
+    const result = filterSummaryByProject(s, "/home/u/projA");
+
+    expect(result.bySession).toHaveLength(0);
+    expect(result.exploration!.heavySessions).toHaveLength(1);
+    expect(result.exploration!.heavySessions[0].sessionId).toBe("sess-/home/u/projA-100");
   });
 
   it("exploration が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {

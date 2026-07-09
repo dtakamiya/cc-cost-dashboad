@@ -433,13 +433,11 @@ export function filterSummary(s: Summary, period: Period): Summary {
   if (isDateRange(period)) {
     const { from, to } = period;
     const filteredDaily = s.daily.filter(d => d.date >= from && d.date <= to);
-    const filteredSessions = s.bySession
-      .filter((sess) => {
-        const d = sess.lastTs?.slice(0, 10) ?? "";
-        return d >= from && d <= to;
-      })
-      .slice(0, 30);
-    return buildPeriodSummary(s, filteredDaily, filteredSessions);
+    const periodSessions = s.bySession.filter((sess) => {
+      const d = sess.lastTs?.slice(0, 10) ?? "";
+      return d >= from && d <= to;
+    });
+    return buildPeriodSummary(s, filteredDaily, periodSessions.slice(0, 30), sessionIdSet(periodSessions));
   }
 
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
@@ -452,11 +450,10 @@ export function filterSummary(s: Summary, period: Period): Summary {
 
   // セッションは単位として扱い、最終利用日(lastTs)が cutoff 以降のものを残し、コスト降順 top30 に絞る。
   // サーバーは全セッションを返すため、ここで期間フィルタ後の上位件数を決定する。
-  const filteredSessions = s.bySession
-    .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr)
-    .slice(0, 30);
+  const periodSessions = s.bySession
+    .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr);
 
-  return buildPeriodSummary(s, filteredDaily, filteredSessions);
+  return buildPeriodSummary(s, filteredDaily, periodSessions.slice(0, 30), sessionIdSet(periodSessions));
 }
 
 /**
@@ -519,6 +516,10 @@ function scaleExploration(
   };
 }
 
+function sessionIdSet(sessions: SessionCost[]): Set<string> {
+  return new Set(sessions.map((sess) => sess.sessionId));
+}
+
 /**
  * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
  * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
@@ -539,7 +540,8 @@ function sumSubagentStats(filteredDaily: DailyCost[]): SubagentStats {
 function buildPeriodSummary(
   s: Summary,
   filteredDaily: DailyCost[],
-  filteredSessions: SessionCost[]
+  filteredSessions: SessionCost[],
+  explorationAllowedSessionIds = sessionIdSet(filteredSessions)
 ): Summary {
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
@@ -628,7 +630,7 @@ function buildPeriodSummary(
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
     // exploration.heavySessions は filteredSessions に含まれるセッションのみへ絞り込む
     // （絞り込み対象外のセッションがトークン数だけ縮小されて残るのを防ぐ）。
-    exploration: scaleExploration(s.exploration, tokenRatio, new Set(filteredSessions.map((sess) => sess.sessionId))),
+    exploration: scaleExploration(s.exploration, tokenRatio, explorationAllowedSessionIds),
   };
 }
 
@@ -900,7 +902,11 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
     // exploration.heavySessions は選択した cwd に属する filteredSessions のみへ絞り込む
     // （他プロジェクトのセッションがトークン数だけ縮小されて残るのを防ぐ）。
-    exploration: scaleExploration(s.exploration, tokenRatio, new Set(filteredSessions.map((sess) => sess.sessionId))),
+    exploration: scaleExploration(
+      s.exploration,
+      tokenRatio,
+      new Set(s.exploration?.heavySessions.filter((h) => h.cwd === cwdFilter).map((h) => h.sessionId) ?? [])
+    ),
   };
 }
 

@@ -20,10 +20,10 @@ export function ExplorationBreakdown({ s }: { s: Summary }) {
       <table className="tbl">
         <thead>
           <tr>
-            <th>セッション</th>
-            <th>プロジェクト</th>
-            <th>探索トークン数（近似）</th>
-            <th>探索比率</th>
+            <th scope="col">セッション</th>
+            <th scope="col">プロジェクト</th>
+            <th scope="col">探索トークン数（近似）</th>
+            <th scope="col">探索比率</th>
           </tr>
         </thead>
         <tbody>
