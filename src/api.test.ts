@@ -308,6 +308,54 @@ describe("filterSummary toolResultBreakdown", () => {
   });
 });
 
+describe("filterSummary exploration", () => {
+  it("期間フィルタで除外されたセッションを heavySessions から除去する", () => {
+    // ymdAgo(1) のセッション（7d に残る）と ymdAgo(40) のセッション（7d から除外される）を用意する。
+    const oldSession: SessionCost = { ...sess("/home/u/old", 80, 60_000), sessionId: "sess-old", lastTs: `${ymdAgo(40)}T00:00:00.000Z` };
+    const recentSession: SessionCost = { ...sess("/home/u/recent", 20, 20_000), sessionId: "sess-recent", lastTs: `${ymdAgo(1)}T00:00:00.000Z` };
+    const s: Summary = {
+      ...summary(),
+      bySession: [oldSession, recentSession],
+      exploration: {
+        heavySessions: [
+          { sessionId: "sess-old", cwd: "/home/u/old", explorationTokensApprox: 30_000, totalToolResultTokensApprox: 40_000, explorationRatio: 0.75 },
+          { sessionId: "sess-recent", cwd: "/home/u/recent", explorationTokensApprox: 10_000, totalToolResultTokensApprox: 12_000, explorationRatio: 10_000 / 12_000 },
+        ],
+        isApprox: true,
+      },
+    };
+    const filtered = filterSummary(s, "7d");
+    // 期間外の sess-old は除外され、sess-recent のみ残る
+    expect(filtered.exploration!.heavySessions).toHaveLength(1);
+    expect(filtered.exploration!.heavySessions[0].sessionId).toBe("sess-recent");
+  });
+
+  it("残ったセッションの explorationTokensApprox は tokenRatio でスケールされ、explorationRatio は不変になる", () => {
+    const recentSession: SessionCost = { ...sess("/home/u/recent", 20, 20_000), sessionId: "sess-recent", lastTs: `${ymdAgo(1)}T00:00:00.000Z` };
+    const s: Summary = {
+      ...summary(),
+      bySession: [recentSession],
+      exploration: {
+        heavySessions: [
+          { sessionId: "sess-recent", cwd: "/home/u/recent", explorationTokensApprox: 10_000, totalToolResultTokensApprox: 12_000, explorationRatio: 10_000 / 12_000 },
+        ],
+        isApprox: true,
+      },
+    };
+    const filtered = filterSummary(s, "7d");
+    // 7d の総トークン = 20_000、全期間 = 100_000 → tokenRatio = 0.2
+    const ratio = 0.2;
+    expect(filtered.exploration!.heavySessions[0].explorationTokensApprox).toBeCloseTo(10_000 * ratio, 6);
+    expect(filtered.exploration!.heavySessions[0].totalToolResultTokensApprox).toBeCloseTo(12_000 * ratio, 6);
+    expect(filtered.exploration!.heavySessions[0].explorationRatio).toBeCloseTo(10_000 / 12_000, 10);
+  });
+
+  it("exploration が undefined の場合、フィルタ後も undefined のままになる", () => {
+    const filtered = filterSummary(summary(), "7d");
+    expect(filtered.exploration).toBeUndefined();
+  });
+});
+
 describe("filterSummary subagentStats", () => {
   it("7d は daily から正確に再合算する（costRatio 近似ではない）", () => {
     const filtered = filterSummary(summary(), "7d");
@@ -461,6 +509,28 @@ describe("filterSummaryByProject", () => {
   it("toolResultBreakdown が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {
     const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
     expect(result.toolResultBreakdown).toBeUndefined();
+  });
+
+  it("選択した cwd に属さないセッションを exploration.heavySessions から除去する", () => {
+    const s: Summary = {
+      ...summaryWithProjects(),
+      exploration: {
+        heavySessions: [
+          // sess() ファクトリが生成する sessionId 規則（sess-${cwd}-${cost}）に合わせる
+          { sessionId: "sess-/home/u/projA-100", cwd: "/home/u/projA", explorationTokensApprox: 80_000, totalToolResultTokensApprox: 100_000, explorationRatio: 0.8 },
+          { sessionId: "sess-/home/u/projB-50", cwd: "/home/u/projB", explorationTokensApprox: 30_000, totalToolResultTokensApprox: 40_000, explorationRatio: 0.75 },
+        ],
+        isApprox: true,
+      },
+    };
+    const result = filterSummaryByProject(s, "/home/u/projA");
+    expect(result.exploration!.heavySessions).toHaveLength(1);
+    expect(result.exploration!.heavySessions[0].cwd).toBe("/home/u/projA");
+  });
+
+  it("exploration が undefined の場合、プロジェクトフィルタ後も undefined のままになる", () => {
+    const result = filterSummaryByProject(summaryWithProjects(), "/home/u/projA");
+    expect(result.exploration).toBeUndefined();
   });
 });
 

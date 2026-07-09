@@ -498,20 +498,24 @@ function scaleToolResultBreakdown(
 }
 
 /**
- * exploration（探索過多セッション）のトークン量をtokenRatioでスケールする。
- * explorationRatioは比率のためスケール不変、explorationTokensApprox/totalToolResultTokensApproxのみスケールする。
+ * exploration（探索過多セッション）を絞り込み後の allowedSessionIds に含まれるものだけへ絞り込み、
+ * トークン量を tokenRatio でスケールする。explorationRatio は比率のためスケール不変。
+ * フィルタしないと、期間/プロジェクトを絞り込んでも対象外セッションがトークン数だけ縮小されて残ってしまう。
  */
 function scaleExploration(
   exploration: ExplorationStats | undefined,
-  tokenRatio: number
+  tokenRatio: number,
+  allowedSessionIds: Set<string>
 ): ExplorationStats | undefined {
   return exploration && {
     ...exploration,
-    heavySessions: exploration.heavySessions.map((h) => ({
-      ...h,
-      explorationTokensApprox: h.explorationTokensApprox * tokenRatio,
-      totalToolResultTokensApprox: h.totalToolResultTokensApprox * tokenRatio,
-    })),
+    heavySessions: exploration.heavySessions
+      .filter((h) => allowedSessionIds.has(h.sessionId))
+      .map((h) => ({
+        ...h,
+        explorationTokensApprox: h.explorationTokensApprox * tokenRatio,
+        totalToolResultTokensApprox: h.totalToolResultTokensApprox * tokenRatio,
+      })),
   };
 }
 
@@ -622,7 +626,9 @@ function buildPeriodSummary(
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
-    exploration: scaleExploration(s.exploration, tokenRatio),
+    // exploration.heavySessions は filteredSessions に含まれるセッションのみへ絞り込む
+    // （絞り込み対象外のセッションがトークン数だけ縮小されて残るのを防ぐ）。
+    exploration: scaleExploration(s.exploration, tokenRatio, new Set(filteredSessions.map((sess) => sess.sessionId))),
   };
 }
 
@@ -892,7 +898,9 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
-    exploration: scaleExploration(s.exploration, tokenRatio),
+    // exploration.heavySessions は選択した cwd に属する filteredSessions のみへ絞り込む
+    // （他プロジェクトのセッションがトークン数だけ縮小されて残るのを防ぐ）。
+    exploration: scaleExploration(s.exploration, tokenRatio, new Set(filteredSessions.map((sess) => sess.sessionId))),
   };
 }
 
