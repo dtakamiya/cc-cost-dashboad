@@ -172,6 +172,21 @@ export interface DuplicateReads {
   isApprox: true;
 }
 
+// セッション別の探索系ツール（Grep/Glob/WebSearch/WebFetch）tool_result比率集計。
+// 曖昧な指示による当てずっぽうな探索が多いセッションを名指しするための内訳。常に近似値（isApprox=true）。
+export interface ExplorationHeavySession {
+  sessionId: string;
+  cwd: string;
+  explorationTokensApprox: number; // 探索系ツールのtool_result近似トークン
+  totalToolResultTokensApprox: number; // セッション総tool_result近似トークン（分母）
+  explorationRatio: number; // explorationTokensApprox / total（0-1、期間スケール不変）
+}
+
+export interface ExplorationStats {
+  heavySessions: ExplorationHeavySession[]; // explorationTokensApprox降順
+  isApprox: true;
+}
+
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
 // MCPツール定義は config（command/args）から静的取得できず実行時依存のため、
 // 現状 source は常に "estimated"（保守的な既定値）。"measured" は将来の実測拡張用、
@@ -263,6 +278,7 @@ export interface Summary {
   toolResultBreakdown?: ToolResultUsage[];
   toolResultOutliers?: ToolResultOutliers;
   duplicateReads?: DuplicateReads;
+  exploration?: ExplorationStats;
 }
 
 export interface Activity {
@@ -417,13 +433,11 @@ export function filterSummary(s: Summary, period: Period): Summary {
   if (isDateRange(period)) {
     const { from, to } = period;
     const filteredDaily = s.daily.filter(d => d.date >= from && d.date <= to);
-    const filteredSessions = s.bySession
-      .filter((sess) => {
-        const d = sess.lastTs?.slice(0, 10) ?? "";
-        return d >= from && d <= to;
-      })
-      .slice(0, 30);
-    return buildPeriodSummary(s, filteredDaily, filteredSessions);
+    const periodSessions = s.bySession.filter((sess) => {
+      const d = sess.lastTs?.slice(0, 10) ?? "";
+      return d >= from && d <= to;
+    });
+    return buildPeriodSummary(s, filteredDaily, periodSessions.slice(0, 30), sessionIdSet(periodSessions));
   }
 
   if (period === 'all') return { ...s, bySession: s.bySession.slice(0, 30) };
@@ -436,11 +450,10 @@ export function filterSummary(s: Summary, period: Period): Summary {
 
   // セッションは単位として扱い、最終利用日(lastTs)が cutoff 以降のものを残し、コスト降順 top30 に絞る。
   // サーバーは全セッションを返すため、ここで期間フィルタ後の上位件数を決定する。
-  const filteredSessions = s.bySession
-    .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr)
-    .slice(0, 30);
+  const periodSessions = s.bySession
+    .filter((sess) => (sess.lastTs?.slice(0, 10) ?? "") >= cutoffStr);
 
-  return buildPeriodSummary(s, filteredDaily, filteredSessions);
+  return buildPeriodSummary(s, filteredDaily, periodSessions.slice(0, 30), sessionIdSet(periodSessions));
 }
 
 /**
@@ -482,6 +495,32 @@ function scaleToolResultBreakdown(
 }
 
 /**
+ * exploration（探索過多セッション）を絞り込み後の allowedSessionIds に含まれるものだけへ絞り込み、
+ * トークン量を tokenRatio でスケールする。explorationRatio は比率のためスケール不変。
+ * フィルタしないと、期間/プロジェクトを絞り込んでも対象外セッションがトークン数だけ縮小されて残ってしまう。
+ */
+function scaleExploration(
+  exploration: ExplorationStats | undefined,
+  tokenRatio: number,
+  allowedSessionIds: Set<string>
+): ExplorationStats | undefined {
+  return exploration && {
+    ...exploration,
+    heavySessions: exploration.heavySessions
+      .filter((h) => allowedSessionIds.has(h.sessionId))
+      .map((h) => ({
+        ...h,
+        explorationTokensApprox: h.explorationTokensApprox * tokenRatio,
+        totalToolResultTokensApprox: h.totalToolResultTokensApprox * tokenRatio,
+      })),
+  };
+}
+
+function sessionIdSet(sessions: SessionCost[]): Set<string> {
+  return new Set(sessions.map((sess) => sess.sessionId));
+}
+
+/**
  * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
  * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
  */
@@ -501,7 +540,8 @@ function sumSubagentStats(filteredDaily: DailyCost[]): SubagentStats {
 function buildPeriodSummary(
   s: Summary,
   filteredDaily: DailyCost[],
-  filteredSessions: SessionCost[]
+  filteredSessions: SessionCost[],
+  explorationAllowedSessionIds = sessionIdSet(filteredSessions)
 ): Summary {
   const costByModel = new Map<string, number>();
   const tokenByModel = new Map<string, number>();
@@ -588,6 +628,9 @@ function buildPeriodSummary(
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
+    // exploration.heavySessions は filteredSessions に含まれるセッションのみへ絞り込む
+    // （絞り込み対象外のセッションがトークン数だけ縮小されて残るのを防ぐ）。
+    exploration: scaleExploration(s.exploration, tokenRatio, explorationAllowedSessionIds),
   };
 }
 
@@ -857,6 +900,13 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
+    // exploration.heavySessions は選択した cwd に属する filteredSessions のみへ絞り込む
+    // （他プロジェクトのセッションがトークン数だけ縮小されて残るのを防ぐ）。
+    exploration: scaleExploration(
+      s.exploration,
+      tokenRatio,
+      new Set(s.exploration?.heavySessions.filter((h) => h.cwd === cwdFilter).map((h) => h.sessionId) ?? [])
+    ),
   };
 }
 

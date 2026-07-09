@@ -1134,3 +1134,38 @@ describe("buildRecommendations - duplicate-reads", () => {
     expect(r.items.find((i) => i.id === "duplicate-reads")).toBeUndefined();
   });
 });
+
+describe("buildRecommendations - exploration-heavy", () => {
+  const exploration = (over: Partial<NonNullable<Summary["exploration"]>> = {}) => ({
+    heavySessions: [
+      {
+        sessionId: "s1",
+        cwd: "/home/u/proj",
+        explorationTokensApprox: 60_000,
+        totalToolResultTokensApprox: 100_000,
+        explorationRatio: 0.6,
+      },
+    ],
+    isApprox: true as const,
+    ...over,
+  });
+
+  it("探索過多セッションが存在する場合に exploration-heavy が1件生成される", () => {
+    const s = baseSummary({ exploration: exploration() });
+    const r = buildRecommendations(s);
+    const items = r.items.filter((i) => i.id === "exploration-heavy");
+    expect(items).toHaveLength(1);
+  });
+
+  it("heavySessionsが空の場合は生成されない", () => {
+    const s = baseSummary({ exploration: exploration({ heavySessions: [] }) });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "exploration-heavy")).toBeUndefined();
+  });
+
+  it("explorationが未定義（旧レスポンス）では発火せずクラッシュもしない", () => {
+    const s = baseSummary({ exploration: undefined });
+    const r = buildRecommendations(s);
+    expect(r.items.find((i) => i.id === "exploration-heavy")).toBeUndefined();
+  });
+});
