@@ -172,6 +172,21 @@ export interface DuplicateReads {
   isApprox: true;
 }
 
+// セッション別の探索系ツール（Grep/Glob/WebSearch/WebFetch）tool_result比率集計。
+// 曖昧な指示による当てずっぽうな探索が多いセッションを名指しするための内訳。常に近似値（isApprox=true）。
+export interface ExplorationHeavySession {
+  sessionId: string;
+  cwd: string;
+  explorationTokensApprox: number; // 探索系ツールのtool_result近似トークン
+  totalToolResultTokensApprox: number; // セッション総tool_result近似トークン（分母）
+  explorationRatio: number; // explorationTokensApprox / total（0-1、期間スケール不変）
+}
+
+export interface ExplorationStats {
+  heavySessions: ExplorationHeavySession[]; // explorationTokensApprox降順
+  isApprox: true;
+}
+
 // MCPサーバ1件あたりの常時オーバーヘッド推定。
 // MCPツール定義は config（command/args）から静的取得できず実行時依存のため、
 // 現状 source は常に "estimated"（保守的な既定値）。"measured" は将来の実測拡張用、
@@ -263,6 +278,7 @@ export interface Summary {
   toolResultBreakdown?: ToolResultUsage[];
   toolResultOutliers?: ToolResultOutliers;
   duplicateReads?: DuplicateReads;
+  exploration?: ExplorationStats;
 }
 
 export interface Activity {
@@ -482,6 +498,24 @@ function scaleToolResultBreakdown(
 }
 
 /**
+ * exploration（探索過多セッション）のトークン量をtokenRatioでスケールする。
+ * explorationRatioは比率のためスケール不変、explorationTokensApprox/totalToolResultTokensApproxのみスケールする。
+ */
+function scaleExploration(
+  exploration: ExplorationStats | undefined,
+  tokenRatio: number
+): ExplorationStats | undefined {
+  return exploration && {
+    ...exploration,
+    heavySessions: exploration.heavySessions.map((h) => ({
+      ...h,
+      explorationTokensApprox: h.explorationTokensApprox * tokenRatio,
+      totalToolResultTokensApprox: h.totalToolResultTokensApprox * tokenRatio,
+    })),
+  };
+}
+
+/**
  * filteredDaily（スケール後の絶対量を保持）から SubagentStats を正確に再合算する。
  * costRatio 近似ではなく、mainTokens/subagentTokens 等の絶対量を積算してから比率を再計算する。
  */
@@ -588,6 +622,7 @@ function buildPeriodSummary(
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
+    exploration: scaleExploration(s.exploration, tokenRatio),
   };
 }
 
@@ -857,6 +892,7 @@ export function filterSummaryByProject(s: Summary, cwdFilter: string): Summary {
     // （cacheStats 等の costRatio とは異なり、tokensApprox は純粋なトークン量のため）。
     // bySession[].toolResultTokensApprox は filteredSessions（実測値）をそのまま保持する。
     toolResultBreakdown: scaleToolResultBreakdown(s.toolResultBreakdown, tokenRatio),
+    exploration: scaleExploration(s.exploration, tokenRatio),
   };
 }
 

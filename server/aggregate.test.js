@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, detectUnexplainedCacheBusts, computeToolUsage, computeMcpUsage, enrichMcpServers, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
+import { aggregate, filterRecordsByPeriod, computeCacheGapStats, computeModelSwitchStats, detectUnexplainedCacheBusts, computeToolUsage, computeMcpUsage, enrichMcpServers, computeToolResultUsage, computeToolResultOutliers, computeDuplicateReads, mergeToolResultTokensIntoSessions, computeExplorationHeavySessions, EXPLORATION_TOOLS, EXPLORATION_RATIO_THRESHOLD, EXPLORATION_MIN_TOKENS, CACHE_5M_TTL_MS, CACHE_1H_TTL_MS, MCP_OUTPUT_CAP_TOKENS, BASH_OUTPUT_CAP_TOKENS } from "./aggregate.js";
 import { costOf } from "./pricing.js";
 
 // 正規化レコードの最小ヘルパー（parser.js の出力形を模す）。
@@ -1814,6 +1814,37 @@ describe("aggregate() toolResultBreakdown", () => {
   });
 });
 
+// ─── aggregate(): exploration ────────────────────────────────────────────
+
+describe("aggregate() exploration", () => {
+  it("toolResultRecords オプションを渡すと exploration.heavySessions が戻り値に含まれる", () => {
+    const records = [rec({ sessionId: "s1" })];
+    const toolResultRecords = [
+      toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: EXPLORATION_MIN_TOKENS + 1000 }),
+    ];
+    const result = aggregate(records, { toolResultRecords });
+    expect(result.exploration).toBeDefined();
+    expect(result.exploration.heavySessions).toHaveLength(1);
+    expect(result.exploration.heavySessions[0].sessionId).toBe("s1");
+    expect(result.exploration.isApprox).toBe(true);
+  });
+
+  it("toolResultRecords 未指定時は exploration.heavySessions が []", () => {
+    const result = aggregate([rec({ sessionId: "s1" })]);
+    expect(result.exploration).toEqual({ heavySessions: [], isApprox: true });
+  });
+
+  it("totalCost・totalTokensにexplorationのトークンが加算されない（二重計上防止）", () => {
+    const records = [rec({ sessionId: "s1", output: 1000 })];
+    const withoutExploration = aggregate(records);
+    const withExploration = aggregate(records, {
+      toolResultRecords: [toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: 999999 })],
+    });
+    expect(withExploration.totals.cost).toBeCloseTo(withoutExploration.totals.cost, 10);
+    expect(withExploration.totals.tokens).toBe(withoutExploration.totals.tokens);
+  });
+});
+
 // ─── computeToolResultOutliers ────────────────────────────────────────────
 
 describe("computeToolResultOutliers", () => {
@@ -2007,5 +2038,83 @@ describe("computeDuplicateReads", () => {
     const result = computeDuplicateReads(toolUseRecords, []);
     expect(result.totalDuplicateReads).toBe(0);
     expect(result.byFile).toEqual([]);
+  });
+});
+
+// ─── computeExplorationHeavySessions ───────────────────────────────────────
+
+describe("computeExplorationHeavySessions", () => {
+  it("空配列入力で { heavySessions: [], isApprox: true } を返す", () => {
+    expect(computeExplorationHeavySessions([])).toEqual({ heavySessions: [], isApprox: true });
+  });
+
+  it("引数省略時も { heavySessions: [], isApprox: true } を返す", () => {
+    expect(computeExplorationHeavySessions()).toEqual({ heavySessions: [], isApprox: true });
+  });
+
+  it("探索比率が閾値超かつ絶対値が下限超のセッションのみ返す", () => {
+    const explorationTokens = EXPLORATION_MIN_TOKENS + 1000;
+    const totalTokens = explorationTokens / (EXPLORATION_RATIO_THRESHOLD + 0.01); // 比率を閾値超に
+    const records = [
+      toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: explorationTokens }),
+      toolResultRec({ sessionId: "s1", toolName: "Read", tokensApprox: totalTokens - explorationTokens }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions).toHaveLength(1);
+    expect(result.heavySessions[0].sessionId).toBe("s1");
+    expect(result.heavySessions[0].cwd).toBe("/home/u/proj");
+    expect(result.heavySessions[0].explorationTokensApprox).toBe(explorationTokens);
+    expect(result.heavySessions[0].explorationRatio).toBeGreaterThan(EXPLORATION_RATIO_THRESHOLD);
+    expect(result.isApprox).toBe(true);
+  });
+
+  it("EXPLORATION_TOOLSに含まれるツール名（Grep/Glob/WebSearch/WebFetch）がすべて探索系として扱われる", () => {
+    expect(EXPLORATION_TOOLS.has("Grep")).toBe(true);
+    expect(EXPLORATION_TOOLS.has("Glob")).toBe(true);
+    expect(EXPLORATION_TOOLS.has("WebSearch")).toBe(true);
+    expect(EXPLORATION_TOOLS.has("WebFetch")).toBe(true);
+    expect(EXPLORATION_TOOLS.has("Read")).toBe(false);
+  });
+
+  it("探索トークンが0のセッション（比率0）は除外される、かつゼロ除算しない", () => {
+    const records = [
+      toolResultRec({ sessionId: "s1", toolName: "Read", tokensApprox: 100_000 }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions).toEqual([]);
+  });
+
+  it("totalが0（トークンがすべて0）のセッションはゼロ除算せず除外される", () => {
+    const records = [
+      toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: 0 }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions).toEqual([]);
+  });
+
+  it("比率が閾値超でも絶対値が下限未満なら除外される", () => {
+    const records = [
+      toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: 100 }),
+      toolResultRec({ sessionId: "s1", toolName: "Read", tokensApprox: 10 }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions).toEqual([]);
+  });
+
+  it('sessionIdが"(unknown)"のレコードは集計対象外', () => {
+    const records = [
+      toolResultRec({ sessionId: "(unknown)", toolName: "Grep", tokensApprox: EXPLORATION_MIN_TOKENS + 1000 }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions).toEqual([]);
+  });
+
+  it("複数セッションがある場合、explorationTokensApprox降順でソートされる", () => {
+    const records = [
+      toolResultRec({ sessionId: "s1", toolName: "Grep", tokensApprox: EXPLORATION_MIN_TOKENS + 1000 }),
+      toolResultRec({ sessionId: "s2", toolName: "Glob", tokensApprox: EXPLORATION_MIN_TOKENS + 5000 }),
+    ];
+    const result = computeExplorationHeavySessions(records);
+    expect(result.heavySessions.map((s) => s.sessionId)).toEqual(["s2", "s1"]);
   });
 });

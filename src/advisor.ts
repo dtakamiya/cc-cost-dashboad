@@ -528,6 +528,23 @@ export function buildRecommendations(s: Summary, billingMode: BillingMode = "api
     });
   }
 
+  // 5j-2. 探索系ツール（Grep/Glob/WebSearch/WebFetch）に偏ったセッション → 具体的プロンプトへの誘導（medium, 定性）
+  // 曖昧な指示（"Fix the bug"等）はコードベース全体の探索を招き、探索系tool_resultの累積・再送で
+  // コンテキストを浪費する。ファイルパス・行番号を明示したプロンプトへの切り替えを促す。金額換算は困難なため0のまま。
+  const exp = s.exploration;
+  if (exp && exp.heavySessions.length > 0) {
+    const cwds = [...new Set(exp.heavySessions.map((h) => shortCwd(h.cwd)))].slice(0, 3).join(", ");
+    items.push({
+      id: "exploration-heavy",
+      priority: "medium",
+      title: "探索系ツール（Grep/Glob/WebSearch）に偏ったセッションがある",
+      shortTitle: `探索過多セッション（${exp.heavySessions.length}件）`,
+      detail: `${exp.heavySessions.length} 件のセッションで Grep/Glob/WebSearch/WebFetch 等の探索系ツール結果が tool_result の大部分を占める（${cwds} ほか、近似値）。`,
+      action: "「Fix the bug」のような曖昧な指示を避け、ファイルパス・行番号を明示したプロンプト（例: src/routes/users.ts の42行目の null チェックが誤り）に切り替える。",
+      estMonthlySavings: 0,
+    });
+  }
+
   // 6. 価格未登録モデル（low, 情報）
   if (s.warnings.fallbackModels.length > 0) {
     items.push({

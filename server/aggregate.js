@@ -504,6 +504,50 @@ export function mergeToolResultTokensIntoSessions(sessions, toolResultRecords = 
 // src/api.ts の TOOL_RESULT_BLOAT_THRESHOLD と同値（フロントの isToolResultHeavySession 判定と揃える）。
 export const TOOL_RESULT_BLOAT_THRESHOLD = 50_000;
 
+// 探索系ツール（曖昧な指示によるコードベース当てずっぽう探索で多用されがちなツール）。
+// mcp__ prefixのツールは今回スコープ外（YAGNI）。
+export const EXPLORATION_TOOLS = new Set(["Grep", "Glob", "WebSearch", "WebFetch"]);
+export const EXPLORATION_RATIO_THRESHOLD = 0.5; // 探索比率がこの値超で「探索過多」
+export const EXPLORATION_MIN_TOKENS = 20_000; // 探索トークン絶対値の下限（誤検知除外）
+
+/**
+ * セッション別に探索系ツール（Grep/Glob/WebSearch/WebFetch）のtool_result近似トークン比率を算出し、
+ * 比率が高く絶対量も一定以上のセッションを「探索過多セッション」として検出する。
+ * 可視化専用の近似値であり、totalCost/totalTokensには一切加算しない（二重計上禁止）。
+ * @param {object[]} toolResultRecords - tool_result レコード配列（{ toolName, sessionId, cwd, tokensApprox }）
+ * @returns {{ heavySessions: Array<{ sessionId: string, cwd: string, explorationTokensApprox: number, totalToolResultTokensApprox: number, explorationRatio: number }>, isApprox: true }}
+ */
+export function computeExplorationHeavySessions(toolResultRecords = []) {
+  const bySession = new Map(); // sessionId -> { cwd, exploration, total }
+
+  for (const r of toolResultRecords) {
+    if (r.sessionId === "(unknown)") continue;
+
+    let entry = bySession.get(r.sessionId);
+    if (!entry) {
+      entry = { cwd: r.cwd || "(unknown)", exploration: 0, total: 0 };
+      bySession.set(r.sessionId, entry);
+    }
+    entry.total += r.tokensApprox || 0;
+    if (EXPLORATION_TOOLS.has(r.toolName)) {
+      entry.exploration += r.tokensApprox || 0;
+    }
+  }
+
+  const heavySessions = [...bySession.entries()]
+    .map(([sessionId, { cwd, exploration, total }]) => ({
+      sessionId,
+      cwd,
+      explorationTokensApprox: exploration,
+      totalToolResultTokensApprox: total,
+      explorationRatio: total > 0 ? exploration / total : 0,
+    }))
+    .filter((s) => s.explorationRatio > EXPLORATION_RATIO_THRESHOLD && s.explorationTokensApprox > EXPLORATION_MIN_TOKENS)
+    .sort((a, b) => b.explorationTokensApprox - a.explorationTokensApprox);
+
+  return { heavySessions, isApprox: true };
+}
+
 /**
  * コスト降順の上位 limit 件に加え、tool_result 肥大セッション（低コストでも見えないコンテキスト肥大の
  * 主因になり得るセッション）を重複なく追加した配列を返す。コスト降順は維持する。
@@ -1008,5 +1052,8 @@ export function aggregate(records, { sessionLimit = DEFAULT_SESSION_LIMIT, compa
     byTool: computeToolUsage(toolUseRecords),
     byMcpServer: computeMcpUsage(toolUseRecords),
     toolResultBreakdown: computeToolResultUsage(toolResultRecords),
+    // 探索系ツール（Grep/Glob/WebSearch/WebFetch）に偏ったセッションの検出結果。可視化専用の近似値であり、
+    // totalCost/totalTokensには一切加算しない（二重計上禁止）。
+    exploration: computeExplorationHeavySessions(toolResultRecords),
   };
 }
